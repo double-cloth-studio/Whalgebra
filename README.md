@@ -54,7 +54,7 @@ Whalgebra 内置了完备的数学函数库，涵盖以下主要计算类别：
 1. 克隆仓库并进入项目目录
 
 ```powershell
-git clone https://github.com/Double-Cloth/Whalgebra.git
+git clone https://github.com/double-cloth-studio/Whalgebra.git
 cd ./Whalgebra
 ```
 
@@ -83,7 +83,7 @@ npm run compress-svg
 
 ### 2.3. 安装发行版
 
-1. 打开 [Releases 页面](https://github.com/Double-Cloth/Whalgebra/releases)
+1. 打开 [Releases 页面](https://github.com/double-cloth-studio/Whalgebra/releases)
 2. 下载对应平台的最新发行版
 3. 安装或解压后启动应用
 
@@ -199,7 +199,7 @@ Whalgebra/
 ## 5. 关于作者
 
 - **项目作者**: Double-Cloth [Contact me](mailto:Double-Cloth@outlook.com)
-- **项目地址**: [GitHub - Whalgebra](https://github.com/Double-Cloth/Whalgebra)
+- **项目地址**: [GitHub - Whalgebra](https://github.com/double-cloth-studio/Whalgebra)
 
 ## 6. 许可证
 
