@@ -1270,11 +1270,16 @@
                     CalcConfig._globalCalcAccuracy = numericAcc;
 
                     // 绝对输出精度不能超过计算精度。
+                    let outputClamped = false;
                     if (CalcConfig._outputAccuracy > 1 && CalcConfig._outputAccuracy > numericAcc) {
                         CalcConfig._outputAccuracy = numericAcc;
+                        outputClamped = true;
                     }
 
-                    this._syncToWorker('setCalcAccuracy', acc);
+                    this._syncToWorker('setCalcAccuracy', numericAcc);
+                    if (outputClamped) {
+                        this._syncToWorker('setOutputAccuracy', CalcConfig._outputAccuracy);
+                    }
                 }
 
                 /**
@@ -1299,7 +1304,7 @@
                  *
                  * @param {number|undefined} acc - 输出有效位数策略：`acc >= 1` 表示绝对位数，
                  *   `0 < acc < 1` 表示相对于输入计算精度的比例，`acc <= 0` 表示沿用输入精度；
-                 *   `undefined` 恢复默认比例。绝对位数不得超过全局计算精度。
+                 *   `undefined` 重置为当前计算精度。绝对位数不得超过全局计算精度。
                  *   - 比例模式: 如果 `acc` 是一个 (0, 1) 之间的浮点数，它将被解释为相对于 `globalCalcAccuracy` 的比例。例如，如果 `globalCalcAccuracy` 是 100，`acc` 是 0.9，则实际输出精度将是 90 位。
                  *   - 绝对模式: 如果 `acc` 是一个大于等于 1 的整数，它将直接被用作输出的有效数字位数。
                  *   - 重置: 如果 `acc` 为 `undefined`，输出精度将被重置为当前的 `globalCalcAccuracy` 值。
@@ -1318,12 +1323,16 @@
                             throw new Error('[CalcConfig] Input error: Accuracy must be a number.');
                         }
 
+                        if (!Number.isFinite(numericAcc)) {
+                            throw new Error('[CalcConfig] Input error: Accuracy must be a finite number.');
+                        }
+
                         if (numericAcc > 1 && !Number.isInteger(numericAcc)) {
                             throw new Error('[CalcConfig] Input error: Accuracy must be an integer when greater than 1.');
                         }
 
-                        if (numericAcc > CalcConfig.globalCalcAccuracy || numericAcc <= 0) {
-                            throw new Error(`[CalcConfig] Range error: Accuracy must be between 0 (exclusive) and ${CalcConfig.globalCalcAccuracy} (inclusive).`);
+                        if (numericAcc > CalcConfig.globalCalcAccuracy) {
+                            throw new Error(`[CalcConfig] Range error: Accuracy must be at most ${CalcConfig.globalCalcAccuracy}.`);
                         }
                     }
 
