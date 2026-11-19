@@ -176,6 +176,7 @@
                             PageConfig._gridHighlightRaf = null;
                         }
 
+                        // 嵌套 double RAF：第一帧等待 VirtualScroll 的 DOM 节点挂载与重绘，第二帧安全获取实际单元格并应用高亮，防止样式作用在已回收节点上。
                         PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
                             PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
                                 PageConfig._gridHighlightRaf = null;
@@ -667,6 +668,11 @@
          * @const {RegExp} _tokenizerRegex
          */
         static _tokenizerRegex = (() => {
+            /**
+             * 转义正则表达式特殊字符，规避语法元字符干扰。
+             * @param {string} s - 输入子串。
+             * @returns {string} 正则转义串。
+             */
             const escape = (s) => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 
             // 配置符号作为首选分支，后续才回退到 `[token]` 和单字符，避免数学词元被拆散。
@@ -1340,6 +1346,9 @@
              */
             static MAX_ELEMENT_HEIGHT = 12_000_000;
 
+            /**
+             * 初始化高度映射器并重置所有内部状态。
+             */
             constructor() {
                 this.reset();
             }
@@ -2222,6 +2231,11 @@
             this.container.replaceChildren();
 
             // spacer 只贡献滚动高度，不应产生可见内容、边距或字体排版。
+            /**
+             * 统一应用上下占位垫片的无内边距/盒模型样式。
+             * @param {HTMLElement} el - 占位元素。
+             * @returns {CSSStyleDeclaration} 样式对象。
+             */
             const applySpacerStyle = (el) => Object.assign(el.style, {
                 display: 'block',
                 width: '100%',
@@ -2282,6 +2296,9 @@
                 return;
             }
 
+            /**
+             * 监听用户手势或滚轮中断，平滑滚动中途接管控制权。
+             */
             this._handleUserInterrupt = () => {
                 if (this._isSmoothScrolling) {
                     this._cancelSmoothScroll();
@@ -2309,6 +2326,9 @@
                 return;
             }
 
+            /**
+             * 响应滚动事件并调度下一次虚拟列表帧渲染。
+             */
             this._handleScroll = () => {
                 if (this._isSmoothScrolling) {
                     return;
@@ -2343,6 +2363,9 @@
          * @returns {void}
          */
         _bindResize() {
+            /**
+             * 响应容器尺寸变化并在运行中防抖触发重测。
+             */
             const handleResize = () => {
                 if (!this._sm.is(VirtualScroll.State.RUNNING)) {
                     return;
@@ -2504,6 +2527,9 @@
             let attempts = 0;
             const MAX_STABILIZE_FRAMES = 6;
 
+            /**
+             * 调度并执行虚拟滚动列表的单行高度重测。
+             */
             const runRemeasure = () => {
                 this._remeasureRAF = null;
 
@@ -2575,12 +2601,18 @@
 
             if (this.container.clientWidth <= 0 || this.container.clientHeight <= 0) {
                 // 容器恢复非零后，等待最多 6 帧确认布局尺寸稳定，再执行重测。
+                /**
+                 * 当容器初始尺寸为零时，轮询等待其布局尺寸稳定后再执行重测。
+                 */
                 const waitUntilStable = () => {
                     let lastWidth = -1;
                     let lastHeight = -1;
                     let attempts = 0;
                     const MAX_STABILIZE_FRAMES = 6;
 
+                    /**
+                     * 帧循环步进检查容器尺寸是否连续多帧保持不变。
+                     */
                     const step = () => {
                         this._resumeRAF = null;
 
@@ -2639,6 +2671,9 @@
                     let retries = 0;
                     const MAX_RETRIES = 50;
 
+                    /**
+                     * 在不支持 ResizeObserver 的环境下轮询等待容器尺寸恢复。
+                     */
                     const poll = () => {
                         this._resumeFallbackTimer = null;
 
@@ -3187,10 +3222,19 @@
             const dur = Math.min(800, Math.max(300, screens * 100));
 
             let t0 = null;
+            /**
+             * 二次缓动函数，实现平滑滚动的平滑起步与制动。
+             * @param {number} t - 归一化时间进度 [0, 1]。
+             * @returns {number} 缓动插值。
+             */
             const easeInOut = (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 
             this._isSmoothScrolling = true;
 
+            /**
+             * 执行平滑滚动动画的单帧位移插值更新。
+             * @param {number} ts - 高精度时间戳。
+             */
             const step = (ts) => {
                 if (this._sm.is(VirtualScroll.State.DESTROYED) || !this.container) {
                     this._smoothRAF = null;
@@ -3805,7 +3849,7 @@
              *   `dataSource[index][0]`、`[1]` 分别是 X、Y 的内部字符串或既有类名数组。
              * @returns {HTMLElement} 尚未挂载的完整行 `<div>`，含序号、X 单元格和 Y 单元格三个子区。
              */
-            renderItem: (index, dataSource) => {
+            renderItem(index, dataSource) {
                 /**
                  * 将字符串转换为 HTML 类名列表。
                  *
@@ -4423,6 +4467,11 @@
                             case 'down':
                                 len = PageConfig.screenData['1'].length - 1;
                                 nextNum = currentSubModes[0] + (direction === 'up' ? -1 : 1);
+                                /**
+                                 * 生成统计表格模式下新行坐标的更新值。
+                                 * @param {number} nextNum - 下一行索引。
+                                 * @returns {[number, number]} 更新后的 [行, 列] 坐标。
+                                 */
                                 makeValue = (nextNum) => [nextNum, currentSubModes[1]];
                                 break;
                         }
@@ -4434,6 +4483,11 @@
                         len = 4;
                         if (['left', 'right'].includes(direction)) {
                             nextNum = Number(PageConfig.subModes[currentMode]) + (direction === 'left' ? -1 : 1);
+                            /**
+                             * 生成横向移动后的子模式索引字符串。
+                             * @param {number} nextNum - 新索引数值。
+                             * @returns {string} 字符串形式的子模式标识。
+                             */
                             makeValue = (nextNum) => nextNum.toString();
                             break;
                         }
@@ -4457,6 +4511,11 @@
                             addNum = -1;
                         }
                         nextNum = Number(PageConfig.subModes[currentMode]) + addNum;
+                        /**
+                         * 生成纵向移动后的子模式索引字符串。
+                         * @param {number} nextNum - 新索引数值。
+                         * @returns {string} 字符串形式的子模式标识。
+                         */
                         makeValue = (nextNum) => nextNum.toString();
                         break;
                     }
@@ -5055,7 +5114,7 @@
             const screenDisplay = HtmlTools.getHtml('#screen_0_display');
 
             const currentInputArray = HtmlTools.getClassList(inputEl, {ignoreSpace: true});
-            if (currentInputArray[0].includes('InputTip')) {
+            if (currentInputArray[0]?.includes('InputTip')) {
                 currentInputArray.length = 0;
             }
             const currentInput = HtmlTools.htmlClassToText(currentInputArray);
@@ -5251,9 +5310,13 @@
                 );
 
                 HtmlTools.getHtml('#print_content_2_error').classList.add('NoDisplay');
-            } catch {
+            } catch (error) {
+                // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
+                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                    return;
+                }
                 HtmlTools.getHtml('#print_content_2_error').classList.remove('NoDisplay');
-                HtmlTools.getHtml('#print_content_2_inner').replaceChildren();
+                this.printListRenderer.clear();
             }
         }
 
@@ -5450,7 +5513,11 @@
                             break;
                     }
                 }
-            } catch {
+            } catch (error) {
+                // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
+                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                    return;
+                }
                 errorPrint();
             }
         }
@@ -5551,7 +5618,11 @@
                 );
 
                 HtmlTools.getHtml('#print_omit').classList[result.overflow ? 'remove' : 'add']('NoDisplay');
-            } catch {
+            } catch (error) {
+                // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
+                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                    return;
+                }
                 HtmlTools.appendDOMs(content40, ['_error_'], {mode: 'replace'});
                 HtmlTools.appendDOMs(content41, ['_error_'], {mode: 'replace'});
                 this._multipleLinesPrint(

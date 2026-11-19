@@ -1,14 +1,13 @@
-/**
- * 按点击目标的 ID、类名和父容器分发页面操作。
- *
- * @param {MouseEvent} event - 冒泡到 `document` 的点击事件；分发器读取 `event.target`，若命中按钮内
- *   的 `<p>` 会提升到父按钮，再依据 ID、类名和容器决定操作。事件坐标仅在选择波纹效果中使用，
- *   主输入区内的 `<p>` 保留为光标定位目标。
- */
+// 监听全局点击事件，按点击目标的 ID、类名和父容器分发页面操作。
 document.addEventListener('click', (event) => {
     "use strict";
 
-    // 统一读取 HTML / SVG 元素的类名字符串，避免 SVGAnimatedString 引发 TypeError。
+    // 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
+    /**
+     * 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
+     * @param {Element|null} el - DOM 元素。
+     * @returns {string} 类名字符串。
+     */
     const getClassName = (el) => {
         if (!el) {
             return '';
@@ -81,6 +80,9 @@ document.addEventListener('click', (event) => {
             return;
     }
 
+    /**
+     * 切换至更多功能扩展副键盘。
+     */
     const showMoreFunc = () => PageControlTools.changeSubKeyboard('SortSvg');
 
     // 第二层按父容器分组，同一控件内部的图标和文字共享处理逻辑。
@@ -143,6 +145,7 @@ document.addEventListener('click', (event) => {
         const mode = targetID.slice(-1);
         PageConfig.currentMode = (mode === '2') ? '2_0' : mode;
 
+        // 延迟 340ms 关闭模态遮罩，预留 CSS drawer 收起动画过渡时长。
         setTimeout(() => PageControlTools.clickMainCover(), 340);
         return;
     }
@@ -232,13 +235,7 @@ document.addEventListener('click', (event) => {
     }
 });
 
-/**
- * 将物理键盘输入分发到计算器操作。
- *
- * @param {KeyboardEvent} event - 冒泡到 `document` 的按键事件；使用标准化的 `event.key` 区分
- *   Backspace、方向键、Enter、Escape、数字和运算符。处理过的计算器快捷键会阻止浏览器默认行为，
- *   未映射按键继续交给页面或系统处理；组合键修饰状态由各分支按需读取。
- */
+// 监听全局物理键盘按键事件，将按键输入分发至对应的计算器操作。
 document.addEventListener('keydown', (event) => {
     "use strict";
 
@@ -322,10 +319,15 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
-/** 页面加载后按依赖顺序恢复持久化状态。 */
+// 监听窗口加载事件，按依赖顺序恢复持久化状态。
 window.addEventListener('load', () => {
     "use strict";
 
+    /**
+     * 安全读取 LocalStorage 中的键值，规避隐私模式或禁用存储时的异常。
+     * @param {string} key - 存储键名。
+     * @returns {string|null} 存储值或 null。
+     */
     const getStore = (key) => {
         try {
             return localStorage.getItem(key);

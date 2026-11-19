@@ -37,9 +37,9 @@
         /**
          * 从数值、字符串、同类对象或内部元组创建高精度十进制数。
          *
-         * @param {string|number|bigint|BigNumber|ComplexNumber|Array|object} x - 要转换为高精度十进制数的值。
+         * @param {string|number|bigint|BigNumber|Array|object} x - 要转换为高精度十进制数的值。
          *   字符串可使用普通或科学记数法；`number` 会先按其可见十进制值解析；`bigint` 保持整数精度。
-         *   `BigNumber` 会按目标精度复制；纯实 `ComplexNumber` 取其实部，非零虚部会被拒绝。
+         *   `BigNumber` 会按目标精度复制（不支持直接传入 `ComplexNumber`，需显式传入其实部分量 `re`）。
          *   数组/对象应提供内部 `[power, mantissa, acc?]` 信息，其中尾数必须是整数且指数必须安全可表示。
          * @param {{
          *   acc?: number,
@@ -265,6 +265,11 @@
 
             // 超过常驻上限时，把临时平方结果放进局部变量，函数返回后立即释放。
             let extraPows = null;
+            /**
+             * 获取 10^(2^k) 的 BigInt 实例，优先读取常驻缓存，超出部分查阅局部临时缓存。
+             * @param {number} k - 阶数索引。
+             * @returns {bigint} 对应的 10^(2^k) 幂次。
+             */
             const getPow = (k) => {
                 if (k < cache.length) {
                     return cache[k];
@@ -656,7 +661,7 @@
 
                         const finalAcc = Math.min(r.acc, i.acc);
 
-                        // 如果某个组件的精度更高，则将其降下来
+                        // 复数的实部和虚部对齐到较低精度，防止低精度分量被误当更高有效位数参与后续运算。
                         if (r.acc > finalAcc) {
                             r = new BigNumber(r, {acc: finalAcc});
                         }
@@ -1560,7 +1565,7 @@
                 let result = MathPlus.pow(MathPlus._oppositeNumber(inputA), absB);
                 // 负底数小数幂按 (-a)^b = |a|^b(cos(bπ)+i·sin(bπ)) 选择实根或主值。
                 if (absB.power === -1 && absB.mantissa === 5n) {
-                    // 如果 b=0.5 (开平方根), 结果为 i * sqrt(|a|)
+                    // 负实数的 0.5 次幂走纯虚数分支，保持与主值方根解析连续并规避通用复数幂误差。
                     const zero = new BigNumber([0, 0n, resultAcc]);
                     result = new ComplexNumber([zero, result.re]);
                 } else {
@@ -2646,7 +2651,7 @@
          * - 对于实数 x，返回不大于 x 的最大整数。
          * - 对于复数 a + bi，返回 floor(a) + floor(b)i。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 要向负无穷方向取整的值；
-         *   仅定义于纯实数，复数的非零虚部会被拒绝，整数输入保持不变。
+         *   可为实数或复数，复数按实部和虚部分别向下取整，整数输入保持不变。
          * @returns {ComplexNumber} 代表向下取整结果的 ComplexNumber 实例。
          */
         static floor(x) {
@@ -2683,7 +2688,7 @@
          * - 对于实数 x，返回不小于 x 的最小整数。
          * - 对于复数 a + bi，遵循分部计算的原则，返回 ceil(a) + ceil(b)i。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 要向正无穷方向取整的值；
-         *   仅定义于纯实数，复数的非零虚部会被拒绝，整数输入保持不变。
+         *   可为实数或复数，复数按实部和虚部分别向上取整，整数输入保持不变。
          * @returns {ComplexNumber} 代表向上取整结果的 ComplexNumber 实例。
          */
         static ceil(x) {
@@ -3189,6 +3194,11 @@
             const openAfter2 = [];
             const markerMap = new Map(); // key: '#0#' / ':1@' 等, value: 索引数组(升序)
 
+            /**
+             * 记录括号或运算符插入标记的位置索引。
+             * @param {string} key - 标记类别键名。
+             * @param {number} idx - 字符或词元索引。
+             */
             const addMarker = (key, idx) => {
                 let arr = markerMap.get(key);
                 if (!arr) {
@@ -3197,10 +3207,22 @@
                 }
                 arr.push(idx);
             };
+
+            /**
+             * 检查指定类别下是否还有未消费的标记索引。
+             * @param {string} key - 标记类别键名。
+             * @returns {boolean} 是否存在标记。
+             */
             const hasMarker = (key) => {
                 const arr = markerMap.get(key);
                 return arr !== undefined && arr.length > 0;
             };
+
+            /**
+             * 提取并清空指定类别的所有插入位置索引。
+             * @param {string} key - 标记类别键名。
+             * @returns {number[]} 索引数组。
+             */
             const takeMarker = (key) => {
                 const arr = markerMap.get(key);
                 if (!arr || arr.length === 0) {
@@ -3209,13 +3231,23 @@
                 markerMap.delete(key);
                 return arr;
             };
+
+            /**
+             * 将源类别的标记位置转移至目标类别，用于闭括号转移未闭合的隐式括号。
+             * @param {string} fromKey - 源标记类别。
+             * @param {string} toKey - 目标标记类别。
+             */
             const moveMarker = (fromKey, toKey) => {
                 const arr = takeMarker(fromKey);
                 for (let i = 0; i < arr.length; i++) {
                     addMarker(toKey, arr[i]);
                 }
             };
-            // 弹出同层级最新的 ':' 标记（对应去掉最后一个 '^' 的标记）
+
+            /**
+             * 弹出同层级最新的幂运算符标记，确保右结合幂次在遇到新运算符时正确闭合。
+             * @param {number} level - 当前括号嵌套层级。
+             */
             const popLastPowMarker = (level) => {
                 const arr1 = markerMap.get(`:${level}#`);
                 const arr2 = markerMap.get(`:${level}@`);
@@ -3333,6 +3365,7 @@
                     remaining.push({idx: indices[i], isPow, isSure});
                 }
             }
+            // 按索引降序排序剩余标记，从右向左插入以避免前面的插入破坏后续索引偏移。
             remaining.sort((a, b) => b.idx - a.idx);
 
             let theLast = true;
@@ -3811,11 +3844,6 @@
                     throw new Error('[StatisticsTools] The system of equations has no unique solution.');
                 }
 
-                if (pivot.re.isZero()) {
-                    // 主元为零表示矩阵奇异，方程组没有唯一解。
-                    throw new Error('[StatisticsTools] The system of equations has no unique solution.');
-                }
-
                 // 主元行归一化，再消去该列的其他元素；结束时左侧矩阵成为单位矩阵。
                 for (let j = i; j < n + 1; j++) {
                     augmentedMatrix[i][j] = MathPlus.divide(augmentedMatrix[i][j], pivot);
@@ -3868,15 +3896,21 @@
             const constants = [StatisticsTools._averageAndSum(listB).sum];
             const coefficientsList = [new ComplexNumber(n)];
             const coefficients = [];
-            for (let i = 1; i < power + 1; i++) {
-                /** 将自变量转换为当前次数的幂。 */
-                const changedListA = StatisticsTools._changeInner(listA, (x) => MathPlus.pow(x, i));
-                constants.push(StatisticsTools._dotProduct(changedListA, listB));
-            }
-            for (let i = 1; i < 2 * power + 1; i++) {
-                /** 将自变量转换为当前次数的幂。 */
-                const changedListA = StatisticsTools._changeInner(listA, (x) => MathPlus.pow(x, i));
-                coefficientsList.push(StatisticsTools._averageAndSum(changedListA).sum);
+
+            // 使用递推累乘代替重复计算 pow(x, i)，合并遍历以优化性能。
+            const baseListA = listA.map((x) => new ComplexNumber(x));
+            const curPow = baseListA.map((x) => new ComplexNumber(x));
+
+            for (let p = 1; p <= 2 * power; p++) {
+                if (p > 1) {
+                    for (let k = 0; k < n; k++) {
+                        curPow[k] = MathPlus.times(curPow[k], baseListA[k]);
+                    }
+                }
+                coefficientsList.push(StatisticsTools._averageAndSum(curPow).sum);
+                if (p <= power) {
+                    constants.push(StatisticsTools._dotProduct(curPow, listB));
+                }
             }
             for (let i = 0; i < power + 1; i++) {
                 const rowList = [];
@@ -3951,7 +3985,6 @@
             statisticsResult.average = Public.idealizationToString(averageAndSum.average);
             statisticsResult.sum = Public.idealizationToString(averageAndSum.sum);
 
-            /** 计算列表元素的平方。 */
             const list2 = StatisticsTools._changeInner(list, (x) => MathPlus.times(x, x));
 
             statisticsResult.sum2 = Public.idealizationToString(StatisticsTools._averageAndSum(list2).sum);
@@ -4123,12 +4156,10 @@
             const absListB = this._getAbsList(listB);
             let lnListA;
             if (!statesA.zero && !statesA.negative) {
-                /** 对自变量取自然对数。 */
                 lnListA = this._changeInner(listA, (x) => MathPlus.ln(x));
             }
             let lnListB;
             if (!statesB.zero && !(statesB.positive && statesB.negative)) {
-                /** 对因变量绝对值取自然对数。 */
                 lnListB = this._changeInner(absListB, (x) => MathPlus.ln(x));
             }
             const errorWith2parameter = {
@@ -4139,7 +4170,6 @@
 
             const twoParamModels = ['linear', 'ln', 'axb', 'exp', 'abx', 'reciprocal'];
             if ((!statesA.positive && !statesA.negative && statesA.zero) || listA.length === 1) {
-                /** 将当前双参数模型标记为不可计算。 */
                 twoParamModels.forEach((key) => {
                     result[key] = {
                         parameter: ['error', 'error'],
@@ -4279,7 +4309,6 @@
             if (statesA.zero) {
                 result.reciprocal = structuredClone(errorWith2parameter);
             } else {
-                /** 将自变量转换为倒数。 */
                 const reciprocalListA = this._changeInner(listA, (x) => MathPlus.divide(1, x));
                 result.reciprocal = this._getRegressionInfo(reciprocalListA, listB, 1, listB,
                     (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
@@ -4347,13 +4376,6 @@
          *   重排，实部相等的项由 JavaScript 稳定排序保留原相对次序。
          */
         static _sort(list) {
-            /**
-             * 按实部比较两个数值。
-             *
-             * @param {*} a - 当前比较的左值；必须能由 `ComplexNumber` 构造。
-             * @param {*} b - 当前比较的右值；只比较与 `a` 的实部差，虚部差异视为相等。
-             * @returns {-1|0|1} 排序结果。
-             */
             list.sort((a, b) => {
                 const diff = MathPlus.minus(a, b).re.mantissa;
                 if (diff > 0n) {
@@ -4611,8 +4633,8 @@
          * @private
          * @param {Array<ComplexNumber|string|number>} list - 严格按降幂 `[a, b, c, d, e]` 传入的四次
          *   方程系数；`a` 必须非零，每项均需可转换为 `ComplexNumber`。方法返回解析根但不修改系数数组。
-         * @returns {Array<ComplexNumber>} 恰含四个解析根的数组，重根按代数重数保留；元素顺序来自
-         *   天珩公式的四个符号组合，不承诺按实部或虚部排序。
+         * @returns {Array<ComplexNumber>} 解析根数组；重根会合并去重（存在重根时返回少于 4 个根，
+         *   无重根时返回 4 个根）；元素顺序来自天珩公式的符号组合，不承诺按实部或虚部排序。
          */
         static _solveQuartic(list) {
             const
@@ -4960,9 +4982,9 @@
         /**
          * 分析四次及以下实系数多项式的区间、极值、拐点和根。
          *
-         * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 最高五项、按降幂排列的
-         *   实系数 `[a, b, c, d, e]`；允许省略高次项但至少应含常数项。前导零会自动降阶，
-         *   任一非零虚部都会拒绝整次分析，输入数组不会被排序或改写。
+         * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 长度固定为 5、按降幂排列的
+         *   实系数 `[a, b, c, d, e]`（对应 ax⁴ + bx³ + cx² + dx + e，低次多项式的高次项须以 0 填充）。
+         *   前导零会自动降阶，任一非零虚部都会拒绝整次分析，输入数组不会被排序或改写。
          * @returns {PowerFunctionAnalysisResult} 字段固定的分析结果；低次多项式不适用的区间或点仍以
          *   `[['null','null']]` 保留，避免 UI 按次数猜测缺失字段。所有边界、坐标和根均为显示字符串。
          * @throws {Error} 系数包含复数时抛出。

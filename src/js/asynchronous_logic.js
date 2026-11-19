@@ -218,7 +218,6 @@
                  * @private
                  */
                 _rejectAllTasks(error) {
-                    /** 拒绝当前待处理任务并清除其超时计时器。 */
                     this._taskQueue.forEach(({reject, timeoutId}) => {
                         if (timeoutId !== null) {
                             clearTimeout(timeoutId);
@@ -466,7 +465,11 @@
     /* A Map used to track running tasks and their cancellation status. */
     const runningTasks = new Map();
     
-    /* Normalize any thrown JavaScript value into a serializable error object. */
+    /**
+     * Normalize any thrown JavaScript value into a serializable error object.
+     * @param {*} error - Caught error or thrown value.
+     * @returns {{name: string, message: string, stack: string}} Serializable error structure.
+     */
     const normalizeError = (error) => {
         let name = 'Error';
         let message;
@@ -508,7 +511,10 @@
     };
     
     /* -- Worker message processor -- */
-    /* This is the core logic of Worker, used to listen for and respond to messages from the main thread. */
+    /**
+     * Primary message processor for incoming execution requests and cancellation signals.
+     * @param {MessageEvent} event - Message event from the main thread.
+     */
     self.onmessage = async (event) => {
         const { type, id, functionName, args } = event.data;
     
@@ -652,12 +658,10 @@
                     }
 
                     const id = this._nextTaskId++;
-                    /** 创建并登记一次 Worker 调用。 */
                     return new Promise((resolve, reject) => {
                         let timeoutId = null;
 
                         if (timeout > 0) {
-                            /** 在截止时间到达时取消任务。 */
                             timeoutId = setTimeout(() => {
                                 this._cancelTaskById(id, 'TimeoutError', `Task '${functionName}' timed out after ${timeout}ms.`);
                             }, timeout);
@@ -688,7 +692,6 @@
                     const cancellationError = new Error('[SyncWorker] All pending tasks were cancelled by a global cancel call.');
                     cancellationError.name = 'CancellationError';
 
-                    /** 取消当前待处理任务。 */
                     this._taskQueue.forEach((task, id) => {
                         if (task.timeoutId !== null) {
                             clearTimeout(task.timeoutId);
@@ -731,62 +734,11 @@
             class WorkerTools {
                 /**
                  * 执行耗时数学计算的 Worker。
+                 * 采用惰性加载策略，首次分发任务或重启时才真正构造实例。
                  *
-                 * @type {SyncWorker}
+                 * @type {SyncWorker|null}
                  */
-                static _mathWorker = new SyncWorker({
-                    callableFunctions: {
-                        /** 设置 Worker 的计算精度。 */
-                        setCalcAccuracy: (acc) => CalcConfig.globalCalcAccuracy = acc,
-                        /** 获取 Worker 的计算精度。 */
-                        getCalcAccuracy: () => CalcConfig.globalCalcAccuracy,
-                        /** 设置 Worker 的输出精度。 */
-                        setOutputAccuracy: (acc) => CalcConfig.outputAccuracy = acc,
-                        /** 获取 Worker 的输出精度。 */
-                        getOutputAccuracy: () => CalcConfig.outputAccuracy,
-                        /** 设置 Worker 的输出模式。 */
-                        setPrintMode: (mode) => CalcConfig.globalPrintMode = mode,
-                        /** 获取 Worker 的输出模式。 */
-                        getPrintMode: () => CalcConfig.globalPrintMode,
-                        /** 初始化 Worker 计算环境。 */
-                        initEnv: ({calcAcc, outputAcc, printMode}) => {
-                            CalcConfig.globalCalcAccuracy = calcAcc;
-                            CalcConfig.outputAccuracy = outputAcc;
-                            CalcConfig.globalPrintMode = printMode;
-                        },
-                        /** 分析多项式函数。 */
-                        powerFunctionAnalysis: (list) => PowerFunctionTools.powerFunctionAnalysis(list),
-                        /** 计算统计结果。 */
-                        statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
-                        /** 分析复数根式。 */
-                        radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
-                        /** 生成函数值列表。 */
-                        valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
-                        /** 执行表达式计算。 */
-                        exec: (expr, {calcAcc, outputAcc, calcMode, outputMode, f, g} = {}) => CalcTools.exec(expr, {
-                            calcAcc: calcAcc,
-                            outputAcc: outputAcc,
-                            calcMode: calcMode,
-                            outputMode: outputMode,
-                            f: f,
-                            g: g
-                        })
-                    },
-                    dependencies: [
-                        {name: 'TokenConfig', value: TokenConfig},
-                        {name: 'Public', value: Public},
-                        {name: 'CalcConfig', value: CalcConfig},
-                        {name: 'BigNumber', value: BigNumber},
-                        {name: 'ComplexNumber', value: ComplexNumber},
-                        {name: 'MathPlus', value: MathPlus},
-                        {name: 'PowerFunctionTools', value: PowerFunctionTools},
-                        {name: 'StatisticsTools', value: StatisticsTools},
-                        {name: 'RadicalFunctionTools', value: RadicalFunctionTools},
-                        {name: 'FuncValueListTools', value: FuncValueListTools},
-                        {name: 'CalcTools', value: CalcTools}
-                    ]
-                });
-
+                static _mathWorker = null;
                 /**
                  * Worker 任务的默认超时时间（毫秒）。
                  *
@@ -794,7 +746,6 @@
                  * @type {number}
                  */
                 static _WORKER_TIMEOUT = 60000;
-
                 /**
                  * 当前进行中的重启 Promise，用于合并并发重启请求。
                  *
@@ -802,6 +753,15 @@
                  * @type {Promise<void>|null}
                  */
                 static _restartPromise = null;
+
+                /**
+                 * 阻止实例化静态工具类。
+                 *
+                 * @throws {Error} 始终抛出。
+                 */
+                constructor() {
+                    throw new Error('[WorkerTools] WorkerTools is a static class and should not be instantiated.');
+                }
 
                 /**
                  * 判断 Worker 是否正在重启。
@@ -814,15 +774,6 @@
                 }
 
                 /**
-                 * 阻止实例化静态工具类。
-                 *
-                 * @throws {Error} 始终抛出。
-                 */
-                constructor() {
-                    throw new Error('[WorkerTools] WorkerTools is a static class and should not be instantiated.');
-                }
-
-                /**
                  * 判断 Worker 是否可用。
                  *
                  * @readonly
@@ -830,6 +781,71 @@
                  */
                 static get isReady() {
                     return this._mathWorker !== null && !this._mathWorker.isTerminated;
+                }
+
+                /**
+                 * 确保数学 Worker 实例已惰性初始化并同步主线程状态。
+                 *
+                 * @private
+                 * @returns {SyncWorker} 数学 Worker 实例。
+                 */
+                static _ensureWorker() {
+                    if (!this._mathWorker) {
+                        this._mathWorker = new SyncWorker({
+                            callableFunctions: {
+                                setCalcAccuracy: (acc) => CalcConfig.globalCalcAccuracy = acc,
+                                getCalcAccuracy: () => CalcConfig.globalCalcAccuracy,
+                                setOutputAccuracy: (acc) => CalcConfig.outputAccuracy = acc,
+                                getOutputAccuracy: () => CalcConfig.outputAccuracy,
+                                setPrintMode: (mode) => CalcConfig.globalPrintMode = mode,
+                                getPrintMode: () => CalcConfig.globalPrintMode,
+                                initEnv: ({calcAcc, outputAcc, printMode}) => {
+                                    CalcConfig.globalCalcAccuracy = calcAcc;
+                                    CalcConfig.outputAccuracy = outputAcc;
+                                    CalcConfig.globalPrintMode = printMode;
+                                },
+                                powerFunctionAnalysis: (list) => PowerFunctionTools.powerFunctionAnalysis(list),
+                                statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
+                                radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
+                                valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
+                                exec: (expr, {
+                                    calcAcc,
+                                    outputAcc,
+                                    calcMode,
+                                    outputMode,
+                                    f,
+                                    g
+                                } = {}) => CalcTools.exec(expr, {
+                                    calcAcc: calcAcc,
+                                    outputAcc: outputAcc,
+                                    calcMode: calcMode,
+                                    outputMode: outputMode,
+                                    f: f,
+                                    g: g
+                                })
+                            },
+                            dependencies: [
+                                {name: 'TokenConfig', value: TokenConfig},
+                                {name: 'Public', value: Public},
+                                {name: 'CalcConfig', value: CalcConfig},
+                                {name: 'BigNumber', value: BigNumber},
+                                {name: 'ComplexNumber', value: ComplexNumber},
+                                {name: 'MathPlus', value: MathPlus},
+                                {name: 'PowerFunctionTools', value: PowerFunctionTools},
+                                {name: 'StatisticsTools', value: StatisticsTools},
+                                {name: 'RadicalFunctionTools', value: RadicalFunctionTools},
+                                {name: 'FuncValueListTools', value: FuncValueListTools},
+                                {name: 'CalcTools', value: CalcTools}
+                            ]
+                        });
+                        // 初始创建时，通过 _restartPromise 恢复主线程当前最新环境配置，避免并发调用发生竞态。
+                        this._restartPromise = this._restoreState().catch((err) => {
+                            console.warn('[WorkerTools] Initial state sync failed:', err);
+                        }).finally(() => {
+                            this._restartPromise = null;
+                        });
+                    }
+                    return this._mathWorker;
                 }
 
                 /**
@@ -844,6 +860,8 @@
                  *   业务计算错误、取消和超时保持原拒绝原因，不被包装成成功值。
                  */
                 static async _dispatch(funcName, args = []) {
+                    this._ensureWorker();
+
                     // 若 Worker 正在重启，等待其初始化完成后再派发，避免误杀紧随 restart() 后的新请求。
                     if (this._restartPromise) {
                         await this._restartPromise;
@@ -919,6 +937,7 @@
                     }
 
                     if (!this._restartPromise) {
+                        // 异步执行 Worker 重启并恢复环境状态，单例 Promise 锁防止重复重启。
                         this._restartPromise = (async () => {
                             try {
                                 this._mathWorker.restart();
@@ -1008,8 +1027,8 @@
                 /**
                  * 分析四次及以下多项式的区间、极值、拐点和根。
                  *
-                 * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 最多五个、按降幂排列的
-                 *   实系数；参数通过结构化克隆传入 Worker，调用期间不会修改主线程数组。
+                 * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 长度固定为 5、按降幂排列的
+                 *   实系数（对应 ax⁴ + bx³ + cx² + dx + e，低次项须以 0 填充）；参数通过结构化克隆传入 Worker，调用期间不会修改主线程数组。
                  * @returns {Promise<PowerFunctionAnalysisResult>} 与同步分析器完全同构的结果；区间、点和根均已
                  *   格式化为字符串，哨兵值的含义见 `PowerFunctionAnalysisResult`。
                  */

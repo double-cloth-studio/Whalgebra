@@ -2,7 +2,7 @@
 <html dir="ltr" lang="zh-CN">
 
 <head>
-    <!-- Whalgebra Version: v3.1.4 | Updated: 2026-11-19 -->
+    <!-- Whalgebra Version: v3.1.4 | Updated: 2026-11-20 -->
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0, user-scalable=yes" name="viewport"/>
     <title>Whalgebra</title>
@@ -1417,9 +1417,9 @@
                 /**
                  * 从数值、字符串、同类对象或内部元组创建高精度十进制数。
                  *
-                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array|object} x - 要转换为高精度十进制数的值。
+                 * @param {string|number|bigint|BigNumber|Array|object} x - 要转换为高精度十进制数的值。
                  *   字符串可使用普通或科学记数法；`number` 会先按其可见十进制值解析；`bigint` 保持整数精度。
-                 *   `BigNumber` 会按目标精度复制；纯实 `ComplexNumber` 取其实部，非零虚部会被拒绝。
+                 *   `BigNumber` 会按目标精度复制（不支持直接传入 `ComplexNumber`，需显式传入其实部分量 `re`）。
                  *   数组/对象应提供内部 `[power, mantissa, acc?]` 信息，其中尾数必须是整数且指数必须安全可表示。
                  * @param {{
                  *   acc?: number,
@@ -4031,7 +4031,7 @@
                  * - 对于实数 x，返回不大于 x 的最大整数。
                  * - 对于复数 a + bi，返回 floor(a) + floor(b)i。
                  * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 要向负无穷方向取整的值；
-                 *   仅定义于纯实数，复数的非零虚部会被拒绝，整数输入保持不变。
+                 *   可为实数或复数，复数按实部和虚部分别向下取整，整数输入保持不变。
                  * @returns {ComplexNumber} 代表向下取整结果的 ComplexNumber 实例。
                  */
                 static floor(x) {
@@ -4068,7 +4068,7 @@
                  * - 对于实数 x，返回不小于 x 的最小整数。
                  * - 对于复数 a + bi，遵循分部计算的原则，返回 ceil(a) + ceil(b)i。
                  * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 要向正无穷方向取整的值；
-                 *   仅定义于纯实数，复数的非零虚部会被拒绝，整数输入保持不变。
+                 *   可为实数或复数，复数按实部和虚部分别向上取整，整数输入保持不变。
                  * @returns {ComplexNumber} 代表向上取整结果的 ComplexNumber 实例。
                  */
                 static ceil(x) {
@@ -6013,8 +6013,8 @@
                  * @private
                  * @param {Array<ComplexNumber|string|number>} list - 严格按降幂 `[a, b, c, d, e]` 传入的四次
                  *   方程系数；`a` 必须非零，每项均需可转换为 `ComplexNumber`。方法返回解析根但不修改系数数组。
-                 * @returns {Array<ComplexNumber>} 恰含四个解析根的数组，重根按代数重数保留；元素顺序来自
-                 *   天珩公式的四个符号组合，不承诺按实部或虚部排序。
+                 * @returns {Array<ComplexNumber>} 解析根数组；重根会合并去重（存在重根时返回少于 4 个根，
+                 *   无重根时返回 4 个根）；元素顺序来自天珩公式的符号组合，不承诺按实部或虚部排序。
                  */
                 static _solveQuartic(list) {
                     const
@@ -6362,9 +6362,9 @@
                 /**
                  * 分析四次及以下实系数多项式的区间、极值、拐点和根。
                  *
-                 * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 最高五项、按降幂排列的
-                 *   实系数 `[a, b, c, d, e]`；允许省略高次项但至少应含常数项。前导零会自动降阶，
-                 *   任一非零虚部都会拒绝整次分析，输入数组不会被排序或改写。
+                 * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 长度固定为 5、按降幂排列的
+                 *   实系数 `[a, b, c, d, e]`（对应 ax⁴ + bx³ + cx² + dx + e，低次多项式的高次项须以 0 填充）。
+                 *   前导零会自动降阶，任一非零虚部都会拒绝整次分析，输入数组不会被排序或改写。
                  * @returns {PowerFunctionAnalysisResult} 字段固定的分析结果；低次多项式不适用的区间或点仍以
                  *   `[['null','null']]` 保留，避免 UI 按次数猜测缺失字段。所有边界、坐标和根均为显示字符串。
                  * @throws {Error} 系数包含复数时抛出。
@@ -7569,50 +7569,11 @@
             class WorkerTools {
                 /**
                  * 执行耗时数学计算的 Worker。
+                 * 采用惰性加载策略，首次分发任务或重启时才真正构造实例。
                  *
-                 * @type {SyncWorker}
+                 * @type {SyncWorker|null}
                  */
-                static _mathWorker = new SyncWorker({
-                    callableFunctions: {
-                        setCalcAccuracy: (acc) => CalcConfig.globalCalcAccuracy = acc,
-                        getCalcAccuracy: () => CalcConfig.globalCalcAccuracy,
-                        setOutputAccuracy: (acc) => CalcConfig.outputAccuracy = acc,
-                        getOutputAccuracy: () => CalcConfig.outputAccuracy,
-                        setPrintMode: (mode) => CalcConfig.globalPrintMode = mode,
-                        getPrintMode: () => CalcConfig.globalPrintMode,
-                        initEnv: ({calcAcc, outputAcc, printMode}) => {
-                            CalcConfig.globalCalcAccuracy = calcAcc;
-                            CalcConfig.outputAccuracy = outputAcc;
-                            CalcConfig.globalPrintMode = printMode;
-                        },
-                        powerFunctionAnalysis: (list) => PowerFunctionTools.powerFunctionAnalysis(list),
-                        statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
-                        radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
-                        valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
-                        exec: (expr, {calcAcc, outputAcc, calcMode, outputMode, f, g} = {}) => CalcTools.exec(expr, {
-                            calcAcc: calcAcc,
-                            outputAcc: outputAcc,
-                            calcMode: calcMode,
-                            outputMode: outputMode,
-                            f: f,
-                            g: g
-                        })
-                    },
-                    dependencies: [
-                        {name: 'TokenConfig', value: TokenConfig},
-                        {name: 'Public', value: Public},
-                        {name: 'CalcConfig', value: CalcConfig},
-                        {name: 'BigNumber', value: BigNumber},
-                        {name: 'ComplexNumber', value: ComplexNumber},
-                        {name: 'MathPlus', value: MathPlus},
-                        {name: 'PowerFunctionTools', value: PowerFunctionTools},
-                        {name: 'StatisticsTools', value: StatisticsTools},
-                        {name: 'RadicalFunctionTools', value: RadicalFunctionTools},
-                        {name: 'FuncValueListTools', value: FuncValueListTools},
-                        {name: 'CalcTools', value: CalcTools}
-                    ]
-                });
-
+                static _mathWorker = null;
                 /**
                  * Worker 任务的默认超时时间（毫秒）。
                  *
@@ -7620,7 +7581,6 @@
                  * @type {number}
                  */
                 static _WORKER_TIMEOUT = 60000;
-
                 /**
                  * 当前进行中的重启 Promise，用于合并并发重启请求。
                  *
@@ -7628,6 +7588,15 @@
                  * @type {Promise<void>|null}
                  */
                 static _restartPromise = null;
+
+                /**
+                 * 阻止实例化静态工具类。
+                 *
+                 * @throws {Error} 始终抛出。
+                 */
+                constructor() {
+                    throw new Error('[WorkerTools] WorkerTools is a static class and should not be instantiated.');
+                }
 
                 /**
                  * 判断 Worker 是否正在重启。
@@ -7640,15 +7609,6 @@
                 }
 
                 /**
-                 * 阻止实例化静态工具类。
-                 *
-                 * @throws {Error} 始终抛出。
-                 */
-                constructor() {
-                    throw new Error('[WorkerTools] WorkerTools is a static class and should not be instantiated.');
-                }
-
-                /**
                  * 判断 Worker 是否可用。
                  *
                  * @readonly
@@ -7656,6 +7616,71 @@
                  */
                 static get isReady() {
                     return this._mathWorker !== null && !this._mathWorker.isTerminated;
+                }
+
+                /**
+                 * 确保数学 Worker 实例已惰性初始化并同步主线程状态。
+                 *
+                 * @private
+                 * @returns {SyncWorker} 数学 Worker 实例。
+                 */
+                static _ensureWorker() {
+                    if (!this._mathWorker) {
+                        this._mathWorker = new SyncWorker({
+                            callableFunctions: {
+                                setCalcAccuracy: (acc) => CalcConfig.globalCalcAccuracy = acc,
+                                getCalcAccuracy: () => CalcConfig.globalCalcAccuracy,
+                                setOutputAccuracy: (acc) => CalcConfig.outputAccuracy = acc,
+                                getOutputAccuracy: () => CalcConfig.outputAccuracy,
+                                setPrintMode: (mode) => CalcConfig.globalPrintMode = mode,
+                                getPrintMode: () => CalcConfig.globalPrintMode,
+                                initEnv: ({calcAcc, outputAcc, printMode}) => {
+                                    CalcConfig.globalCalcAccuracy = calcAcc;
+                                    CalcConfig.outputAccuracy = outputAcc;
+                                    CalcConfig.globalPrintMode = printMode;
+                                },
+                                powerFunctionAnalysis: (list) => PowerFunctionTools.powerFunctionAnalysis(list),
+                                statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
+                                radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
+                                valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
+                                exec: (expr, {
+                                    calcAcc,
+                                    outputAcc,
+                                    calcMode,
+                                    outputMode,
+                                    f,
+                                    g
+                                } = {}) => CalcTools.exec(expr, {
+                                    calcAcc: calcAcc,
+                                    outputAcc: outputAcc,
+                                    calcMode: calcMode,
+                                    outputMode: outputMode,
+                                    f: f,
+                                    g: g
+                                })
+                            },
+                            dependencies: [
+                                {name: 'TokenConfig', value: TokenConfig},
+                                {name: 'Public', value: Public},
+                                {name: 'CalcConfig', value: CalcConfig},
+                                {name: 'BigNumber', value: BigNumber},
+                                {name: 'ComplexNumber', value: ComplexNumber},
+                                {name: 'MathPlus', value: MathPlus},
+                                {name: 'PowerFunctionTools', value: PowerFunctionTools},
+                                {name: 'StatisticsTools', value: StatisticsTools},
+                                {name: 'RadicalFunctionTools', value: RadicalFunctionTools},
+                                {name: 'FuncValueListTools', value: FuncValueListTools},
+                                {name: 'CalcTools', value: CalcTools}
+                            ]
+                        });
+                        // 初始创建时，通过 _restartPromise 恢复主线程当前最新环境配置，避免并发调用发生竞态。
+                        this._restartPromise = this._restoreState().catch((err) => {
+                            console.warn('[WorkerTools] Initial state sync failed:', err);
+                        }).finally(() => {
+                            this._restartPromise = null;
+                        });
+                    }
+                    return this._mathWorker;
                 }
 
                 /**
@@ -7670,6 +7695,8 @@
                  *   业务计算错误、取消和超时保持原拒绝原因，不被包装成成功值。
                  */
                 static async _dispatch(funcName, args = []) {
+                    this._ensureWorker();
+
                     // 若 Worker 正在重启，等待其初始化完成后再派发，避免误杀紧随 restart() 后的新请求。
                     if (this._restartPromise) {
                         await this._restartPromise;
@@ -7835,8 +7862,8 @@
                 /**
                  * 分析四次及以下多项式的区间、极值、拐点和根。
                  *
-                 * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 最多五个、按降幂排列的
-                 *   实系数；参数通过结构化克隆传入 Worker，调用期间不会修改主线程数组。
+                 * @param {Array<string|number|bigint|BigNumber|ComplexNumber|Array>} list - 长度固定为 5、按降幂排列的
+                 *   实系数（对应 ax⁴ + bx³ + cx² + dx + e，低次项须以 0 填充）；参数通过结构化克隆传入 Worker，调用期间不会修改主线程数组。
                  * @returns {Promise<PowerFunctionAnalysisResult>} 与同步分析器完全同构的结果；区间、点和根均已
                  *   格式化为字符串，哨兵值的含义见 `PowerFunctionAnalysisResult`。
                  */

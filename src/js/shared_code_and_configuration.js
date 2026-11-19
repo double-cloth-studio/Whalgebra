@@ -82,7 +82,6 @@
          */
         static _complement(arrA, arrB) {
             const setB = new Set(arrB);
-            /** 判断元素是否不在排除集合中。 */
             return arrA.filter((item) => !setB.has(item));
         }
 
@@ -98,9 +97,7 @@
                 ['*', '/', 'mod'],
                 ['+', '-']
             ];
-            /** 将同一优先级的词元写入映射。 */
             levels.forEach((levelTokens, index) => {
-                /** 记录当前词元的优先级。 */
                 levelTokens.forEach((token) => {
                     this.priorityMap.set(token, index);
                 });
@@ -115,7 +112,6 @@
                     isHtmlClassLenOne: this.htmlClassLenOneFunc.has(token)
                 };
 
-                // 检查 token 是否为函数或运算符
                 if (this.allFunc.has(token)) {
                     info.class = 'func';
                     if (this.params_1_set.has(token)) {
@@ -238,7 +234,8 @@
                 return input;
             }
             const acc = input.acc;
-            const newInput = new ComplexNumber(input, {acc: Math.max(Math.floor(0.9 * acc), acc - 8)});
+            // 降低部分保护位；若数值是由浮点累积误差偏离整数的近似值，降精后将坍缩为真整数。
+            const newInput = new ComplexNumber(input, {acc: Math.max(1, Math.floor(0.9 * acc), acc - 8)});
             if (newInput.re.power >= 0 && newInput.im.isZero()) {
                 return new ComplexNumber(newInput, {acc});
             }
@@ -287,9 +284,7 @@
                 return Math.min(acc, numAcc);
             };
 
-            // 根据输入值的类型进行不同的处理。
             switch (Public.typeOf(x)) {
-                // 如果输入是一个数组，则递归地处理数组中的每个元素。
                 case 'array': {
                     const result = [];
                     for (let i = 0; i < x.length; i++) {
@@ -1111,13 +1106,7 @@
             // Getter 在首次访问后由不可变值替换。
             for (const key of Object.keys(this._rawConstants)) {
                 Object.defineProperty(target, key, {
-                    /**
-                     * 解析并缓存当前顶层常量。
-                     *
-                     * @returns {[number, bigint, number]|{acc:number, g:[number, bigint, number], p:Array<[number, bigint, number]>}}
-                     *   当前 `key` 对应的基础数值元组或 Lanczos 参数对象；首次访问后 getter 会被同一
-                     *   不可写值替换，后续访问保持对象身份。
-                     */
+                    // 必须使用箭头函数保持 this 指向 CalcConfig，首次访问后由不可变数值元组替换。
                     get: () => {
                         const raw = this._rawConstants[key];
                         let val;
@@ -1126,12 +1115,7 @@
                             const lanczosObj = {acc: raw.acc};
 
                             Object.defineProperty(lanczosObj, 'g', {
-                                /**
-                                 * 解析并缓存 Lanczos 参数 `g`。
-                                 *
-                                 * @returns {[number, bigint, number]} Lanczos 参数 `g` 的
-                                 *   `[power, mantissa, acc]` 元组；首次读取时解析并固定在当前参数对象上。
-                                 */
+                                // 使用箭头函数保持词法闭包，首次访问后由不可变数值元组替换。
                                 get: () => {
                                     const gVal = parseTuple(raw.g);
 
@@ -1148,12 +1132,7 @@
                             });
 
                             Object.defineProperty(lanczosObj, 'p', {
-                                /**
-                                 * 解析并缓存 Lanczos 系数数组 `p`。
-                                 *
-                                 * @returns {Array<[number, bigint, number]>} 按近似公式求和顺序排列的系数
-                                 *   `p₀, p₁, …`；每项均为 `[power, mantissa, acc]`，整个数组只解析一次。
-                                 */
+                                // 使用箭头函数保持词法闭包，首次访问后由不可变数值元组替换。
                                 get: () => {
                                     const pArray = raw.p.map(parseTuple);
 
@@ -1280,11 +1259,16 @@
             CalcConfig._globalCalcAccuracy = numericAcc;
 
             // 绝对输出精度不能超过计算精度。
+            let outputClamped = false;
             if (CalcConfig._outputAccuracy > 1 && CalcConfig._outputAccuracy > numericAcc) {
                 CalcConfig._outputAccuracy = numericAcc;
+                outputClamped = true;
             }
 
-            this._syncToWorker('setCalcAccuracy', acc);
+            this._syncToWorker('setCalcAccuracy', numericAcc);
+            if (outputClamped) {
+                this._syncToWorker('setOutputAccuracy', CalcConfig._outputAccuracy);
+            }
         }
 
         /**
@@ -1309,7 +1293,7 @@
          *
          * @param {number|undefined} acc - 输出有效位数策略：`acc >= 1` 表示绝对位数，
          *   `0 < acc < 1` 表示相对于输入计算精度的比例，`acc <= 0` 表示沿用输入精度；
-         *   `undefined` 恢复默认比例。绝对位数不得超过全局计算精度。
+         *   `undefined` 重置为当前计算精度。绝对位数不得超过全局计算精度。
          *   - 比例模式: 如果 `acc` 是一个 (0, 1) 之间的浮点数，它将被解释为相对于 `globalCalcAccuracy` 的比例。例如，如果 `globalCalcAccuracy` 是 100，`acc` 是 0.9，则实际输出精度将是 90 位。
          *   - 绝对模式: 如果 `acc` 是一个大于等于 1 的整数，它将直接被用作输出的有效数字位数。
          *   - 重置: 如果 `acc` 为 `undefined`，输出精度将被重置为当前的 `globalCalcAccuracy` 值。
@@ -1328,12 +1312,16 @@
                     throw new Error('[CalcConfig] Input error: Accuracy must be a number.');
                 }
 
+                if (!Number.isFinite(numericAcc)) {
+                    throw new Error('[CalcConfig] Input error: Accuracy must be a finite number.');
+                }
+
                 if (numericAcc > 1 && !Number.isInteger(numericAcc)) {
                     throw new Error('[CalcConfig] Input error: Accuracy must be an integer when greater than 1.');
                 }
 
-                if (numericAcc > CalcConfig.globalCalcAccuracy || numericAcc <= 0) {
-                    throw new Error(`[CalcConfig] Range error: Accuracy must be between 0 (exclusive) and ${CalcConfig.globalCalcAccuracy} (inclusive).`);
+                if (numericAcc > CalcConfig.globalCalcAccuracy) {
+                    throw new Error(`[CalcConfig] Range error: Accuracy must be at most ${CalcConfig.globalCalcAccuracy}.`);
                 }
             }
 
