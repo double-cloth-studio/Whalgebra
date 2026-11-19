@@ -249,7 +249,7 @@
                         return input;
                     }
                     const acc = input.acc;
-                    const newInput = new ComplexNumber(input, {acc: Math.max(Math.floor(0.9 * acc), acc - 8)});
+                    const newInput = new ComplexNumber(input, {acc: Math.max(1, Math.floor(0.9 * acc), acc - 8)});
                     if (newInput.re.power >= 0 && newInput.im.isZero()) {
                         return new ComplexNumber(newInput, {acc});
                     }
@@ -5200,11 +5200,6 @@
 
                         if (pivot.isZero() || Public.zeroCorrect(MathPlus.divide(pivot, maxAbs)).isZero()) {
                             // 主元为零或在相对精度阈值内近似为零，表示矩阵奇异，方程组没有唯一解。
-                            throw new Error('[StatisticsTools] The system of equations has no unique solution.');
-                        }
-
-                        if (pivot.re.isZero()) {
-                            // 主元为零表示矩阵奇异，方程组没有唯一解。
                             throw new Error('[StatisticsTools] The system of equations has no unique solution.');
                         }
 
@@ -12967,7 +12962,7 @@
                     const screenDisplay = HtmlTools.getHtml('#screen_0_display');
 
                     const currentInputArray = HtmlTools.getClassList(inputEl, {ignoreSpace: true});
-                    if (currentInputArray[0].includes('InputTip')) {
+                    if (currentInputArray[0]?.includes('InputTip')) {
                         currentInputArray.length = 0;
                     }
                     const currentInput = HtmlTools.htmlClassToText(currentInputArray);
@@ -13163,9 +13158,12 @@
                         );
 
                         HtmlTools.getHtml('#print_content_2_error').classList.add('NoDisplay');
-                    } catch {
+                    } catch (error) {
+                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                            return;
+                        }
                         HtmlTools.getHtml('#print_content_2_error').classList.remove('NoDisplay');
-                        HtmlTools.getHtml('#print_content_2_inner').replaceChildren();
+                        this.printListRenderer.clear();
                     }
                 }
 
@@ -13362,7 +13360,10 @@
                                     break;
                             }
                         }
-                    } catch {
+                    } catch (error) {
+                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                            return;
+                        }
                         errorPrint();
                     }
                 }
@@ -13463,7 +13464,10 @@
                         );
 
                         HtmlTools.getHtml('#print_omit').classList[result.overflow ? 'remove' : 'add']('NoDisplay');
-                    } catch {
+                    } catch (error) {
+                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                            return;
+                        }
                         HtmlTools.appendDOMs(content40, ['_error_'], {mode: 'replace'});
                         HtmlTools.appendDOMs(content41, ['_error_'], {mode: 'replace'});
                         this._multipleLinesPrint(
