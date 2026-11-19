@@ -55,6 +55,13 @@
         );
 
         /**
+         * 已知 token 的配置信息。
+         *
+         * @type {Map}
+         */
+        static tokenInfoMap = new Map();
+
+        /**
          * 阻止实例化静态配置类。
          *
          * @throws {Error} 始终抛出。
@@ -97,6 +104,48 @@
                 levelTokens.forEach((token) => {
                     this.priorityMap.set(token, index);
                 });
+            });
+
+            // 为所有固定词元、空白和空串预构建冻结元信息，运行时直接 O(1) 复用。
+            const prebuiltTokens = new Set(['', ' ', ...this.allSigns, ...this.htmlClassLenOneFunc]);
+            prebuiltTokens.forEach((token) => {
+                const info = {
+                    token,
+                    class: 'illegal',
+                    isHtmlClassLenOne: this.htmlClassLenOneFunc.has(token)
+                };
+
+                // 检查 token 是否为函数或运算符
+                if (this.allFunc.has(token)) {
+                    info.class = 'func';
+                    if (this.params_1_set.has(token)) {
+                        info.parameters = 1;
+                    } else if (this.params_2_set.has(token)) {
+                        info.parameters = 2;
+                    }
+                    if (this.PlaceFrontSet.has(token)) {
+                        info.funcPlace = 'front';
+                    } else if (this.PlaceMiddleSet.has(token)) {
+                        info.funcPlace = 'middle';
+                    } else if (this.PlaceBackSet.has(token)) {
+                        info.funcPlace = 'back';
+                    }
+                    info.associativity = this.rightAssocFunc.has(token) ? 'right' : 'left';
+                    info.needKh = this.needParensFunc.has(token);
+                    info.isPrivate = this.privateFunc.has(token);
+                    info.priority = this.priorityMap.has(token) ? this.priorityMap.get(token) : Infinity;
+                } else if (this.codeNumbers.has(token) || (token.length > 0 && this.baseNumbers.has(token[0]))) {
+                    // 检查 token 是否为数字或变量 (通过常量匹配或首字母匹配)
+                    info.class = 'number';
+                    info.numClass = this.codeNumbers.has(token) ? 'codeNumbers' : 'baseNumber';
+                    info.priority = Infinity;
+                } else if (this.other.has(token)) {
+                    // 检查 token 是否为其他合法符号
+                    info.class = 'other';
+                    info.priority = Infinity;
+                }
+
+                this.tokenInfoMap.set(token, Object.freeze(info));
             });
         }
     }
@@ -191,7 +240,7 @@
             const acc = input.acc;
             const newInput = new ComplexNumber(input, {acc: Math.max(Math.floor(0.9 * acc), acc - 8)});
             if (newInput.re.power >= 0 && newInput.im.isZero()) {
-                return newInput;
+                return new ComplexNumber(newInput, {acc});
             }
             return input;
         }
@@ -248,7 +297,7 @@
                             result.push('error');
                         } else {
                             const num = new ComplexNumber(x[i]);
-                            const realAcc = getRealAcc(num.acc);
+                            const realAcc = Math.max(1, getRealAcc(num.acc));
                             result.push(Public.zeroCorrect(num).toString({
                                 acc: realAcc,
                                 printMode: printMode
@@ -259,7 +308,7 @@
                 }
                 default:
                     const num = new ComplexNumber(x);
-                    const realAcc = getRealAcc(num.acc);
+                    const realAcc = Math.max(1, getRealAcc(num.acc));
                     return Public.zeroCorrect(num).toString({
                         acc: realAcc,
                         printMode: printMode
@@ -290,7 +339,7 @@
                 return 'error';
             }
 
-            list = Public.idealizationToString(list);
+            list = Public.idealizationToString(list, {printMode: 'algebra'});
             const a = list[0];
             const b = list[1];
             let result = '';
@@ -346,7 +395,7 @@
                     if (b === '0') {
                         return a;
                     }
-                    return Public.funcToString([0, a], 'powerFunc', `exp(${Public.funcToString([0, b], 'powerFunc')})`);
+                    return Public.funcToString([0, a], 'powerFunc', `exp(${Public.funcToString([0, b], 'powerFunc', asX)})`);
 
                 // 指数模型：a·b^x。
                 case 'abxFunc':
@@ -361,10 +410,10 @@
                     } else if (a !== '1') {
                         result += a.includes('E') ? `(${a})*` : `${a}*`;
                     }
-                    if (!b.includes('E') && !b.includes('-')) {
-                        result += `${b}^${asX}`;
-                    } else {
+                    if (/[+\-E]|\[toPolar]/.test(b)) {
                         result += `(${b})^${asX}`;
+                    } else {
+                        result += `${b}^${asX}`;
                     }
                     return result;
 
@@ -470,47 +519,27 @@
                 return;
             }
 
-            const result = {token: token, class: 'illegal'};
-            result.isHtmlClassLenOne = TokenConfig.htmlClassLenOneFunc.has(token);
-            const firstChar = token.length > 0 ? token[0] : null;
-
-            if (!TokenConfig.allSigns.has(token) && !TokenConfig.baseNumbers.has(firstChar)) {
-                return result;
+            const cached = TokenConfig.tokenInfoMap.get(token);
+            if (cached !== undefined) {
+                return cached;
             }
 
-            // 检查 token 是否为函数或运算符
-            if (TokenConfig.allFunc.has(token)) {
-                result.class = 'func';
-
-                if (TokenConfig.params_1_set.has(token)) {
-                    result.parameters = 1;
-                } else if (TokenConfig.params_2_set.has(token)) {
-                    result.parameters = 2;
-                }
-
-                if (TokenConfig.PlaceFrontSet.has(token)) {
-                    result.funcPlace = 'front';
-                } else if (TokenConfig.PlaceMiddleSet.has(token)) {
-                    result.funcPlace = 'middle';
-                } else if (TokenConfig.PlaceBackSet.has(token)) {
-                    result.funcPlace = 'back';
-                }
-
-                result.associativity = TokenConfig.rightAssocFunc.has(token) ? 'right' : 'left';
-                result.needKh = TokenConfig.needParensFunc.has(token);
-                result.isPrivate = TokenConfig.privateFunc.has(token);
-            } else if (TokenConfig.codeNumbers.has(token) || TokenConfig.baseNumbers.has(firstChar)) {
-                // 检查 token 是否为数字或变量 (通过常量匹配或首字母匹配)
-                result.class = 'number';
-                result.numClass = TokenConfig.codeNumbers.has(token) ? 'codeNumbers' : 'baseNumber';
-            } else if (TokenConfig.other.has(token)) {
-                // 检查 token 是否为其他合法符号
-                result.class = 'other';
+            // 仅多位数字字符串（如 "123.45"）和未知非法词元会走到这里。
+            if (TokenConfig.baseNumbers.has(token[0])) {
+                return {
+                    token,
+                    class: 'number',
+                    numClass: 'baseNumber',
+                    isHtmlClassLenOne: false,
+                    priority: Infinity
+                };
             }
 
-            result.priority = TokenConfig.priorityMap.has(token) ? TokenConfig.priorityMap.get(token) : Infinity;
-
-            return result;
+            return {
+                token,
+                class: 'illegal',
+                isHtmlClassLenOne: false
+            };
         }
 
         /**
@@ -1324,17 +1353,22 @@
          */
         static _syncToWorker(methodName, value) {
             // Worker 内没有 window；在这里返回可防止 Worker 应用配置后再次反向同步，形成消息回环。
-            if (typeof window === 'undefined') {
+            if (typeof window === 'undefined' || typeof WorkerTools === 'undefined') {
                 return;
             }
 
-            if (typeof WorkerTools === 'undefined') {
+            // Worker 正在重启时跳过零散同步，避免产生无意义请求；重启末尾的 _restoreState() 会统一恢复最新配置。
+            if (!WorkerTools.isReady || WorkerTools.isRestarting) {
                 return;
             }
 
-            if (WorkerTools.isReady) {
-                WorkerTools[methodName](value);
-            }
+            Promise.resolve(WorkerTools[methodName](value)).catch((err) => {
+                // 同步途中被主动取消或重启打断属于预期竞态，新 Worker 会通过 _restoreState 拿到最新值。
+                if (err?.name === 'CancellationError' || err?.name === 'TerminationError') {
+                    return;
+                }
+                console.warn(`[CalcConfig] Failed to sync '${methodName}' to Worker:`, err);
+            });
         }
     }
 

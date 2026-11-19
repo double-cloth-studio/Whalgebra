@@ -132,7 +132,7 @@
       "3[x]+3f([x])"
     ],
     "expected": {
-      "error": "[MathPlus] syntax error: Insufficient parameters for function log."
+      "error": "[MathPlus] syntax error: Missing comma in binary function log."
     }
   },
   {

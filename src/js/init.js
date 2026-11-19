@@ -8,6 +8,16 @@
 document.addEventListener('click', (event) => {
     "use strict";
 
+    // 统一读取 HTML / SVG 元素的类名字符串，避免 SVGAnimatedString 引发 TypeError。
+    const getClassName = (el) => {
+        if (!el) {
+            return '';
+        }
+        return typeof el.className === 'string'
+               ? el.className
+               : (el.getAttribute('class') || '');
+    };
+
     let target = event.target;
 
     // 键帽文字由内部 p 元素承载；除主输入区外统一提升到按钮容器，保证点击图标和空白处行为一致。
@@ -15,9 +25,10 @@ document.addEventListener('click', (event) => {
         target = target.parentNode;
     }
 
-    const {id: targetID, className: targetClass} = target;
+    const targetID = target.id || '';
+    const targetClass = getClassName(target);
 
-    const firstChildClass = target.firstElementChild?.className || '';
+    const firstChildClass = getClassName(target.firstElementChild);
     const parent = target.parentNode;
     const parentID = parent?.id || '';
 
@@ -235,6 +246,10 @@ document.addEventListener('keydown', (event) => {
 
     PageControlTools.hideExplain();
 
+    if (event.ctrlKey || event.metaKey) {
+        return;
+    }
+
     switch (key) {
         case 'Backspace':
             event.preventDefault();
@@ -311,7 +326,13 @@ document.addEventListener('keydown', (event) => {
 window.addEventListener('load', () => {
     "use strict";
 
-    const getStore = (key) => localStorage.getItem(key);
+    const getStore = (key) => {
+        try {
+            return localStorage.getItem(key);
+        } catch {
+            return null;
+        }
+    };
 
     /**
      * 恢复单项本地数据，并清除无法解析的值。
@@ -327,15 +348,21 @@ window.addEventListener('load', () => {
     const recoverData = (dataName, func, defaultFunc = null) => {
         const currentData = getStore(dataName);
 
+        if (currentData === null) {
+            defaultFunc?.();
+            return;
+        }
+
         try {
-            if (currentData !== null) {
-                func(currentData);
-            } else if (defaultFunc) {
-                defaultFunc();
-            }
+            func(currentData);
         } catch (e) {
             console.warn(`[GLOBAL] LocalStorage ${dataName} corrupted, resetting.`);
-            localStorage.removeItem(dataName);
+            try {
+                localStorage.removeItem(dataName);
+            } catch {
+                // 存储不可用时忽略删除失败。
+            }
+            defaultFunc?.();
         }
     };
 
@@ -368,9 +395,13 @@ window.addEventListener('load', () => {
 
     recoverData('subModes', (data) => {
         data = JSON.parse(data);
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            throw new Error('[GLOBAL] Invalid subModes structure.');
+        }
+
         const dataLen = PageConfig.screenData['1'].length;
         // 存储的数据行可能已被最大行数限制截断，选中坐标必须随之回退到最后一行。
-        if (data['1'][0] + 1 > dataLen) {
+        if (Array.isArray(data['1']) && data['1'][0] + 1 > dataLen) {
             data['1'][0] = dataLen - 1;
         }
         PageConfig.subModes = data;

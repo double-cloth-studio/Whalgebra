@@ -1677,7 +1677,7 @@
     ],
     "expected": {
       "result": "42",
-      "expr": 42
+      "expr": "42"
     }
   },
   {

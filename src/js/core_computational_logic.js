@@ -10,6 +10,31 @@
      */
     class BigNumber {
         /**
+         * 线性缓存 `10^exp` 的最大指数上限。
+         * 512 足以覆盖全局最高计算精度（220）和 Lanczos 最高内部精度（420），
+         * 常规舍入全部 O(1) 命中，且常驻内存上限仅约 55 KB。
+         * @private
+         */
+        static _MAX_POW10_CACHE_EXP = 512;
+        /**
+         * 线性缓存表：`_pow10Cache[i] === 10n ** BigInt(i)`，长度不超过 `_MAX_POW10_CACHE_EXP + 1`。
+         * @private
+         */
+        static _pow10Cache = [1n];
+        /**
+         * 二次幂指数缓存上限：`k = 14` 对应 `10^(2^14) = 10^16384`。
+         * 15 项合计常驻内存仅约 14 KB；超过此规模的超大数在单次调用内临时计算，用完即由 GC 回收。
+         * @private
+         */
+        static _MAX_POW10_TWO_POW_K = 14;
+        /**
+         * 二次幂指数缓存表：`_pow10TwoPowCache[k] === 10n ** (2n ** BigInt(k))`。
+         * 即 `[10^1, 10^2, 10^4, 10^8, ...]`。
+         * @private
+         */
+        static _pow10TwoPowCache = [10n];
+
+        /**
          * 从数值、字符串、同类对象或内部元组创建高精度十进制数。
          *
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array|object} x - 要转换为高精度十进制数的值。
@@ -89,7 +114,11 @@
                         power: powerFromBigInt
                     } = BigNumber._roundAndNormalize(x, 0, acc);
 
-                    this.power = mantissaFromBigInt === 0n ? 0 : powerFromBigInt + pow;
+                    const finalPow = powerFromBigInt + pow;
+                    if (mantissaFromBigInt !== 0n && !Number.isSafeInteger(finalPow)) {
+                        throw new Error('[BigNumber] Input error: Power too large or too small');
+                    }
+                    this.power = mantissaFromBigInt === 0n ? 0 : finalPow;
                     this.mantissa = mantissaFromBigInt;
                     this.acc = acc;
                     return;
@@ -99,15 +128,20 @@
                     if (!Number.isFinite(x)) {
                         throw new Error('[BigNumber] Input error: Non-finite numbers (Infinity, NaN) are not supported.');
                     }
-                    if (Number.isInteger(x)) {
+                    // 仅安全整数直接走 BigInt 快速路径；超过 2^53 - 1 的浮点整数交给 toExponential() 按十进制解析。
+                    if (Number.isSafeInteger(x)) {
                         acc = acc ?? CalcConfig.globalCalcAccuracy;
                         const {
-                            mantissa: mantissaFromBigInt,
-                            power: powerFromBigInt
+                            mantissa: mantissaFromInt,
+                            power: powerFromInt
                         } = BigNumber._roundAndNormalize(x, 0, acc);
 
-                        this.power = mantissaFromBigInt === 0n ? 0 : powerFromBigInt + pow;
-                        this.mantissa = mantissaFromBigInt;
+                        const finalPow = powerFromInt + pow;
+                        if (mantissaFromInt !== 0n && !Number.isSafeInteger(finalPow)) {
+                            throw new Error('[BigNumber] Input error: Power too large or too small');
+                        }
+                        this.power = mantissaFromInt === 0n ? 0 : finalPow;
+                        this.mantissa = mantissaFromInt;
                         this.acc = acc;
                         return;
                     }
@@ -184,25 +218,20 @@
         }
 
         /**
-         * 获取 10 的指定非负整数次幂，并使用缓存避免重复计算。
-         * 该方法返回 `10 ** exp` 的 `BigInt` 结果，用于高精度整数运算中的位数判断、
-         * 舍入除数计算等场景。内部会按需扩展 `_pow10Cache`，因此多次调用相同或较小指数时
-         * 可以直接复用已有结果。
+         * 获取 10 的指定非负整数次幂。
+         * 小指数走 O(1) 缓存表，大指数直接用原生 BigInt 快速幂，避免常驻内存膨胀。
          *
          * @private
-         * @param {number} exp - 10 的指数；必须是可安全循环处理的非负整数。结果缓存按该整数键复用，
-         *   小数、负数和非有限值会在任何 BigInt 幂运算前被拒绝。
-         * @returns {bigint} `10 ** exp` 的 BigInt 结果。
-         * @throws {Error} 如果 `exp` 不是非负整数。
+         * @param {number} exp
+         * @returns {bigint}
          */
         static _pow10(exp) {
             if (!Number.isInteger(exp) || exp < 0) {
                 throw new Error('[BigNumber] Input error: exponent for pow10 must be a non-negative integer.');
             }
 
-            // 首次调用时初始化 `10^i` 缓存。
-            if (BigNumber._pow10Cache === undefined) {
-                BigNumber._pow10Cache = [1n];
+            if (exp > BigNumber._MAX_POW10_CACHE_EXP) {
+                return 10n ** BigInt(exp);
             }
 
             const cache = BigNumber._pow10Cache;
@@ -217,43 +246,68 @@
 
         /**
          * 计算一个 BigInt 的十进制位数。
-         * 该方法通过比较 `n` 与 10 的幂来确定其十进制长度：若
-         * `10^(d - 1) <= n < 10^d`，则 `d` 即为十进制位数。
-         * 内部使用指数扩张寻找上界，再通过二分查找确定精确位数。
+         * 利用 `10^(2^k)` 倍增定位上界，再按二进制位从高到低整除缩减，
+         * 无需构造任何中间的 `10^mid`，内存占用严格有界。
          *
-         * @private
-         * @param {bigint} n - 要统计的整数；符号位不计入十进制位数，`0n` 特判为一位。
-         * @returns {number} `n` 的十进制位数；对于 `0n` 返回 `1`。
+         * @param {bigint} n
+         * @returns {number}
          */
-        static _decimalLengthBigInt(n) {
+        static decimalLengthBigInt(n) {
             if (n < 0n) {
                 n = -n;
             }
-
             if (n < 10n) {
                 return 1;
             }
 
-            let lo = 1;
-            let hi = 2;
+            const cache = BigNumber._pow10TwoPowCache;
+            const maxK = BigNumber._MAX_POW10_TWO_POW_K;
 
-            while (n >= BigNumber._pow10(hi)) {
-                lo = hi + 1;
-                hi *= 2;
+            // 超过常驻上限时，把临时平方结果放进局部变量，函数返回后立即释放。
+            let extraPows = null;
+            const getPow = (k) => {
+                if (k < cache.length) {
+                    return cache[k];
+                }
+                return extraPows[k - maxK - 1];
+            };
+
+            // 1. 倍增找到最小 k，使 n < 10^(2^k)
+            let k = 0;
+            while (true) {
+                let p;
+                if (k < cache.length) {
+                    p = cache[k];
+                } else if (k <= maxK) {
+                    const prev = cache[k - 1];
+                    p = prev * prev;
+                    cache.push(p);
+                } else {
+                    if (extraPows === null) {
+                        extraPows = [];
+                    }
+                    const prev = getPow(k - 1);
+                    p = prev * prev;
+                    extraPows.push(p);
+                }
+
+                if (n < p) {
+                    break;
+                }
+                k++;
             }
 
-            // 二分查找满足 n < 10^d 的最小 d。
-            while (lo < hi) {
-                const mid = Math.floor((lo + hi) / 2);
-
-                if (n < BigNumber._pow10(mid)) {
-                    hi = mid;
-                } else {
-                    lo = mid + 1;
+            // 2. 从高位向低位逐次折半逼近精确位数
+            let len = 1;
+            for (let j = k - 1; j >= 0; j--) {
+                const p = getPow(j);
+                if (n >= p) {
+                    n /= p;
+                    len += 2 ** j;
                 }
             }
 
-            return lo;
+            return len;
         }
 
         /**
@@ -303,7 +357,7 @@
             const threshold = BigNumber._pow10(acc);
 
             if (absMantissa > threshold) {
-                const mantissaLength = BigNumber._decimalLengthBigInt(absMantissa);
+                const mantissaLength = BigNumber.decimalLengthBigInt(absMantissa);
                 const digitsToShift = mantissaLength - acc;
 
                 if (digitsToShift > 0) {
@@ -538,11 +592,11 @@
 
                     const midString = mantissaStr.slice(1);
                     const midLength = midString.length;
-                    const scientificPower = BigInt(midLength === 0 ? finalPower : (finalPower + midLength)).toString();
+                    const scientificPower = BigInt(midLength === 0 ? finalPower : (finalPower + midLength));
                     if (midLength === 0) {
-                        resultString = `${mantissaStr}${scientificPower < 0 ? 'E' : 'E+'}${scientificPower}`;
+                        resultString = `${mantissaStr}${scientificPower < 0n ? 'E' : 'E+'}${scientificPower.toString()}`;
                     } else {
-                        resultString = `${mantissaStr[0]}.${midString}${scientificPower < 0 ? 'E' : 'E+'}${scientificPower}`;
+                        resultString = `${mantissaStr[0]}.${midString}${scientificPower < 0n ? 'E' : 'E+'}${scientificPower.toString()}`;
                     }
 
                     if (isNegative) {
@@ -560,6 +614,20 @@
      * @class ComplexNumber
      */
     class ComplexNumber {
+        /**
+         * 预编译的复数完整语法正则：
+         * - 允许空白出现在首尾、项间 +/- 两侧及 * 两侧，禁止出现在数字内部；
+         * - 虚部支持 NUM[*]?i、i[*]?NUM、单独 i，杜绝 NUM i NUM 拼接；
+         * - 存在第二项时，中间必须有显式的 + 或 - 分隔。
+         * @private
+         */
+        static _COMPLEX_REGEX = (() => {
+            const NUM = '(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
+            const IMAG = `(?:(?:${NUM})(?:\\s*\\*\\s*)?i|i(?:\\s*\\*\\s*)?(?:${NUM})|i)`;
+            const TERM = `(?:${IMAG}|${NUM})`;
+            return new RegExp(`^\\s*([+-]?)\\s*(${TERM})(?:\\s*([+-])\\s*(${TERM}))?\\s*$`);
+        })();
+
         /**
          * 从代数字符串、实数、同类对象或内部数组创建复数。
          *
@@ -583,8 +651,8 @@
                         throw new Error('[ComplexNumber] Input error: Array length must be 2 or 3.');
                     }
                     if (len === 2) {
-                        let r = new BigNumber(x[0], {acc: acc});
-                        let i = new BigNumber(x[1], {acc: acc});
+                        let r = new BigNumber(x[0], {acc: acc, pow: pow});
+                        let i = new BigNumber(x[1], {acc: acc, pow: pow});
 
                         const finalAcc = Math.min(r.acc, i.acc);
 
@@ -674,68 +742,43 @@
          * @throws {Error} 如果输入字符串的格式无效或不明确。
          */
         static _parseComplex(complexString) {
-            // 预处理和规范化输入字符串：
-            //   - 移除所有空白字符和下划线
-            //   - 将所有虚数单位 (I, j, J) 统一转换为小写的 'i'
-            let sanitizedStr = complexString.replace(/[\s_]/g, '').replace(/[JjI]/g, 'i').replace(/\[i]/g, 'i');
+            // 仅统一虚数单位并移除数字间的千分位下划线，不盲目删空白、不做字符置换。
+            const normalized = complexString
+                .replace(/[JjI]/g, 'i')
+                .replace(/\[i]/g, 'i')
+                .replace(/(?<=\d)_(?=\d)/g, '');
 
-            // 标准化虚部格式，处理数字在 'i' 之后的情况：
-            //   例如，将 "i*2.5" 或 "i2.5" 转换为标准的 "2.5i"。
-            //   这使得后续的正则表达式可以基于 'i' 在末尾的假设进行匹配。
-            const numPatternForSwap = /i[*]?((?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g;
-            sanitizedStr = sanitizedStr.replace(numPatternForSwap, '$1i');
-
-            if (sanitizedStr === '') {
+            const match = normalized.match(ComplexNumber._COMPLEX_REGEX);
+            if (!match) {
                 throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
             }
 
-            // 使用正则表达式匹配所有可能的实部和虚部项。
-            // 这个正则表达式由两部分组成，用 OR (|) 连接：
-            //   1. `([+-]?(...)?i)`: 匹配一个完整的虚部项。它能捕获可选的符号、可选的数字（包括科学记数法）、可选的乘号 '*'，并以 'i' 结尾。
-            //   2. `([+-]?(...))`: 匹配一个完整的实部项（一个数字，包括科学记数法）。
-            const termRegex = /([+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[*]?i)|([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g;
-            const allMatches = [...sanitizedStr.matchAll(termRegex)];
-            /** 保留非空的正则匹配项。 */
-            const validTerms = allMatches.filter((match) => match[0] !== '');
+            const [, sign1, term1, sign2, term2] = match;
+            const terms = term2 !== undefined
+                          ? [[sign1, term1], [sign2, term2]]
+                          : [[sign1, term1]];
 
-            // 验证匹配结果的完整性和合法性：
-            //   检查所有匹配到的项的长度之和是否等于净化后字符串的总长度。
-            //   如果不相等，说明字符串中包含无法识别的字符（如 "3+4i+j"）。
-            const totalMatchedLength = validTerms.reduce((acc, term) => acc + term[0].length, 0);
-            if (totalMatchedLength !== sanitizedStr.length) {
-                throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
-            }
-            if (validTerms.length === 0 || validTerms.length > 2) {
-                throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
-            }
-
-            // 分离并存储实部和虚部。
             let realPart = '0', hasReal = false;
             let imagPart = '0', hasImag = false;
 
-            for (const match of validTerms) {
-                const term = match[0];
-                if (term.endsWith('i')) {
+            for (const [sign, rawTerm] of terms) {
+                const prefix = sign === '-' ? '-' : '';
+                if (rawTerm.includes('i')) {
                     if (hasImag) {
                         throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
                     }
                     hasImag = true;
-                    if (term === 'i' || term === '+i') {
-                        imagPart = '1';
-                    } else if (term === '-i') {
-                        imagPart = '-1';
-                    } else {
-                        // 移除末尾的 'i' 和可能存在的 '*'，得到虚部的数值字符串。
-                        imagPart = term.slice(0, -1).replace(/\*/g, '');
-                    }
+                    const mag = rawTerm === 'i' ? '1' : rawTerm.replace(/[i*\s]/g, '');
+                    imagPart = prefix + mag;
                 } else {
                     if (hasReal) {
                         throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
                     }
                     hasReal = true;
-                    realPart = term;
+                    realPart = prefix + rawTerm;
                 }
             }
+
             return {re: realPart, im: imagPart};
         }
 
@@ -779,32 +822,25 @@
             switch (printMode) {
                 case 'algebra': {
                     const reStr = this.re.toString({acc: acc, mode: mode});
-                    let imStr = this.im.toString({acc: acc, mode: mode});
-                    if (imStr.includes('E')) {
-                        imStr += '*';
-                    }
+                    const rawImStr = this.im.toString({acc: acc, mode: mode});
+                    const isOne = ['1', '1E+0'].includes(rawImStr);
+                    const isNegOne = ['-1', '-1E+0'].includes(rawImStr);
+                    const imStr = rawImStr.includes('E') ? `${rawImStr}*` : rawImStr;
 
-                    // 纯虚数
                     if (['0', '0E+0'].includes(reStr)) {
-                        if (['1', '1E+0'].includes(imStr)) {
+                        if (isOne) {
                             return '[i]';
                         }
-                        if (['-1', '-1E+0'].includes(imStr)) {
+                        if (isNegOne) {
                             return '-[i]';
                         }
-                        return imStr + '[i]';
+                        return `${imStr}[i]`;
                     }
 
                     if (this.im.isNegative()) {
-                        if (['-1', '-1E+0'].includes(imStr)) {
-                            return `${reStr}-[i]`;
-                        }
-                        return `${reStr}${imStr}[i]`;
+                        return isNegOne ? `${reStr}-[i]` : `${reStr}${imStr}[i]`;
                     } else {
-                        if (['1', '1E+0'].includes(imStr)) {
-                            return `${reStr}+[i]`;
-                        }
-                        return `${reStr}+${imStr}[i]`;
+                        return isOne ? `${reStr}+[i]` : `${reStr}+${imStr}[i]`;
                     }
                 }
 
@@ -1060,8 +1096,15 @@
                 // 纯实数直接在 BigNumber 的尾数上运算；复数分支则分别合并实部和虚部。
                 const reA = inputA.re;
                 const reB = inputB.re;
-
                 const resultAcc = Math.min(reA.acc, reB.acc);
+
+                if (reA.isZero()) {
+                    return new ComplexNumber(inputB, {acc: resultAcc});
+                }
+                if (reB.isZero()) {
+                    return new ComplexNumber(inputA, {acc: resultAcc});
+                }
+
                 let mantissaA = reA.mantissa;
                 let mantissaB = reB.mantissa;
                 const powerDifference = reB.power - reA.power;
@@ -1176,8 +1219,12 @@
 
                 const resultAcc = Math.min(reA.acc, reB.acc);
 
-                const lenA = (reA.isNegative() ? -reA.mantissa : reA.mantissa).toString().length;
-                const lenB = (reB.isNegative() ? -reB.mantissa : reB.mantissa).toString().length;
+                const lenA = BigNumber.decimalLengthBigInt(
+                    (reA.isNegative() ? -reA.mantissa : reA.mantissa)
+                );
+                const lenB = BigNumber.decimalLengthBigInt(
+                    (reB.isNegative() ? -reB.mantissa : reB.mantissa)
+                );
 
                 // BigInt 除法会截断，因此先按目标精度、尾数位数差和保护位放大被除数。
                 const scalingDigits = resultAcc + lenB - lenA + 4;
@@ -1256,12 +1303,14 @@
                     modResult = leftMod % calcB;
                 } else if (powOfB > CalcConfig.MAX_INPUT_EXPONENT) {
                     if (reA.acc < CalcConfig.MAX_INPUT_EXPONENT) {
-                        modResult = calcA;
-
-                        // 此处可能存在性能问题，因此需要判断是否会在后续触发 calcB 参与修正计算
-                        if (isNegativeA !== isNegativeB) {
-                            calcB = calcB * (10n ** BigInt(powOfB));
+                        // 此时必然满足 |a| < |b|，直接按定义提前返回，避免构造巨型 BigInt
+                        if (reA.isZero()) {
+                            return new ComplexNumber([0, 0n, resultAcc]);
                         }
+                        if (isNegativeA !== isNegativeB) {
+                            return MathPlus.plus(inputA, inputB);
+                        }
+                        return new ComplexNumber(inputA, {acc: resultAcc});
                     } else {
                         calcB = calcB * (10n ** BigInt(powOfB));
                         modResult = calcA % calcB;
@@ -1364,18 +1413,18 @@
              * 目的：计算超大结果时，只保留需要的有效位数以避免内存溢出。
              * @param {bigint} base - 底数
              * @param {bigint} exponent - 指数
+             * @param {number} acc - 精度
              * @returns {ComplexNumber} 结果 (ComplexNumber 实例)
              */
-            function fastPow(base, exponent) {
-                const currentAcc = CalcConfig.globalCalcAccuracy;
+            function fastPow(base, exponent, acc) {
                 if (exponent === 0n) {
-                    return new ComplexNumber([0, 1n, CalcConfig.globalCalcAccuracy]);
+                    return new ComplexNumber([0, 1n, acc]);
                 }
 
-                // 连续平方会累积舍入误差，额外 10 位仅作为中间保护位，最终结果仍按调用精度截断。
-                let b = new ComplexNumber(base, {acc: currentAcc + 10});
-                const acc = b.acc;
-                let result = new ComplexNumber([0, 1n, acc]);
+                // 连续平方会累积舍入误差，额外 10 位仅作为中间保护位
+                let b = new ComplexNumber(base, {acc: acc + 10});
+                const innerAcc = b.acc;
+                let result = new ComplexNumber([0, 1n, innerAcc]);
 
                 // 二进制平方-乘：指数每次减半，只在当前二进制位为 1 时乘入结果。
                 while (exponent > 0n) {
@@ -1397,14 +1446,15 @@
             const inputB = new ComplexNumber(b);
             const resultAcc = Math.min(inputA.acc, inputB.acc);
 
-            if (
-                !inputB.onlyReal &&
-                inputA.onlyReal &&
-                /** 判断实部是否等于常量 e。 */
-                inputA.re.valueOf().every((val, index) => val === CalcConfig.constants.e[index])
-            ) {
-                // e 的复数幂由 exp 专用实现计算，避免经通用 ln/pow 路径损失精度。
-                return MathPlus.exp(inputB);
+            if (!inputB.onlyReal && inputA.onlyReal) {
+                const instanceE = new BigNumber(CalcConfig.constants.e, {acc: inputA.re.acc});
+                if (
+                    inputA.re.power === instanceE.power &&
+                    inputA.re.mantissa === instanceE.mantissa
+                ) {
+                    // e 的复数幂由 exp 专用实现计算，避免经通用 ln/pow 路径损失精度。
+                    return MathPlus.exp(inputB);
+                }
             }
 
             if (inputA.onlyReal && inputB.onlyReal) {
@@ -1440,22 +1490,43 @@
                     }
 
                     const realMantissa = absB.mantissa * (10n ** BigInt(absB.power));
-
                     const orderOfMagnitude = estimateDigitCount(reA.mantissa, realMantissa);
-                    if (orderOfMagnitude >= Number.MAX_SAFE_INTEGER) {
+                    const resultPower = BigInt(reA.power) * realMantissa;
+
+                    // 估算 |a|^|b| 的总数量级（同时计入尾数位数与底数指数的贡献）
+                    const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+                    const minSafe = BigInt(Number.MIN_SAFE_INTEGER);
+
+                    const isOverflow =
+                        resultPower > maxSafe ||
+                        orderOfMagnitude >= Number.MAX_SAFE_INTEGER ||
+                        (resultPower >= minSafe && orderOfMagnitude + Number(resultPower) >= Number.MAX_SAFE_INTEGER);
+
+                    const isUnderflow =
+                        resultPower < minSafe ||
+                        (resultPower <= maxSafe && orderOfMagnitude + Number(resultPower) <= Number.MIN_SAFE_INTEGER);
+
+                    if (isOverflow) {
                         if (isExponentNegative) {
-                            return new ComplexNumber([0, 0n, resultAcc]);
+                            return new ComplexNumber([0, 0n, resultAcc]); // 1 / 极大数 -> 0
                         }
                         throw new Error('[MathPlus] mathematical error: Result of power is too large to compute safely.');
+                    }
+
+                    if (isUnderflow) {
+                        if (isExponentNegative) {
+                            throw new Error('[MathPlus] mathematical error: Result of power is too large to compute safely.'); // 1 / 极小数 -> 溢出
+                        }
+                        return new ComplexNumber([0, 0n, resultAcc]);
                     }
 
                     let resultMantissa;
                     if (orderOfMagnitude < CalcConfig.CRITICAL_MAGNITUDE_FAST_EXP) {
                         resultMantissa = reA.mantissa ** realMantissa;
                     } else {
-                        resultMantissa = fastPow(reA.mantissa, realMantissa);
+                        resultMantissa = fastPow(reA.mantissa, realMantissa, resultAcc);
                     }
-                    const resultPower = BigInt(reA.power) * realMantissa;
+
                     let result = new ComplexNumber(resultMantissa, {
                         pow: Number(resultPower),
                         acc: resultAcc
@@ -1609,7 +1680,7 @@
                 const lowAccuracyRe = new BigNumber(absInput, {acc: 15});
                 const numberRe = Number(lowAccuracyRe.mantissa) * (10 ** lowAccuracyRe.power);
 
-                if (!Number.isFinite(numberRe)) {
+                if (!Number.isFinite(numberRe) || numberRe === 0) {
                     useAlternative = true;
                 }
 
@@ -1634,7 +1705,7 @@
                         i++;
                     } while (difference.power > minPower && !difference.isZero() && i < max);
 
-                    if (i === max) {
+                    if (i >= max) {
                         console.warn(`[MathPlus] Square root (${x.toString()}) calculation takes too long.`);
                         useAlternative = true;
                     }
@@ -1681,7 +1752,7 @@
                 const lowAccuracyRe = new BigNumber(re, {acc: 15});
                 const numberRe = Number(lowAccuracyRe.mantissa) * (10 ** lowAccuracyRe.power);
 
-                if (!Number.isFinite(numberRe)) {
+                if (!Number.isFinite(numberRe) || numberRe === 0) {
                     useAlternative = true;
                 }
 
@@ -1711,7 +1782,7 @@
                         i++;
                     } while (difference.power > minPower && !difference.isZero() && i < max);
 
-                    if (i === max) {
+                    if (i >= max) {
                         console.warn(`[MathPlus] Cube root (${x.toString()}) calculation takes too long.`);
                         useAlternative = true;
                     }
@@ -1799,7 +1870,7 @@
                     );
                 }
 
-                if (i === max) {
+                if (i >= max) {
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: exp. Input: ${input.toString()}`);
                 }
 
@@ -1846,7 +1917,7 @@
                 // 先用 10 和 1.2 缩放到 0.9～1.1，再计算 y=(x-1)/(x+1)。
                 // ln(x) = 2·(y + y³/3 + y⁵/5 + ...)，最后补回缩放产生的 ln(10) 与 ln(1.2)。
                 // 将 x 标准化到 (0, 1] 范围内
-                const mantissaLen = re.mantissa.toString().length;
+                const mantissaLen = BigNumber.decimalLengthBigInt(re.mantissa);
                 const mantissaChangedBy10 = mantissaLen + re.power;
                 let mid = new ComplexNumber([re.power - mantissaChangedBy10, re.mantissa, acc]);
 
@@ -1888,7 +1959,7 @@
                     );
                 }
 
-                if (i === max) {
+                if (i >= max) {
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: ln. Input: ${input.toString()}`);
                 }
 
@@ -1979,8 +2050,8 @@
                     result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
                 }
 
-                if (i === max) {
-                    throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: cos. Input: ${input.toString()}`);
+                if (i >= max) {
+                    throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: sin. Input: ${input.toString()}`);
                 }
 
                 // 反复应用三倍角公式 sin(3x) = 3sin(x) - 4sin³(x) 来还原结果
@@ -2116,7 +2187,7 @@
                     );
                 }
 
-                if (i === max) {
+                if (i >= max) {
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: cos. Input: ${input.toString()}`);
                 }
 
@@ -2240,7 +2311,7 @@
                         2 * i + 3
                     ).re;
                 }
-                if (i === max) {
+                if (i >= max) {
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: arctan. Input: ${input.toString()}`);
                 }
 
@@ -2731,23 +2802,6 @@
          */
         static calc(expr, {unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy} = {}) {
             /**
-             * (内部辅助函数) 检查一个字符串数组中是否至少有一个元素包含指定的子字符串。
-             *
-             * @private
-             * @param {string[]} list - 要检查的字符串数组。
-             * @param {string} str - 要搜索的子字符串。
-             * @returns {boolean} 如果找到任何包含该子字符串的元素，则返回 true；否则返回 false。
-             */
-            function listIncludesStr(list, str) {
-                for (let i = 0; i < list.length; i++) {
-                    if (list[i].includes(str)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            /**
              * (内部辅助函数) 将一个词法单元（token）转换为其内部表示或可执行的等价物。
              * 这是连接词法分析和计算执行的关键步骤。它将运算符、函数名、常量和变量等字符串
              * 映射到实际的 MathPlus 方法名、预计算的常量值或变量的当前值。
@@ -2816,13 +2870,19 @@
              * 它是逆波兰表示法 (RPN) 的核心执行引擎。
              *
              * @private
-             * @param {string} token - 要执行的运算符或函数词法单元，例如 "+", "sin", "N"。
+             * @param {string} rawToken - 要执行的运算符或函数词法原始单元，例如 "+", "sin", "N"。
              * @returns {void} 此函数不返回值，它通过修改 `valueStack` 来产生副作用。
              * @throws {Error} 如果 `valueStack` 中的操作数不足以满足 `token` 所需的参数数量。
              * @throws {Error} 如果尝试调用一个未定义的自定义函数 'f' 或 'g'。
              */
-            function evaluationRPN(token) {
+            function evaluationRPN(rawToken) {
+                const hasCommaMark = rawToken.endsWith('~');
+                const token = hasCommaMark ? rawToken.slice(0, -1) : rawToken;
                 let tokenInfo = Public.getTokenInfo(token);
+
+                if (tokenInfo.funcPlace === 'front' && tokenInfo.parameters === 2 && !hasCommaMark) {
+                    throw new Error(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
+                }
 
                 // --- 处理一元运算符（前缀或后缀） ---
                 if (tokenInfo.parameters === 1) {
@@ -2869,7 +2929,8 @@
             // 初始验证和准备
             const inputType = Public.typeOf(expr);
             if (['number', 'bigint', 'complexnumber', 'bignumber'].includes(inputType)) {
-                return [new ComplexNumber(expr), expr];
+                const val = new ComplexNumber(expr, {acc: acc});
+                return [val, val.toString()];
             }
             if (inputType !== 'string') {
                 throw new Error('[MathPlus] Disallowed input type.');
@@ -2896,6 +2957,8 @@
             let lastTokenInfo = {};
             // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 为内层循环的括号记录。
             let kh = 0, minKh = 0, addKh = 0;
+            let tempBracketIdx = -1; // 记录临时 隐式乘法前括号 应该插在哪个索引后面，-1 表示当前没有
+            const openAfter1 = [];   // 延迟插入 '(' 的计数表
             const orderOfTimes = Public.getTokenInfo('*').priority;
             const orderOfInvisibleTimes = Public.getTokenInfo('&').priority;
             const absKhStack = []; // 栈用于跟踪绝对值符号的嵌套层级。
@@ -2977,7 +3040,10 @@
                     )
                 ) {
                     // 缺少左操作数的 `-` 转为内部一元负号 `N`；一元 `+` 可直接忽略。
-                    currentPush = currentPush === '-' ? 'N' : '';
+                    if (currentPush === '+') {
+                        continue;
+                    }
+                    currentPush = 'N';
                 }
 
                 // --- 处理绝对值 ---
@@ -3015,7 +3081,7 @@
                 // 为了消除歧义。例如，`1/2x` 应该是 `1/(2&x)`。
                 if (
                     (output[output.length - 1] === '&' || (output[output.length - 1] === 'A' && output[output.length - 2] === '&')) &&
-                    !output.includes('[')
+                    tempBracketIdx === -1
                 ) {
                     addKh = 0;
                     for (let j = output.length - (output[output.length - 1] === '&' ? 2 : 3); j >= 0; j--) {
@@ -3034,7 +3100,7 @@
                             addKh === 0
                         ) {
                             if (tokenInfoJ.priority <= orderOfTimes && currentTokenJ !== '*') {
-                                output.splice(j + 1, 0, '[');
+                                tempBracketIdx = j;
                             }
                             break;
                         }
@@ -3043,7 +3109,7 @@
                 }
 
                 if ( // 解决为隐式乘法添加的另一半括号
-                    output.includes('[') && (
+                    tempBracketIdx !== -1 && (
                         (
                             tokenInfo.class === 'func' &&
                             tokenInfo.priority > orderOfInvisibleTimes &&
@@ -3053,20 +3119,17 @@
                         i + 1 === input.length
                     )
                 ) {
-                    if (tokenInfo.priority >= orderOfTimes) {
-                        // 目前 token 优先级低于显式乘法，需要添加括号
-                        /** 将临时左括号标记转换为普通左括号。 */
-                        output = output.map((item) => item === '[' ? '(' : item);
+                    if (tokenInfo.priority >= orderOfTimes || i + 1 === input.length) {
+                        // 目前 token 优先级低于显式乘法，或已到达表达式末尾，需要补全括号
+                        openAfter1[tempBracketIdx] = (openAfter1[tempBracketIdx] || 0) + 1;
                         if (i + 1 === input.length) {
                             output.push(currentPush);
                             currentPush = ')';
                         } else {
                             output.push(')');
                         }
-                    } else {
-                        /** 移除无需保留的临时左括号标记。 */
-                        output = output.filter((item) => item !== '[');
                     }
+                    tempBracketIdx = -1;
                 }
 
                 if (i + 1 !== input.length) {
@@ -3077,21 +3140,34 @@
                 output.push(currentPush);
             }
 
-            // 添加缺失的左括号
-            while (minKh < 0) {
-                output = ['(', ...output];
-                minKh += 1;
-                kh += 1;
+            // 1) 一次性展开第一轮延迟插入的 '('
+            if (openAfter1.length > 0) {
+                const expanded = [];
+                for (let i = 0; i < output.length; i++) {
+                    expanded.push(output[i]);
+                    for (let k = 0; k < (openAfter1[i] || 0); k++) {
+                        expanded.push('(');
+                    }
+                }
+                output = expanded;
             }
-            // 关闭任何未闭合的绝对值符号 以及 绝对值内部未闭合的括号。
+
+            // 2) 一次性补齐缺失的左括号（替代 while 里的 ['(', ...output]）
+            if (minKh < 0) {
+                output = Array(-minKh).fill('(').concat(output);
+                kh -= minKh;
+            }
+
+            // 3) 闭合绝对值时用 push 替代 [...output, '|', ')']
             for (let i = absKhStack.length - 1; i >= 0; i--) {
                 for (let j = 0; j < absKhStack[i]; j++) {
                     output.push(')');
                 }
-                output = [...output, '|', ')'];
+                output.push('|', ')');
                 kh -= absKhStack[i] + 1;
             }
-            // 关闭剩余未闭合的常规括号。
+
+            // 4) 关闭剩余未闭合的常规括号。
             while (kh > 0) {
                 output.push(')');
                 kh -= 1;
@@ -3110,6 +3186,50 @@
             let absAdd = false; // 跳过绝对值标记。
             const orderOfSin = Public.getTokenInfo('sin').priority;
             const orderOfPow = Public.getTokenInfo('^').priority;
+            const openAfter2 = [];
+            const markerMap = new Map(); // key: '#0#' / ':1@' 等, value: 索引数组(升序)
+
+            const addMarker = (key, idx) => {
+                let arr = markerMap.get(key);
+                if (!arr) {
+                    arr = [];
+                    markerMap.set(key, arr);
+                }
+                arr.push(idx);
+            };
+            const hasMarker = (key) => {
+                const arr = markerMap.get(key);
+                return arr !== undefined && arr.length > 0;
+            };
+            const takeMarker = (key) => {
+                const arr = markerMap.get(key);
+                if (!arr || arr.length === 0) {
+                    return [];
+                }
+                markerMap.delete(key);
+                return arr;
+            };
+            const moveMarker = (fromKey, toKey) => {
+                const arr = takeMarker(fromKey);
+                for (let i = 0; i < arr.length; i++) {
+                    addMarker(toKey, arr[i]);
+                }
+            };
+            // 弹出同层级最新的 ':' 标记（对应去掉最后一个 '^' 的标记）
+            const popLastPowMarker = (level) => {
+                const arr1 = markerMap.get(`:${level}#`);
+                const arr2 = markerMap.get(`:${level}@`);
+                const last1 = arr1?.length ? arr1[arr1.length - 1] : -1;
+                const last2 = arr2?.length ? arr2[arr2.length - 1] : -1;
+                if (last1 === -1 && last2 === -1) {
+                    return;
+                }
+                if (last1 > last2) {
+                    arr1.pop();
+                } else {
+                    arr2.pop();
+                }
+            };
 
             for (let i = 0; i < input.length; i++) {
                 const currentToken = input[i];
@@ -3128,86 +3248,58 @@
                 const tokenCheck = [',', ')'].includes(currentToken);
 
                 if (
-                    (
-                        ((funcCheck && tokenInfo.priority > orderOfSin) || tokenCheck) && // for 'func_01_1'
-                        listIncludesStr(output, '#' + kh + '@') // 含有二级条件
-                    ) ||
-                    (
-                        ((funcCheck && tokenInfo.priority > orderOfPow) || tokenCheck) && // for '^'
-                        listIncludesStr(output, ':' + kh + '@') // 含有二级条件
-                    )
-                ) { // 进入此条件一定会添加括号
-                    if (listIncludesStr(output, ':' + kh + '@')) {
-                        // 去除最后一个为 '^' 准备的标记，因为 2^3^4 -> 2^(3^4) 而不是 2^(3^(4))
-                        const pattern = new RegExp(`:${kh}[@#]`);
-                        for (let j = output.length - 1; j > -1; j--) {
-                            if (pattern.test(output[j])) {
-                                output[j] = output[j].replace(pattern, '');
-                                break;
-                            }
-                        }
+                    (((funcCheck && tokenInfo.priority > orderOfSin) || tokenCheck) && hasMarker(`#${kh}@`) /* 含有二级条件 */) || // for 'func_01_1'
+                    (((funcCheck && tokenInfo.priority > orderOfPow) || tokenCheck) && hasMarker(`:${kh}@`) /* 含有二级条件 */) // for '^'
+                ) {
+                    if (hasMarker(`:${kh}@`)) {
+                        popLastPowMarker(kh);
                     }
-                    // 替换每个标记并添加括号。
-                    const pattern = new RegExp(`[#:]${kh}[@#]`);
-                    for (let j = 0; j < output.length; j++) {
-                        if (pattern.test(output[j])) {
-                            output[j] = output[j].replace(pattern, '');
-                            output.splice(j + 1, 0, '(');
-                            output.push(')');
-                        }
+                    const indices = [
+                        ...takeMarker(`#${kh}#`),
+                        ...takeMarker(`#${kh}@`),
+                        ...takeMarker(`:${kh}#`),
+                        ...takeMarker(`:${kh}@`)
+                    ];
+                    for (let j = 0; j < indices.length; j++) {
+                        const idx = indices[j];
+                        openAfter2[idx] = (openAfter2[idx] || 0) + 1;
+                        output.push(')');
                     }
                 }
 
-                if (
-                    (funcCheck || tokenCheck) &&
-                    (listIncludesStr(output, '#' + kh + '#') || listIncludesStr(output, ':' + kh + '#'))
-                ) {
-                    // 进入此条件不一定会添加括号
+                if ((funcCheck || tokenCheck) && (hasMarker(`#${kh}#`) || hasMarker(`:${kh}#`))) {
                     // for 'func_01_1'
-                    if (listIncludesStr(output, '#' + kh + '#')) {
+                    if (hasMarker(`#${kh}#`)) {
                         if (tokenInfo.priority > orderOfSin) {
-                            // 该 token 作用域到此结束，添加括号。
-                            for (let j = 0; j < output.length; j++) {
-                                if (output[j].includes('#' + kh + '#')) {
-                                    // 判断原始表达式是否自带括号。
-                                    const needKh = !(output[j + 1] === '(' && output[output.length - 1] === ')');
-                                    output[j] = output[j].replace('#' + kh + '#', '');
-                                    if (needKh) {
-                                        output.splice(j + 1, 0, '(');
-                                        output.push(')');
-                                    }
+                            const indices = takeMarker(`#${kh}#`);
+                            for (let j = 0; j < indices.length; j++) {
+                                const idx = indices[j];
+                                const needKh = !(output[idx + 1] === '(' && output[output.length - 1] === ')');
+                                if (needKh) {
+                                    openAfter2[idx] = (openAfter2[idx] || 0) + 1;
+                                    output.push(')');
                                 }
                             }
                         } else if (tokenInfo.priority < orderOfSin) {
-                            // 该 token 作用域未结束，转换为二级条件。
-                            for (let j = 0; j < output.length; j++) {
-                                output[j] = output[j].replace('#' + kh + '#', '#' + kh + '@');
-                            }
+                            moveMarker(`#${kh}#`, `#${kh}@`);
                         }
                     }
 
                     // for '^'，除特殊标注外逻辑同理 for 'func_01_1'
-                    if (listIncludesStr(output, ':' + kh + '#')) {
+                    if (hasMarker(`:${kh}#`)) {
                         if (tokenInfo.priority > orderOfPow) {
-                            // 可能出现两级条件混杂情况。
-                            const pattern = new RegExp(`:${kh}[@#]`);
-                            // 最后一个 '^' 不用添加括号。
-                            let theLast = true;
-                            for (let j = output.length - 1; j > -1; j--) {
-                                if (pattern.test(output[j])) {
-                                    const needKh = !(output[j + 1] === '(' && output[output.length - 1] === ')');
-                                    output[j] = output[j].replace(pattern, '');
-                                    if (needKh && !theLast) { // 最后一个 '^' 不用添加括号。
-                                        output.splice(j + 1, 0, '(');
-                                        output.push(')');
-                                    }
-                                    theLast = false;
+                            popLastPowMarker(kh); // 跳过最后一个 '^'
+                            const indices = [...takeMarker(`:${kh}#`), ...takeMarker(`:${kh}@`)];
+                            for (let j = 0; j < indices.length; j++) {
+                                const idx = indices[j];
+                                const needKh = !(output[idx + 1] === '(' && output[output.length - 1] === ')');
+                                if (needKh) {
+                                    openAfter2[idx] = (openAfter2[idx] || 0) + 1;
+                                    output.push(')');
                                 }
                             }
                         } else if (tokenInfo.priority < orderOfPow) {
-                            for (let j = 0; j < output.length; j++) {
-                                output[j] = output[j].replace(':' + kh + '#', ':' + kh + '@');
-                            }
+                            moveMarker(`:${kh}#`, `:${kh}@`);
                         }
                     }
                 }
@@ -3219,7 +3311,8 @@
 
                 // 为需要添加括号的运算符添加标记
                 if (lastTokenInfo.needKh) {
-                    output[output.length - 1] += (lastTokenInfo.token === '^' ? ':' : '#') + (currentToken === '(' ? kh - 1 : kh) + '#';
+                    const markKey = (lastTokenInfo.token === '^' ? ':' : '#') + (currentToken === '(' ? kh - 1 : kh) + '#';
+                    addMarker(markKey, output.length - 1);
                 }
 
                 if (absAdd) { // 跳过的绝对值标记。
@@ -3231,31 +3324,40 @@
                 output.push(currentToken);
             }
 
-            let theLast = true;
-            const powPattern = /:\d+[@#]/;
-            const patternNotSure = /[#:]\d+#/; // 不一定需要添加括号
-            const patternSure = /[#:]\d+@/; // 一定需要添加括号
+            // 收集所有未结算的标记，按索引从大到小处理
+            const remaining = [];
+            for (const [key, indices] of markerMap.entries()) {
+                const isPow = key[0] === ':';
+                const isSure = key[key.length - 1] === '@';
+                for (let i = 0; i < indices.length; i++) {
+                    remaining.push({idx: indices[i], isPow, isSure});
+                }
+            }
+            remaining.sort((a, b) => b.idx - a.idx);
 
-            for (let i = output.length - 1; i > -1; i--) {
-                if (powPattern.test(output[i]) && theLast) {
-                    // 跳过最后一个 '^' 的标记
-                    output[i] = output[i].replace(powPattern, '');
+            let theLast = true;
+            for (let i = 0; i < remaining.length; i++) {
+                const {idx, isPow, isSure} = remaining[i];
+                if (isPow && theLast) {
                     theLast = false;
+                    continue;
                 }
-                if (patternNotSure.test(output[i])) {
-                    // 判断是否需要添加括号。
-                    const needKh = !(output[i + 1] === '(' && output[output.length - 1] === ')');
-                    output[i] = output[i].replace(patternNotSure, '');
-                    if (needKh) {
-                        output.splice(i + 1, 0, '(');
-                        output.push(')');
-                    }
-                }
-                if (patternSure.test(output[i])) {
-                    output[i] = output[i].replace(patternSure, '');
-                    output.splice(i + 1, 0, '(');
+                if (isSure || !(output[idx + 1] === '(' && output[output.length - 1] === ')')) {
+                    openAfter2[idx] = (openAfter2[idx] || 0) + 1;
                     output.push(')');
                 }
+            }
+
+            // 一次性展开第二轮延迟插入的 '('
+            if (openAfter2.length > 0) {
+                const expanded = [];
+                for (let i = 0; i < output.length; i++) {
+                    expanded.push(output[i]);
+                    for (let k = 0; k < (openAfter2[i] || 0); k++) {
+                        expanded.push('(');
+                    }
+                }
+                output = expanded;
             }
 
             // 将 input 指向处理后的 output。
@@ -3303,7 +3405,7 @@
                         ) && tokenInfo.funcPlace !== 'front' // 防止提前出栈
                         ) {
                         // 使用 pop() 从栈顶弹出一个运算符，并用 evaluationRPN 更新求值栈的值。
-                        evaluationRPN(operatorStack.pop().replace('~', ''));
+                        evaluationRPN(operatorStack.pop());
                         // 更新栈顶元素以供下一次循环判断。
                         topOfStack = operatorStack[operatorStack.length - 1];
                         if (topOfStack !== undefined) {
@@ -3317,7 +3419,7 @@
                     operatorStack.push(currentToken);
                 } else if (currentToken === ')') {
                     while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                        evaluationRPN(operatorStack.pop().replace('~', ''));
+                        evaluationRPN(operatorStack.pop());
                     }
                     if (operatorStack.length === 0) {
                         throw new Error('[MathPlus] syntax error: The parentheses do not match.');
@@ -3326,7 +3428,7 @@
                     operatorStack.pop();
                 } else if (currentToken === ',') {
                     while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                        evaluationRPN(operatorStack.pop().replace('~', ''));
+                        evaluationRPN(operatorStack.pop());
                     }
                     const subTopOfStack = Public.getTokenInfo(operatorStack[operatorStack.length - 2]);
                     if (operatorStack.length < 2 || !(subTopOfStack.funcPlace === 'front' && subTopOfStack.parameters === 2)) {
@@ -3338,7 +3440,7 @@
             }
 
             while (operatorStack.length > 0) {
-                const operator = operatorStack.pop().replace('~', '');
+                const operator = operatorStack.pop();
                 if (operator === '(') {
                     throw new Error('[MathPlus] syntax error: The parentheses do not match.');
                 }
@@ -3495,8 +3597,8 @@
             if (n === 1) {
                 return [new ComplexNumber(0), 'error'];
             }
-            averageA = averageA === null ? this._averageAndSum(listA) : averageA;
-            averageB = averageB === null ? this._averageAndSum(listB) : averageB;
+            averageA = averageA === null ? this._averageAndSum(listA).average : averageA;
+            averageB = averageB === null ? this._averageAndSum(listB).average : averageB;
             let cov = new ComplexNumber(0);
             for (let i = 0; i < n; i++) {
                 cov = MathPlus.plus(
@@ -3668,6 +3770,7 @@
             const n = coefficients.length;
 
             const augmentedMatrix = [];
+            let maxAbs = new ComplexNumber(0);
             // 复制系数并附加常数列，构造增广矩阵，避免修改调用方传入的数组。
             for (let i = 0; i < n; i++) {
                 if (coefficients[i].length !== n) {
@@ -3675,10 +3778,19 @@
                 }
                 const newRow = [];
                 for (let j = 0; j < n; j++) {
-                    newRow.push(new ComplexNumber(coefficients[i][j]));
+                    const cell = new ComplexNumber(coefficients[i][j]);
+                    const cellAbs = MathPlus.abs(cell);
+                    if (!cellAbs.isZero() && (maxAbs.isZero() || MathPlus.minus(cellAbs, maxAbs).re.isPositive())) {
+                        maxAbs = cellAbs;
+                    }
+                    newRow.push(cell);
                 }
                 newRow.push(new ComplexNumber(constants[i]));
                 augmentedMatrix.push(newRow);
+            }
+
+            if (maxAbs.isZero()) {
+                throw new Error('[StatisticsTools] The system of equations has no unique solution.');
             }
 
             for (let i = 0; i < n; i++) {
@@ -3693,6 +3805,11 @@
                 [augmentedMatrix[i], augmentedMatrix[maxRow]] = [augmentedMatrix[maxRow], augmentedMatrix[i]];
 
                 const pivot = augmentedMatrix[i][i];
+
+                if (pivot.isZero() || Public.zeroCorrect(MathPlus.divide(pivot, maxAbs)).isZero()) {
+                    // 主元为零或在相对精度阈值内近似为零，表示矩阵奇异，方程组没有唯一解。
+                    throw new Error('[StatisticsTools] The system of equations has no unique solution.');
+                }
 
                 if (pivot.re.isZero()) {
                     // 主元为零表示矩阵奇异，方程组没有唯一解。
@@ -3780,26 +3897,36 @@
          * @param {Array<ComplexNumber|string|number>} listB - 与 `listA` 等长的真实观测值，用于计算残差平方和。
          * @param {function(ComplexNumber|string|number): ComplexNumber} func - 同步预测函数；对每个 `xᵢ`
          *   返回对应 `ŷᵢ`。常量数据导致 `SS_tot = 0` 时，R² 不可定义。
+         * @param {ComplexNumber|string|number} ssTot - 可以复用的 SS_tot
          * @returns {ComplexNumber} 决定系数。
          */
-        static _calcR2(listA, listB, func) {
-            let n = listA.length;
-            const averageB = StatisticsTools._averageAndSum(listB).average;
-            // 分母为总平方和 SS_tot，分子为残差平方和 SS_res。
-            let denominator = new ComplexNumber(0);
+        static _calcR2(listA, listB, func, ssTot = null) {
+            const n = listA.length;
+            let noSsTot = ssTot === null;
+            let denominator = noSsTot ? new ComplexNumber(0) : ssTot;
             let numerator = new ComplexNumber(0);
+            let averageB;
+
+            if (noSsTot) {
+                averageB = StatisticsTools._averageAndSum(listB).average;
+            }
+
             for (let i = 0; i < n; i++) {
-                const addDenominator = MathPlus.minus(listB[i], averageB);
-                denominator = MathPlus.plus(
-                    denominator,
-                    MathPlus.times(addDenominator, addDenominator)
-                );
+                if (noSsTot) {
+                    const addDenominator = MathPlus.minus(listB[i], averageB);
+                    denominator = MathPlus.plus(
+                        denominator,
+                        MathPlus.times(addDenominator, addDenominator)
+                    );
+                }
+
                 const addNumerator = MathPlus.minus(listB[i], func(listA[i]));
                 numerator = MathPlus.plus(
                     numerator,
                     MathPlus.times(addNumerator, addNumerator)
                 );
             }
+
             return MathPlus.minus(1, MathPlus.divide(numerator, denominator));
         }
 
@@ -3853,11 +3980,12 @@
          * @param {Array<ComplexNumber|string|number>} originalListB - 未变换的实际因变量；仅用于在原始量纲上计算 R²。
          * @param {function(ComplexNumber|string|number, Array<ComplexNumber|string|number>): ComplexNumber} func -
          *   模型预测函数，参数依次为原始 `x` 和已求得的系数数组；返回值用于和 `originalListB` 比较。
+         * @param {ComplexNumber|string|number} ssTot - 可以复用的 SS_tot
          * @returns {{parameter: Array<ComplexNumber|'error'>, R2: ComplexNumber|'error'}} 尚未格式化的回归结果；
          *   `parameter` 含 `power + 1` 个按升幂排列的系数，求解失败时为等长 `error` 数组；`R2`
          *   使用 `originalListB` 独立计算，因而参数可求而 R² 仍可能为 `error`，反之不会发生。
          */
-        static _getRegressionInfo(listA, listB, power, originalListB, func) {
+        static _getRegressionInfo(listA, listB, power, originalListB, func, ssTot = null) {
             const result = {};
 
             try {
@@ -3868,10 +3996,13 @@
             }
 
             try {
-                // R² 使用未变换的原始 y 值。
-                result.R2 = StatisticsTools._calcR2(listA, originalListB,
+                // R² 使用未变换的原始 y 值，并复用外部预计算的 SS_tot。
+                result.R2 = StatisticsTools._calcR2(
+                    listA,
+                    originalListB,
                     // 使用已求得的参数计算预测值
-                    (x) => func(x, result.parameter)
+                    (x) => func(x, result.parameter),
+                    ssTot
                 );
             } catch {
                 result.R2 = 'error';
@@ -3922,6 +4053,14 @@
             if (listA.length !== listB.length) {
                 throw new Error('[StatisticsTools] Data mismatch.');
             }
+            if (listA.length === 0) {
+                throw new Error('[StatisticsTools] Input data cannot be empty.');
+            }
+
+            // 不污染传入的原始数组
+            listA = structuredClone(listA);
+            listB = structuredClone(listB);
+
             for (let i = 0; i < listA.length; i++) {
                 if (typeof listA[i] === 'string') {
                     listA[i] = MathPlus.calc(listA[i])[0];
@@ -3946,16 +4085,16 @@
             result.n = listA.length.toString();
             const averageAndSumA = this._averageAndSum(listA);
             const averageAndSumB = this._averageAndSum(listB);
-            const varianceA = this._variance(listA);
-            const varianceB = this._variance(listB);
+            const varianceA = this._variance(listA, averageAndSumA);
+            const varianceB = this._variance(listB, averageAndSumB);
 
             const statisticsInfoA = this._getStatisticsInfo(listA, {
                 averageAndSum: averageAndSumA,
-                variance: varianceA
+                varianceList: varianceA
             });
             const statisticsInfoB = this._getStatisticsInfo(listB, {
                 averageAndSum: averageAndSumB,
-                variance: varianceB
+                varianceList: varianceB
             });
             for (let key in statisticsInfoA.statisticsResult) {
                 result[key + 'A'] = statisticsInfoA.statisticsResult[key];
@@ -4020,19 +4159,29 @@
                 return result;
             }
             if (!statesB.positive && !statesB.negative && statesB.zero) {
-                /** 为当前双参数模型写入零函数结果。 */
+                const invalidModels = new Set();
+                if (statesA.negative || statesA.zero) {
+                    invalidModels.add('ln');
+                    invalidModels.add('axb');
+                }
+                if (statesA.zero) {
+                    invalidModels.add('reciprocal');
+                }
+
                 twoParamModels.forEach((key) => {
+                    const invalid = invalidModels.has(key);
                     result[key] = {
-                        parameter: ['0', '0'],
-                        regressionEquation: '0',
+                        parameter: invalid ? ['error', 'error'] : ['0', '0'],
+                        regressionEquation: invalid ? 'error' : '0',
                         R2: 'error',
                         model: key
                     };
                 });
 
+                const squareInvalid = listA.length <= 2;
                 result.square = {
-                    parameter: ['0', '0', '0'],
-                    regressionEquation: '0',
+                    parameter: squareInvalid ? ['error', 'error', 'error'] : ['0', '0', '0'],
+                    regressionEquation: squareInvalid ? 'error' : '0',
                     R2: 'error',
                     model: 'square'
                 };
@@ -4040,15 +4189,24 @@
                 return result;
             }
 
+            // 计算 ssTotB
+            let ssTotB = new ComplexNumber(0);
+            for (let i = 0; i < listB.length; i++) {
+                const diff = MathPlus.minus(listB[i], averageAndSumB.average);
+                ssTotB = MathPlus.plus(ssTotB, MathPlus.times(diff, diff));
+            }
+
             result.linear = this._getRegressionInfo(listA, listB, 1, listB,
-                (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
+                (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
+                ssTotB
             );
 
             result.square = this._getRegressionInfo(listA, listB, 2, listB,
                 (x, coefficient) => MathPlus.plus(
                     MathPlus.times(coefficient[2], MathPlus.times(x, x)),
                     MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
-                )
+                ),
+                ssTotB
             );
             result.bestModel = this._findBestModel(result, 'square');
 
@@ -4057,7 +4215,8 @@
                 result.ln = structuredClone(errorWith2parameter);
             } else {
                 result.ln = this._getRegressionInfo(lnListA, listB, 1, listB,
-                    (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
+                    (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
+                    ssTotB
                 );
             }
             result.bestModel = this._findBestModel(result, 'ln');
@@ -4070,7 +4229,8 @@
                     (x, coefficient) => {
                         const mid = MathPlus.exp(MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]));
                         return statesB.negative ? MathPlus.minus(0, mid) : mid;
-                    }
+                    },
+                    ssTotB
                 );
                 const p0 = result.axb.parameter[0];
                 if (p0 !== 'error') {
@@ -4092,7 +4252,8 @@
                             coefficient[0]
                         ));
                         return statesB.negative ? MathPlus.minus(0, mid) : mid;
-                    }
+                    },
+                    ssTotB
                 );
                 const p0 = result.exp.parameter[0];
                 if (p0 !== 'error') {
@@ -4121,7 +4282,8 @@
                 /** 将自变量转换为倒数。 */
                 const reciprocalListA = this._changeInner(listA, (x) => MathPlus.divide(1, x));
                 result.reciprocal = this._getRegressionInfo(reciprocalListA, listB, 1, listB,
-                    (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
+                    (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
+                    ssTotB
                 );
             }
             result.bestModel = this._findBestModel(result, 'reciprocal');
@@ -4391,14 +4553,11 @@
                 const root1 = MathPlus.minus(k, MathPlus.divide(b, a));
                 const root2 = MathPlus.divide(k, -2);
 
-                const mid = MathPlus.divide(MathPlus.plus(root1, root2), 2);
-                const func1 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.plus(root1, mid));
-                const func2 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.minus(root1, mid));
+                const step = MathPlus.divide(MathPlus.minus(root2, root1), 2);
+                const func1 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.plus(root1, step));
+                const func2 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.minus(root1, step));
                 const sign = MathPlus.times(func1, func2).re.mantissa;
-                if (sign > 0n) {
-                    return [root2, root1];
-                }
-                return [root1, root2];
+                return sign > 0n ? [root2, root1] : [root1, root2];
             }
 
             const absA = MathPlus.abs(A);
@@ -5054,8 +5213,19 @@
         static radicalFunctionAnalysis(z, n) {
             z = Public.zeroCorrect(MathPlus.calc(z)[0]);
             n = Public.integerCorrect(Public.zeroCorrect(MathPlus.calc(n)[0]));
+
             if (!n.onlyReal || n.re.power < 0 || !n.re.isPositive()) {
                 throw new Error('[radicalFunctionTools] n can only be a positive integer.');
+            }
+            if (z.isZero()) {
+                return {
+                    z: '0',
+                    n: Public.idealizationToString(n),
+                    formula: '0',
+                    kRange: ['0', '0'],
+                    numericalResults: ['0'],
+                    overflow: false
+                };
             }
 
             const result = {};
@@ -5113,7 +5283,6 @@
          * @throws {Error} 边界或步长不是有效实数时抛出。
          */
         static valueList(f, g, start, step, end) {
-            let overflow = false;
             start = Public.zeroCorrect(MathPlus.calc(start)[0]);
             step = Public.zeroCorrect(MathPlus.calc(step)[0]);
             end = Public.zeroCorrect(MathPlus.calc(end)[0]);
@@ -5130,33 +5299,52 @@
             }
 
             const varList = [];
-            let i = start;
-            for (; !MathPlus.minus(i, end).re.isPositive() && varList.length < CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS; i = MathPlus.plus(i, step)) {
-                varList.push(Public.idealizationToString(i));
+            const resultF = [];
+            const resultG = [];
+            const hasF = typeof f === 'string' ? f.trim() !== '' : f != null;
+            const hasG = typeof g === 'string' ? g.trim() !== '' : g != null;
+            const maxCount = CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS;
+
+            let k = 0;
+            let currentX = start;
+            while (!MathPlus.minus(currentX, end).re.isPositive() && k < maxCount) {
+                varList.push(Public.idealizationToString(currentX));
+
+                if (hasF) {
+                    try {
+                        resultF.push(Public.idealizationToString(MathPlus.calc(f, {g, unknown: currentX})[0]));
+                    } catch {
+                        resultF.push('error');
+                    }
+                } else {
+                    resultF.push('error');
+                }
+
+                if (hasG) {
+                    try {
+                        resultG.push(Public.idealizationToString(MathPlus.calc(g, {f, unknown: currentX})[0]));
+                    } catch {
+                        resultG.push('error');
+                    }
+                } else {
+                    resultG.push('error');
+                }
+
+                k++;
+                // 用 start + k * step 替代连续累加，消除长区间误差漂移。
+                currentX = MathPlus.plus(start, MathPlus.times(step, k));
             }
 
-            if (varList.length === CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS && !MathPlus.minus(i, end).re.isPositive()) {
-                // 用半步后的临时终点让两个函数值列表恰好计算到最后一个已显示自变量，
-                // 再以专用词元表示仍有结果被省略，避免创建超长数组。
-                overflow = true;
-                end = MathPlus.minus(i, MathPlus.divide(step, 2n));
+            if (k === maxCount && !MathPlus.minus(currentX, end).re.isPositive()) {
                 varList.push('[print_content_omit]');
+                resultF.push('[not_applicable]');
+                resultG.push('[not_applicable]');
             }
-
-            const resultF = Public.idealizationToString(Public.functionValueList(
-                (x) => MathPlus.calc(f, {g: g, unknown: x})[0],
-                start, step, end
-            ));
-
-            const resultG = Public.idealizationToString(Public.functionValueList(
-                (x) => MathPlus.calc(g, {f: f, unknown: x})[0],
-                start, step, end
-            ));
 
             return {
-                varList: varList,
-                f: overflow ? [...resultF, '[not_applicable]'] : resultF,
-                g: overflow ? [...resultG, '[not_applicable]'] : resultG
+                varList,
+                f: resultF,
+                g: resultG
             };
         }
     }

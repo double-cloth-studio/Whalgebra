@@ -67,6 +67,13 @@
         };
 
         /**
+         * 统计表高亮切换的挂起 rAF 句柄，用于取消未完成的旧高亮任务。
+         * @private
+         * @type {number|null}
+         */
+        static _gridHighlightRaf = null;
+
+        /**
          * 阻止实例化静态配置类。
          *
          * @throws {Error} 始终抛出。
@@ -129,44 +136,73 @@
              * @private
              */
             function _changeSubModes(name, dealMode) {
+                // 先解析 default 再判断模式 '0'，避免在模式 '0' 下传入 default 时触发 modeValidations['0'] 报错。
+                if (dealMode === 'default') {
+                    dealMode = PageConfig.currentMode;
+                }
                 if (dealMode === '0') {
                     return;
                 }
 
-                if (dealMode === 'default') {
-                    dealMode = PageConfig.currentMode;
-                }
-
                 // 统计模式使用 [row, column] 坐标，其余模式使用固定字符串枚举。
                 if (dealMode === '1') {
-                    if (!Array.isArray(name)) {
-                        name = name.split(',');
+                    const raw = Array.isArray(name)
+                                ? name
+                                : (typeof name === 'string' ? name.split(',') : null);
+                    if (!raw || raw.length !== 2) {
+                        throw new Error('[PageConfig] Unsupported sub-mode (invalid format).');
                     }
-                    [name[0], name[1]] = [Number(name[0]), Number(name[1])];
 
+                    const row = Number(raw[0]);
+                    const col = Number(raw[1]);
                     const children = PageConfig.screenData['1'];
-                    if (![0, 1].includes(name[1]) || name[0] >= children.length || name.length !== 2) {
+                    if (
+                        !Number.isInteger(row) ||
+                        row < 0 ||
+                        row >= children.length ||
+                        ![0, 1].includes(col)
+                    ) {
                         throw new Error('[PageConfig] Unsupported sub-mode (out of range).');
                     }
 
-                    /**
-                     * 双重 requestAnimationFrame 封装，用于确保 DOM 初始状态已完全上屏（渲染），
-                     * 避免浏览器由于批量渲染合并样式，从而完美触发 CSS 过渡动画。
-                     * - @param {Function} callback - 在第二帧重绘前执行的回调函数
-                     */
-                    const safeRaf = (callback) => {
-                        requestAnimationFrame(() => requestAnimationFrame(callback));
-                    };
+                    // 生成新数组，避免原地修改调用方传入的数组。
+                    name = [row, col];
+                    PageConfig._subModes[dealMode] = name;
 
                     if (PageConfig.currentMode === '1') {
-                        const gridOn = HtmlTools.getHtml('.GridOn');
-                        if (gridOn) {
-                            safeRaf(() => gridOn.classList.remove('GridOn'));
+                        // 取消上一次尚未落地的双重 rAF，确保连续快速切换只执行最后一次高亮。
+                        if (PageConfig._gridHighlightRaf !== null) {
+                            cancelAnimationFrame(PageConfig._gridHighlightRaf);
+                            PageConfig._gridHighlightRaf = null;
                         }
 
-                        InputManager.statisticsRenderer.applyToItem(name[0], (el) => {
-                            const targetEl = el.children[name[1] + 1];
-                            safeRaf(() => targetEl.classList.add('GridOn'));
+                        PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
+                            PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
+                                PageConfig._gridHighlightRaf = null;
+                                if (PageConfig.currentMode !== '1') {
+                                    return;
+                                }
+
+                                const [targetRow, targetCol] = PageConfig._subModes['1'];
+                                let targetEl = null;
+
+                                // 在第二帧才从虚拟滚动查询节点，避免给已被回收/卸载的旧节点加类。
+                                InputManager.statisticsRenderer.applyToItem(targetRow, (el) => {
+                                    targetEl = el.children[targetCol + 1] ?? null;
+                                });
+
+                                // 清除所有旧高亮（getHtml(..., -1) 返回实时 HTMLCollection，需先转静态数组）。
+                                const gridOnList = /** @type {HTMLCollection} */ (HtmlTools.getHtml('.GridOn', -1));
+                                for (const el of Array.from(gridOnList)) {
+                                    if (el !== targetEl) {
+                                        el.classList.remove('GridOn');
+                                    }
+                                }
+
+                                if (targetEl) {
+                                    targetEl.classList.add('GridOn');
+                                }
+                            });
                         });
                     }
                 } else {
@@ -178,16 +214,15 @@
                     };
 
                     const validation = modeValidations[dealMode];
-
-                    if (!validation.includes(name)) {
+                    if (!validation || !validation.includes(name)) {
                         throw new Error('[PageConfig] Unsupported sub-mode');
                     }
 
                     HtmlTools.getHtml(`#screen_input_${dealMode}${PageConfig._subModes[dealMode]}`).classList.remove('ScreenInputsOn');
                     HtmlTools.getHtml(`#screen_input_${dealMode}${name}`).classList.add('ScreenInputsOn');
+                    PageConfig._subModes[dealMode] = name;
                 }
 
-                PageConfig._subModes[dealMode] = name;
                 PageControlTools.keyboardFuncBecomeX();
                 PageControlTools.changeInputTip();
                 try {
@@ -250,9 +285,6 @@
             PageConfig._currentMode = mode;
             // 虚拟统计表只在统计模式保持运行，离开时暂停以免隐藏容器参与测量。
             if (mode === '1') {
-                if (InputManager.statisticsRenderer.isPaused()) {
-                    InputManager.statisticsRenderer.resume();
-                }
                 HtmlTools.getHtml('#keyboard_top').classList.add('ForMode1');
                 const data = PageConfig.screenData['1'];
                 InputManager.statisticsRenderer.load(data, data.length, {resetScroll: false});
@@ -263,6 +295,11 @@
                     InputManager.statisticsRenderer.pause();
                 }
                 HtmlTools.getHtml('#keyboard_top').classList.remove('ForMode1');
+            }
+
+            // 离开函数值列表模式时清理结果虚拟列表，避免隐藏后仍响应 ResizeObserver。
+            if (mode !== '2_1' && PrintManager.printListRenderer.isRunning()) {
+                PrintManager.printListRenderer.clear();
             }
 
             HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.add('SelectionOn');
@@ -522,32 +559,53 @@
                     return;
                 }
 
-                // 统计键兼容单元格坐标补丁和完整二维表，首项不是数组时按坐标补丁解释。
-                if (key === '1' && !Array.isArray(value[0])) {
+                // 1) 单单元格局部更新：[row, col, newVal]
+                if (
+                    key === '1' &&
+                    Array.isArray(value) &&
+                    value.length === 3 &&
+                    typeof value[0] === 'number' &&
+                    typeof value[1] === 'number'
+                ) {
                     const [row, col, newVal] = value;
                     const targetMatrix = PageConfig._screenData['1'];
 
-                    const isValidRow = row >= 0 && row < targetMatrix.length;
-                    const isValidCol = col >= 0 && col < 2;
+                    const isValidRow = Number.isInteger(row) && row >= 0 && row < targetMatrix.length;
+                    const isValidCol = col === 0 || col === 1;
 
                     if (isValidRow && isValidCol) {
                         targetMatrix[row][col] = newVal;
-                    }
 
-                    if (PageConfig.currentMode === '1') {
-                        InputManager.statisticsRenderer.load(targetMatrix, targetMatrix.length, {resetScroll: false});
+                        if (PageConfig.currentMode === '1') {
+                            const renderer = InputManager.statisticsRenderer;
+                            if (renderer.isRunning()) {
+                                // 行数未变时仅刷新目标单行，不重建其他节点、不触发回流。
+                                if (renderer.totalCount === targetMatrix.length) {
+                                    renderer.refreshItem(row, targetMatrix);
+                                } else {
+                                    renderer.load(targetMatrix, targetMatrix.length, {resetScroll: false});
+                                }
+                            } else if (renderer.state === VirtualScroll.State.IDLE) {
+                                renderer.load(targetMatrix, targetMatrix.length, {resetScroll: false});
+                            }
+                        }
                     }
                     return;
                 }
 
-                // 完整数组使用深拷贝，防止调用方后续原地修改绕过 setter 的同步副作用。
+                // 2) 整表或普通子屏更新：深拷贝防止外部原地修改绕过 setter。
                 const val = Array.isArray(value) ? structuredClone(value) : value;
                 PageConfig._screenData[key] = val;
 
                 if (key === '1' && PageConfig.currentMode === '1') {
-                    InputManager.statisticsRenderer.load(val, val.length, {resetScroll: false});
+                    const renderer = InputManager.statisticsRenderer;
+                    // 避免在 PAUSED 状态（如结果页覆盖期间）意外切回 RUNNING。
+                    if (renderer.isRunning() || renderer.state === VirtualScroll.State.IDLE) {
+                        renderer.load(val, val.length, {resetScroll: false});
+                    }
                 }
             });
+
             try {
                 localStorage.setItem('screenData', JSON.stringify(PageConfig._screenData));
             } catch {
@@ -618,6 +676,29 @@
 
             return new RegExp(`(${symbolPattern})|(\\[[^\\]]*\])|([\\s\\S])`, 'g');
         })();
+        /**
+         * deleteIllegal 会删除的 token。
+         * @private
+         */
+        static _ILLEGAL_TOKENS = ['cdot', 'syntax_error'];
+        /**
+         * 用于 deleteIllegal 的预编译正则表达式。
+         * @private
+         */
+        static _ILLEGAL_TOKEN_REGEX = new RegExp(
+                `\\[(${[...this._ILLEGAL_TOKENS]
+                .sort((a, b) => b.length - a.length)
+                .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                .join('|')})\\]`,
+            'g'
+        );
+        /**
+         * 用于 deleteIllegal。
+         * @private
+         */
+        static _ILLEGAL_CLASS_SET = new Set(
+            this._ILLEGAL_TOKENS.map((name) => `_${name}_`)
+        );
 
         /**
          * 阻止实例化静态工具类。
@@ -859,30 +940,11 @@
          * @returns {string|string[]} 清理后的字符串或数组，其中已移除了所有与 `cdot` 相关的标记。
          */
         static deleteIllegal(expr) {
-            const deleteStrList = ['cdot', 'syntax_error'];
-
             if (typeof expr === 'string') {
-                // 先匹配较长词元，避免短词元提前截断。
-                // 转义词元中的正则元字符。
-                const sortedEscaped = deleteStrList
-                    .sort((a, b) => b.length - a.length)
-                    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-
-                const regex = new RegExp(`\\[(${sortedEscaped.join('|')})\\]`, 'g');
-
-                return expr.replace(regex, '');
+                return expr.replace(HtmlTools._ILLEGAL_TOKEN_REGEX, '');
             }
 
-            const resultList = [];
-            const deleteClassList = deleteStrList.map((name) => `_${name}_`);
-            for (let i = 0; i < expr.length; i++) {
-                const className = expr[i];
-
-                if (!deleteClassList.includes(className)) {
-                    resultList.push(className);
-                }
-            }
-            return resultList;
+            return expr.filter((className) => !HtmlTools._ILLEGAL_CLASS_SET.has(className));
         }
 
         /**
@@ -1750,6 +1812,8 @@
             this._remeasureRAF = null;
             this._smoothRAF = null;
             this._resumeRAF = null;
+            this._resumeRO = null;
+            this._resumeFallbackTimer = null;
             this._measured = false;
             this._remeasurePending = false;
             this._isSmoothScrolling = false;
@@ -2025,8 +2089,8 @@
 
             try {
                 // 根据已有测量或回退行高预判滚动条需求。
-                const expectedHeight = this._measured
-                                       ? this._heightMapper.virtualHeight
+                const expectedHeight = (this._measured && this.itemHeight > 0)
+                                       ? this.totalCount * this.itemHeight
                                        : this.totalCount * VirtualScroll._FALLBACK_HEIGHT;
                 const willHaveScrollbar = expectedHeight > clientHeight || this.container.scrollHeight > clientHeight;
 
@@ -2074,8 +2138,16 @@
                 }
 
                 if (measured <= 0) {
-                    console.warn('[VirtualScroll] Measured item height is 0; falling back to 50px.');
-                    measured = VirtualScroll._FALLBACK_HEIGHT;
+                    if (this._measured && this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT) {
+                        console.warn(
+                            `[VirtualScroll] Measured item height is 0 (container may be hidden); ` +
+                            `keeping previous height (${this.itemHeight}px).`
+                        );
+                        measured = this.itemHeight;
+                    } else {
+                        console.warn('[VirtualScroll] Measured item height is 0; falling back to 50px.');
+                        measured = VirtualScroll._FALLBACK_HEIGHT;
+                    }
                 }
 
                 this.itemHeight = measured;
@@ -2271,48 +2343,53 @@
          * @returns {void}
          */
         _bindResize() {
+            const handleResize = () => {
+                if (!this._sm.is(VirtualScroll.State.RUNNING)) {
+                    return;
+                }
+
+                if (!this.container || !this.container.isConnected) {
+                    console.warn('[VirtualScroll] Container detached, auto-destroying.');
+                    this.destroy();
+                    return;
+                }
+
+                const newW = this.container.clientWidth;
+                const newH = this.container.clientHeight;
+
+                // 容器被隐藏（display: none）或处于 DevTools 切换视口瞬间的 0×0 状态时直接忽略。
+                if (newW <= 0 || newH <= 0) {
+                    return;
+                }
+
+                const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
+                const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
+
+                if (!widthChanged && !heightChanged) {
+                    return;
+                }
+
+                if (this._remeasureOnResize) {
+                    // 不在此处提前覆写 _lastContainerWidth/Height，等重测完成后再同步，
+                    // 避免中间帧突然变为 0×0 放弃重测后，恢复原尺寸时被误判为“未变化”。
+                    this._scheduleRemeasure();
+                } else {
+                    this._lastContainerWidth = newW;
+                    this._lastContainerHeight = newH;
+                    if (heightChanged) {
+                        this._handleHeightChange(newH);
+                    }
+                    this._scheduleRender();
+                }
+            };
+
             if (typeof ResizeObserver !== 'undefined') {
                 if (this._ro) {
                     return;
                 }
-
                 this._ro = new ResizeObserver((entries) => {
-                    if (!this._sm.is(VirtualScroll.State.RUNNING)) {
-                        return;
-                    }
-
-                    const entry = entries[0];
-                    if (!entry) {
-                        return;
-                    }
-
-                    if (!entry.target.isConnected) {
-                        console.warn('[VirtualScroll] Container detached, auto-destroying.');
-                        this.destroy();
-                        return;
-                    }
-
-                    const newW = entry.target.clientWidth;
-                    const newH = entry.target.clientHeight;
-
-                    const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
-                    const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
-
-                    if (!widthChanged && !heightChanged) {
-                        return;
-                    }
-
-                    this._lastContainerWidth = newW;
-                    this._lastContainerHeight = newH;
-
-                    if (this._remeasureOnResize) {
-                        // 配置启用后，宽高变化均触发重测，以兼容 `dvh` 和 `vh`。
-                        this._scheduleRemeasure();
-                    } else {
-                        if (heightChanged) {
-                            this._handleHeightChange(newH);
-                        }
-                        this._scheduleRender();
+                    if (entries[0]) {
+                        handleResize();
                     }
                 });
                 this._ro.observe(this.container);
@@ -2320,38 +2397,7 @@
                 if (this._handleWindowResize) {
                     return;
                 }
-                this._handleWindowResize = () => {
-                    if (!this._sm.is(VirtualScroll.State.RUNNING)) {
-                        return;
-                    }
-
-                    if (!this.container || !this.container.isConnected) {
-                        console.warn('[VirtualScroll] Container detached, auto-destroying fallback listener.');
-                        this.destroy();
-                        return;
-                    }
-
-                    const newW = this.container.clientWidth;
-                    const newH = this.container.clientHeight;
-                    const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
-                    const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
-
-                    if (!widthChanged && !heightChanged) {
-                        return;
-                    }
-
-                    this._lastContainerWidth = newW;
-                    this._lastContainerHeight = newH;
-
-                    if (this._remeasureOnResize) {
-                        this._scheduleRemeasure();
-                    } else {
-                        if (heightChanged) {
-                            this._handleHeightChange(newH);
-                        }
-                        this._scheduleRender();
-                    }
-                };
+                this._handleWindowResize = handleResize;
                 window.addEventListener('resize', this._handleWindowResize, {passive: true});
             }
         }
@@ -2374,45 +2420,64 @@
         }
 
         /**
+         * 写入上下占位符高度，压缩模式下用负 marginTop 表达负的顶部补偿量。
+         *
+         * @private
+         * @param {number} top - 顶部占位像素值（压缩模式下可能为负）。
+         * @param {number} bottom - 底部占位像素值。
+         * @returns {void}
+         */
+        _applySpacerStyles(top, bottom) {
+            if (!this._spacerTop || !this._spacerBottom) {
+                return;
+            }
+
+            if (top < 0) {
+                this._spacerTop.style.height = '0px';
+                this._spacerTop.style.marginTop = `${top}px`;
+            } else {
+                this._spacerTop.style.height = `${top}px`;
+                this._spacerTop.style.marginTop = '0px';
+            }
+            this._spacerBottom.style.height = `${bottom}px`;
+        }
+
+        /**
          * 处理容器高度变化：更新高度映射、调整 spacer 并修正 scrollTop。
-         * - 被 ResizeObserver 回调和 window.resize 降级共同调用。
+         * - 被 ResizeObserver 回调、window.resize 降级以及 `_render()` 的高度变化分支共同调用。
          * - spacer 高度修正必须在 scrollTop 赋值之前完成，
          *   避免 scrollHeight 还未撑开时 scrollTop 被静默截断。
          *
          * @private
          *
-         * @param {number} newH - ResizeObserver 得到的新 `clientHeight`（px）；必须为有限非负值。
-         *   方法会更新高度映射并尽量保持当前虚拟锚点，而不是简单保留物理 `scrollTop`。
+         * @param {number} newH - 容器最新的 `clientHeight`（px）；必须为有限非负值。
+         *   方法会同步缓存高度、更新缓冲区与高度映射，并按逻辑位置重新计算物理 `scrollTop`。
+         * @param {number|null} [targetVirtScroll=null] - 可选的目标虚拟滚动偏移量（px）；
+         *   提供时优先按该偏移恢复位置（例如 `_render()` 在同帧检测到滚动与高度同时变化时传入的
+         *   旧映射换算值），为 `null` 时回退到当前逻辑锚点 `(_anchorIndex + _anchorRatio) * itemHeight`。
          * @returns {void}
          */
-        _handleHeightChange(newH) {
+        _handleHeightChange(newH, targetVirtScroll = null) {
+            this._lastContainerHeight = newH;
             this._calcBufferSize();
             this._heightMapper.update(this.totalCount, this.itemHeight, newH);
 
-            // 用逻辑行锚点重算位置，避免压缩映射变化后物理 scrollTop 指向另一行。
-            const exactVirtScroll = (this._anchorIndex + this._anchorRatio) * this.itemHeight;
+            // 用逻辑行锚点（或调用方传入的当前虚拟偏移）重算位置，避免压缩映射变化后物理 scrollTop 偏移。
+            const exactVirtScroll = targetVirtScroll !== null
+                                    ? targetVirtScroll
+                                    : (this._anchorIndex + this._anchorRatio) * this.itemHeight;
             const maxVirt = this._heightMapper._effV;
-            const clampedVirt = Math.min(exactVirtScroll, Math.max(0, maxVirt));
+            const clampedVirt = Math.min(Math.max(0, exactVirtScroll), Math.max(0, maxVirt));
             const nextPhysScrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
 
-            if (this._spacerTop && this._spacerBottom) {
-                const {top, bottom} = this._heightMapper.calcSpacerHeights(
-                    this._startIndex < 0 ? 0 : this._startIndex,
-                    this._endIndex < 0 ? 0 : this._endIndex,
-                    this.totalCount,
-                    this.itemHeight,
-                    nextPhysScrollTop
-                );
-
-                if (top < 0) {
-                    this._spacerTop.style.height = '0px';
-                    this._spacerTop.style.marginTop = `${top}px`;
-                } else {
-                    this._spacerTop.style.height = `${top}px`;
-                    this._spacerTop.style.marginTop = '0px';
-                }
-                this._spacerBottom.style.height = `${bottom}px`;
-            }
+            const {top, bottom} = this._heightMapper.calcSpacerHeights(
+                this._startIndex < 0 ? 0 : this._startIndex,
+                this._endIndex < 0 ? 0 : this._endIndex,
+                this.totalCount,
+                this.itemHeight,
+                nextPhysScrollTop
+            );
+            this._applySpacerStyles(top, bottom);
 
             this.container.scrollTop = nextPhysScrollTop;
         }
@@ -2434,27 +2499,47 @@
             this._remeasurePending = true;
             this._cancelRenderRAF();
 
-            this._remeasureRAF = requestAnimationFrame(() => {
+            let lastW = -1;
+            let lastH = -1;
+            let attempts = 0;
+            const MAX_STABILIZE_FRAMES = 6;
+
+            const runRemeasure = () => {
                 this._remeasureRAF = null;
 
-                if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container || !this.container.isConnected) {
                     this._remeasurePending = false;
                     return;
                 }
 
+                const curW = this.container.clientWidth;
+                const curH = this.container.clientHeight;
+
+                // 容器已隐藏或瞬态折叠，放弃本次重测，等待恢复非零尺寸时由 ResizeObserver 重新触发。
+                if (curW <= 0 || curH <= 0) {
+                    this._remeasurePending = false;
+                    return;
+                }
+
+                // 等待 DevTools 视口切换 / 媒体查询重排在连续两帧内稳定后再测量。
+                if ((curW !== lastW || curH !== lastH) && attempts < MAX_STABILIZE_FRAMES) {
+                    lastW = curW;
+                    lastH = curH;
+                    attempts++;
+                    this._remeasureRAF = requestAnimationFrame(runRemeasure);
+                    return;
+                }
+
                 try {
-                    // 重测会重建 spacer，先保存逻辑锚点才能在新行高下恢复阅读位置。
                     const savedAnchorIndex = this._anchorIndex;
                     const savedAnchorRatio = this._anchorRatio;
 
-                    this._heightMapper.reset();
                     this._doMeasure();
                     this._syncContainerSize();
                     this._calcBufferSize(true);
 
                     this._buildDOM();
 
-                    // 按原逻辑行和相对偏移恢复滚动位置。
                     const clientHeight = this.container.clientHeight;
                     this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
                     this._syncContainerSize();
@@ -2469,7 +2554,9 @@
                 } finally {
                     this._remeasurePending = false;
                 }
-            });
+            };
+
+            this._remeasureRAF = requestAnimationFrame(runRemeasure);
         }
 
         /**
@@ -2487,36 +2574,96 @@
             this._unbindScroll();
 
             if (this.container.clientWidth <= 0 || this.container.clientHeight <= 0) {
-                let lastWidth = -1;
-                let lastHeight = -1;
+                // 容器恢复非零后，等待最多 6 帧确认布局尺寸稳定，再执行重测。
+                const waitUntilStable = () => {
+                    let lastWidth = -1;
+                    let lastHeight = -1;
+                    let attempts = 0;
+                    const MAX_STABILIZE_FRAMES = 6;
 
-                const waitForContainer = () => {
-                    this._resumeRAF = null;
+                    const step = () => {
+                        this._resumeRAF = null;
 
-                    if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
-                        return;
-                    }
+                        if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                            return;
+                        }
+                        if (!this.container.isConnected) {
+                            console.warn('[VirtualScroll] Container detached while waiting for resume.');
+                            this.destroy();
+                            return;
+                        }
 
-                    if (!this.container.isConnected) {
-                        console.warn('[VirtualScroll] Container detached while waiting for resume.');
-                        this.destroy();
-                        return;
-                    }
+                        const width = this.container.clientWidth;
+                        const height = this.container.clientHeight;
 
-                    const width = this.container.clientWidth;
-                    const height = this.container.clientHeight;
+                        // 稳定期又被重新隐藏，退回被动等待。
+                        if (width <= 0 || height <= 0) {
+                            this._resumeWithRemeasure(pendingScroll);
+                            return;
+                        }
 
-                    if (width <= 0 || height <= 0 || width !== lastWidth || height !== lastHeight) {
-                        lastWidth = width;
-                        lastHeight = height;
-                        this._resumeRAF = requestAnimationFrame(waitForContainer);
-                        return;
-                    }
+                        if ((width !== lastWidth || height !== lastHeight) && attempts < MAX_STABILIZE_FRAMES) {
+                            lastWidth = width;
+                            lastHeight = height;
+                            attempts++;
+                            this._resumeRAF = requestAnimationFrame(step);
+                            return;
+                        }
 
-                    this._resumeWithRemeasure(pendingScroll);
+                        this._resumeWithRemeasure(pendingScroll);
+                    };
+
+                    this._resumeRAF = requestAnimationFrame(step);
                 };
 
-                this._resumeRAF = requestAnimationFrame(waitForContainer);
+                if (typeof ResizeObserver !== 'undefined') {
+                    this._resumeRO = new ResizeObserver(() => {
+                        if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                            this._cancelResumeRAF();
+                            return;
+                        }
+                        if (!this.container.isConnected) {
+                            console.warn('[VirtualScroll] Container detached while waiting for resume.');
+                            this.destroy();
+                            return;
+                        }
+                        if (this.container.clientWidth > 0 && this.container.clientHeight > 0) {
+                            this._resumeRO.disconnect();
+                            this._resumeRO = null;
+                            waitUntilStable();
+                        }
+                    });
+                    this._resumeRO.observe(this.container);
+                } else {
+                    // 无 ResizeObserver 环境降级为有上限的低频轮询（最多等待约 5 秒）。
+                    let retries = 0;
+                    const MAX_RETRIES = 50;
+
+                    const poll = () => {
+                        this._resumeFallbackTimer = null;
+
+                        if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                            return;
+                        }
+                        if (!this.container.isConnected) {
+                            console.warn('[VirtualScroll] Container detached while waiting for resume.');
+                            this.destroy();
+                            return;
+                        }
+                        if (this.container.clientWidth > 0 && this.container.clientHeight > 0) {
+                            waitUntilStable();
+                            return;
+                        }
+                        if (++retries < MAX_RETRIES) {
+                            this._resumeFallbackTimer = setTimeout(poll, 100);
+                        } else {
+                            console.warn('[VirtualScroll] Timed out waiting for container to become visible.');
+                        }
+                    };
+
+                    this._resumeFallbackTimer = setTimeout(poll, 100);
+                }
+
                 return;
             }
 
@@ -2525,7 +2672,7 @@
             const savedAnchorIndex = this._anchorIndex;
             const savedAnchorRatio = this._anchorRatio;
 
-            this._heightMapper.reset();
+            // 不再提前 reset _heightMapper，保留已有高度供 _doMeasure 准确预判滚动条显隐。
             this._doMeasure();
             this._measured = true;
 
@@ -2535,41 +2682,28 @@
             this._buildDOM();
 
             const clientHeight = this.container.clientHeight;
-
-            this._heightMapper.update(
-                this.totalCount,
-                this.itemHeight,
-                clientHeight
-            );
-
+            this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
             this._syncContainerSize();
 
             if (pendingScroll) {
                 const {index, behavior, block} = pendingScroll;
                 this.scrollToIndex(index, {behavior, block});
-
-                // `_doMeasure()` 会解绑滚动监听，测量后需重新绑定。
                 this._bindEvents();
 
                 if (!this._isSmoothScrolling) {
                     this._render();
                     this._scheduleRender();
                 }
-
                 return;
             }
 
-            // 无排队跳转时恢复暂停前的锚点。
             const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
             const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
             const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
             this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
 
-            // `_doMeasure()` 会解绑滚动监听，恢复后需重新绑定。
             this._bindEvents();
-
             this._render();
-            // 下一帧补充渲染，等待恢复后的布局稳定。
             this._scheduleRender();
         }
 
@@ -2629,6 +2763,14 @@
                 cancelAnimationFrame(this._resumeRAF);
                 this._resumeRAF = null;
             }
+            if (this._resumeRO) {
+                this._resumeRO.disconnect();
+                this._resumeRO = null;
+            }
+            if (this._resumeFallbackTimer !== null) {
+                clearTimeout(this._resumeFallbackTimer);
+                this._resumeFallbackTimer = null;
+            }
         }
 
         /**
@@ -2683,9 +2825,8 @@
                 if (this.totalCount <= 0 || this.itemHeight <= 0) {
                     if (this.totalCount <= 0) {
                         this._recycleRenderedNodes();
-                        this._spacerTop.style.height = '0px';
-                        this._spacerTop.style.marginTop = '0px';
-                        this._spacerBottom.style.height = '0px';
+                        // 统一走 _applySpacerStyles，同步清零 height 与 marginTop。
+                        this._applySpacerStyles(0, 0);
                     }
                     return;
                 }
@@ -2698,28 +2839,9 @@
                 // 先更新缓存高度，避免重入或外部更新导致误判。
                 const heightChanged = clientHeight !== this._lastContainerHeight;
                 if (heightChanged) {
-                    this._lastContainerHeight = clientHeight;
-                    this._calcBufferSize();
-                    this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
-
-                    if (this._spacerTop && this._spacerBottom) {
-                        const hm = this._heightMapper;
-                        const s = this._startIndex < 0 ? 0 : this._startIndex;
-                        const e = this._endIndex < 0 ? 0 : this._endIndex;
-                        const {top, bottom} = hm.calcSpacerHeights(
-                            s, e, this.totalCount, this.itemHeight
-                        );
-                        this._spacerTop.style.height = `${top}px`;
-                        this._spacerBottom.style.height = `${bottom}px`;
-                    }
-
-                    const hm = this._heightMapper;
-                    const maxPhysical = Math.max(0, hm.physicalHeight - clientHeight);
-                    const currentST = this.container.scrollTop;
-
-                    if (currentST > maxPhysical) {
-                        this.container.scrollTop = maxPhysical;
-                    }
+                    // 必须在 _heightMapper.update() 之前换算，保留本帧最新 scrollTop 对应的逻辑位置。
+                    const currentVirtScroll = this._heightMapper.physicalToVirtual(this.container.scrollTop);
+                    this._handleHeightChange(clientHeight, currentVirtScroll);
                 }
 
                 const hm = this._heightMapper;
@@ -2729,30 +2851,22 @@
                 const maxPhysScroll = Math.max(0, hm.physicalHeight - clientHeight);
                 const clampedPhysScrollTop = Math.max(0, Math.min(physScrollTop, maxPhysScroll));
                 const virtScrollTop = hm.physicalToVirtual(clampedPhysScrollTop);
-                let visibleStart = Math.floor(virtScrollTop / this.itemHeight);
-                let start = Math.max(0, visibleStart - this.bufferSize);
 
-                // 在变更渲染窗口前记录当前逻辑锚点，供尺寸变化和重测恢复位置。
+                const visibleStart = Math.floor(virtScrollTop / this.itemHeight);
+                const start = Math.max(0, visibleStart - this.bufferSize);
+
+                // 在变更渲染窗口前同步最新逻辑锚点，供后续尺寸变化与重测使用。
                 this._updateAnchor();
 
-                let visibleEnd = visibleStart + Math.ceil(clientHeight / this.itemHeight);
-                let end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
+                const visibleEnd = visibleStart + Math.ceil(clientHeight / this.itemHeight);
+                const end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
                 const rangeUnchanged = start === this._startIndex && end === this._endIndex;
 
-                // 渲染范围不变时也要更新 spacer，以同步滚动视差。
+                // 按新窗口 [start, end) 与当前物理偏移更新 spacer（统一处理负 marginTop）
                 const {top: spacerTopPx, bottom: spacerBottomPx} = hm.calcSpacerHeights(
                     start, end, this.totalCount, this.itemHeight, clampedPhysScrollTop
                 );
-
-                // 压缩映射可能产生负的顶部补偿量，此时通过负 margin 表达而非负 height。
-                if (spacerTopPx < 0) {
-                    this._spacerTop.style.height = '0px';
-                    this._spacerTop.style.marginTop = `${spacerTopPx}px`;
-                } else {
-                    this._spacerTop.style.height = `${spacerTopPx}px`;
-                    this._spacerTop.style.marginTop = '0px';
-                }
-                this._spacerBottom.style.height = `${spacerBottomPx}px`;
+                this._applySpacerStyles(spacerTopPx, spacerBottomPx);
 
                 if (!force && rangeUnchanged && !heightChanged) {
                     return;
@@ -2779,10 +2893,8 @@
                     const {top, bottom} = this._heightMapper.calcSpacerHeights(
                         0, 0, this.totalCount, this.itemHeight, 0
                     );
-
-                    this._spacerTop.style.height = `${top}px`;
-                    this._spacerTop.style.marginTop = '0px';
-                    this._spacerBottom.style.height = `${bottom}px`;
+                    // 异常恢复分支同样统一走 _applySpacerStyles
+                    this._applySpacerStyles(top, bottom);
                 }
 
                 throw error;
@@ -2926,7 +3038,7 @@
          * @throws {Error} 当 `itemHeight` 小于等于 0 或 `container` 未定义时，函数会静默返回
          */
         _updateAnchor() {
-            if (this.itemHeight <= 0 || !this.container) {
+            if (this.itemHeight <= 0 || !this.container || this.container.clientHeight <= 0) {
                 return;
             }
 
@@ -3145,18 +3257,15 @@
         /**
          * 加载数据并启动或刷新虚拟滚动。
          *
-         * @param {any[]|object} data - 原样传给每次 `renderItem(index, data)` 的数据源；实例仅保存引用，
-         *   不复制、冻结或推断其长度，因此后续原地修改会影响再次渲染。
-         * @param {number} length - 逻辑条目总数；有限数值会截断为非负整数，不要求等于 `data.length`，
-         *   因而也可配合对象、稀疏数组或按需数据源。
-         * @param {object} [options={}] - 本次加载对测量缓存和滚动位置的处理方式。
-         * @param {boolean} [options.remeasure=false] - 即使已有有效 `itemHeight` 也重新渲染样本测量；
-         *   数据模板、字体或行样式变化后应设为 `true`。
-         * @param {boolean} [options.resetScroll=true] - `true` 从逻辑顶部开始；`false` 尽量保留当前虚拟
-         *   偏移并夹紧到新内容范围，适合刷新同一列表的数据。
+         * @param {any[]|object} data - 原样传给每次 `renderItem(index, data)` 的数据源。
+         * @param {number} length - 逻辑条目总数。
+         * @param {object} [options={}] - 测量缓存、滚动位置和高度校验选项。
+         * @param {boolean} [options.remeasure=false] - 是否强制重新采样测量行高。
+         * @param {boolean} [options.resetScroll=true] - `true` 回到顶部；`false` 保留逻辑位置。
+         * @param {boolean} [options.verifyHeight=false] - 复用缓存行高时是否采样校验偏差（调试用，开启会触发同步回流）。
          * @throws {Error} 实例或容器不可用时抛出。
          */
-        load(data, length, {remeasure = false, resetScroll = true} = {}) {
+        load(data, length, {remeasure = false, resetScroll = true, verifyHeight = false} = {}) {
             this._assertNotDestroyed('load');
 
             if (!this._sm.is(
@@ -3170,6 +3279,9 @@
             const normalizedLength = this._normalizeLength(length, 'load');
 
             try {
+                const wasPaused = this._sm.is(VirtualScroll.State.PAUSED);
+                const wasMeasured = this._measured;
+
                 this._unbindScroll();
                 this._unbindResize();
                 this._cancelAllRAF();
@@ -3178,20 +3290,38 @@
 
                 this._resolveContainer();
 
-                // 数据长度变化前先保存逻辑偏移，resetScroll=false 时才能跨映射恢复位置。
+                // 若当前仍处于可见运行态，先同步一次锚点，避免刚 scrollToIndex 后锚点滞后。
+                if (!wasPaused && this._measured) {
+                    this._updateAnchor();
+                }
+                const savedAnchorIndex = this._anchorIndex;
+                const savedAnchorRatio = this._anchorRatio;
                 const oldVirtScroll = this._heightMapper.physicalToVirtual(this.container.scrollTop);
 
                 this.data = data;
                 this.totalCount = normalizedLength;
 
-                if (!this._measured || remeasure) {
+                // 仅在从 PAUSED 恢复时兜底尺寸变化（RUNNING 态已由 ResizeObserver 监听，避免滚动条显隐误触发）。
+                const currentWidth = this.container.clientWidth;
+                const currentHeight = this.container.clientHeight;
+                const sizeChanged = wasPaused && this._measured && this._remeasureOnResize &&
+                    currentWidth > 0 && currentHeight > 0 && (
+                        Math.round(currentWidth) !== Math.round(this._lastContainerWidth) ||
+                        Math.round(currentHeight) !== Math.round(this._lastContainerHeight)
+                    );
+
+                const needMeasure = !this._measured || remeasure || sizeChanged;
+
+                if (needMeasure) {
                     this._setupContainer();
                     this._doMeasure();
                     this._measured = true;
                 } else {
-                    this._verifyItemHeight();
+                    if (verifyHeight) {
+                        this._verifyItemHeight();
+                    }
                     this._heightMapper.update(
-                        this.totalCount, this.itemHeight, this.container.clientHeight
+                        this.totalCount, this.itemHeight, currentHeight
                     );
                 }
 
@@ -3201,25 +3331,33 @@
                     this._buildDOM();
                 }
 
-                this._syncContainerSize();
-
-                // 先撑开完整占位高度，避免浏览器钳制随后设置的 `scrollTop`。
+                // 先撑开完整占位高度（使滚动条状态确定），再同步容器尺寸，防止 ResizeObserver 误重测。
                 {
                     const hm = this._heightMapper;
                     const {top, bottom} = hm.calcSpacerHeights(
                         0, 0, this.totalCount, this.itemHeight
                     );
                     this._spacerTop.style.height = `${top}px`;
+                    this._spacerTop.style.marginTop = '0px';
                     this._spacerBottom.style.height = `${bottom}px`;
+                }
+
+                this._syncContainerSize();
+                const clientHeight = this._lastContainerHeight;
+                if (clientHeight !== currentHeight && clientHeight > 0) {
+                    this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
                 }
 
                 if (resetScroll) {
                     this.container.scrollTop = 0;
                 } else {
-                    const clientHeight = this.container.clientHeight;
                     const hm = this._heightMapper;
+                    // 从 PAUSED 恢复（display:none 会清空 scrollTop）或刚重测行高时，必须按逻辑锚点还原。
+                    const targetVirtScroll = (wasPaused || (needMeasure && wasMeasured))
+                                             ? (savedAnchorIndex + savedAnchorRatio) * this.itemHeight
+                                             : oldVirtScroll;
                     const newVirtScroll = Math.min(
-                        oldVirtScroll,
+                        Math.max(0, targetVirtScroll),
                         Math.max(0, hm.virtualHeight - clientHeight)
                     );
 
@@ -3241,6 +3379,34 @@
 
                 throw error;
             }
+        }
+
+        /**
+         * 仅重绘渲染窗口内的单个条目，不触发全量重载、事件重绑或布局重测。
+         *
+         * @param {number} index - 要刷新的零基行索引。
+         * @param {any} [data=this.data] - 可选的最新数据源引用。
+         * @returns {boolean} 命中已渲染节点并成功替换时返回 `true`，否则返回 `false`。
+         */
+        refreshItem(index, data = this.data) {
+            this._assertNotDestroyed('refreshItem');
+            this.data = data;
+
+            if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container || this._rendering) {
+                return false;
+            }
+
+            const i = Number(index);
+            const oldEl = this._renderedNodes.get(i);
+            if (!oldEl || !oldEl.isConnected) {
+                return false;
+            }
+
+            const newEl = this._nodePool.toElement(this.renderItem(i, this.data));
+            oldEl.replaceWith(newEl);
+            this._renderedNodes.set(i, newEl);
+            this._nodePool.recycle(oldEl);
+            return true;
         }
 
         /**
@@ -3286,6 +3452,7 @@
                 return;
             }
 
+            this._updateAnchor();
             this._unbindScroll();
             this._cancelAllRAF();
             this._sm.transition(VirtualScroll.State.PAUSED);
@@ -3468,6 +3635,7 @@
             } else {
                 this._cancelSmoothScroll();
                 this.container.scrollTop = physicalTop;
+                this._updateAnchor();
             }
         }
 
@@ -3527,6 +3695,7 @@
             } else {
                 this._cancelSmoothScroll();
                 this.container.scrollTop = physicalBottom;
+                this._updateAnchor();
             }
         }
 
@@ -3994,7 +4163,7 @@
                     const len0 = this._getTokenLen(tokenStack[0]);
                     totalRangeStart = centerIndex - leftSpaceCount - len0;
                 } else {
-                    if (shouldAddSpace(tokenStack[0], tokenStack[1])) {
+                    if (shouldAddSpace(tokenStack[1], tokenStack[0])) {
                         addIndex.push(addPos);
                     }
                     const len0 = this._getTokenLen(tokenStack[0]);
@@ -4027,7 +4196,7 @@
                     }
                     const len0 = this._getTokenLen(tokenStack[0]);
                     const len1 = this._getTokenLen(tokenStack[1]);
-                    totalRangeEnd = centerIndex + len0 + len1 + rightSpaceCount;
+                    totalRangeEnd = centerIndex + 1 + len0 + len1 + rightSpaceCount;
                 }
             } else {
                 const classList = HtmlTools.getClassList(target, {ignoreSpace: true, onlyP: false});
@@ -4043,11 +4212,13 @@
             // 批量移除和插入空格时暂时隐藏容器，减少逐节点变更引发的中间重排。
             target.style.display = 'none';
 
-            for (let i = totalRangeStart; i < totalRangeEnd; i++) {
-                const curr = children[i];
-                if (curr.className === space) {
-                    curr.remove();
-                    totalRangeEnd -= 1;
+            // 删除空格循环
+            const safeStart = Math.max(0, totalRangeStart);
+            const safeEnd = Math.min(children.length, totalRangeEnd);
+
+            for (let i = safeEnd - 1; i >= safeStart; i--) {
+                if (children[i].className === space) {
+                    children[i].remove();
                 }
             }
 
@@ -4115,7 +4286,9 @@
                 HtmlTools.getHtml('#screen_0_display').classList.add('NoDisplay');
                 PrintManager.mode0ShowOnScreen.cancel();
                 if (PrintManager.mode0ScreenInCalc) {
-                    WorkerTools.restart();
+                    WorkerTools.restart().catch((err) => {
+                        console.warn('[UI] Worker restart failed:', err);
+                    });
                     PrintManager.mode0ScreenInCalc = false;
                 }
             }
@@ -4176,13 +4349,13 @@
                     if (brotherTarget.length === 0) {
                         InputManager.statisticsDelLine();
                     } else {
-                        // 统计单元格更新格式为 `[行, 列, 值]`。
+                        // 统计单元格更新格式为 [行, 列, 值]，由 setter 走 refreshItem 与持久化。
                         PageConfig.screenData = {'1': [...current, '']};
                     }
                 } else {
                     this.ac({acArea: HtmlTools.getCurrentSubscreenArea()});
+                    PageConfig.syncScreenData();
                 }
-                PageConfig.syncScreenData();
                 return;
             }
 
@@ -4466,28 +4639,20 @@
         ) {
             const gridData = PageConfig.screenData['1'];
             const len = gridData.length;
-            let position;
-
-            if (location === null) {
-                const pos = len - 1;
-                position = pos < 0 ? 0 : pos;
-            } else {
-                position = Array.isArray(location) ? location[0] : location;
-            }
 
             if (len + 1 > InputManager.MAX_STATISTICS_ROW) {
                 return false;
             }
 
-            const newItems = [
-                [inputX, inputY]
-            ];
+            const position = location === null
+                             ? Math.max(0, len - 1)
+                             : (Array.isArray(location) ? location[0] : location);
 
             try {
-                gridData.splice(position + 1, 0, ...newItems);
-                PageConfig.screenData = {'1': gridData};
-
-                InputManager.statisticsRenderer.load(gridData, gridData.length, {resetScroll: false});
+                const nextData = gridData.map((row) => [...row]);
+                nextData.splice(position + 1, 0, [inputX, inputY]);
+                // 统一由 PageConfig.screenData setter 触发一次虚拟列表刷新与持久化。
+                PageConfig.screenData = {'1': nextData};
             } catch {
                 return false;
             }
@@ -4508,17 +4673,13 @@
          * @returns {void}
          */
         static statisticsDelLine(location = null) {
-            let target, position;
             const gridData = PageConfig.screenData['1'];
             const len = gridData.length;
+            const position = location === null
+                             ? PageConfig.subModes['1'][0]
+                             : (Array.isArray(location) ? location[0] : location);
 
-            if (location === null) {
-                position = PageConfig.subModes['1'][0];
-            } else {
-                position = Array.isArray(location) ? location[0] : location;
-            }
-
-            target = gridData[position];
+            const target = gridData[position];
             if (!target) {
                 return;
             }
@@ -4529,21 +4690,19 @@
                 return;
             }
 
-            gridData.splice(position, 1);
-            PageConfig.screenData = {'1': gridData};
+            const nextData = gridData.map((row) => [...row]);
+            nextData.splice(position, 1);
 
-            // 删除原末行后立即补回空占位行，维持统计表可继续输入的约定。
-            if (gridData.length === position) {
-                InputManager.statisticsAddLine();
+            // 删除原末行时在同一次更新中补回空占位行，避免嵌套调用 statisticsAddLine()。
+            if (nextData.length === position) {
+                nextData.push(['', '']);
             }
+
+            PageConfig.screenData = {'1': nextData};
 
             if (position === PageConfig.subModes['1'][0]) {
                 PageControlTools.syncScreenToInput(false);
             }
-
-            // 新增行后重新读取网格数据。
-            const newData = PageConfig.screenData['1'];
-            InputManager.statisticsRenderer.load(newData, newData.length, {resetScroll: false});
         }
     }
 
@@ -4567,6 +4726,15 @@
          * @type {number}
          */
         static _MAX_DELAY_TIME = 1640;
+
+        /**
+         * `mode0ShowOnScreen` 异步计算请求的单调递增序号。
+         * 使用 BigInt 避免长时间运行后超过 Number 安全整数范围，用于识别并忽略过期的 Worker 返回结果。
+         *
+         * @private
+         * @type {bigint}
+         */
+        static _currentRequestId = 0n;
 
         /**
          * VirtualScroll 实例。
@@ -4812,14 +4980,18 @@
          * @returns {Promise<void>} 一个在 UI 更新完成后解析的 Promise。
          */
         static async _mode0ShowOnScreenFunc() {
-            // 使用请求 ID 忽略过期结果。
-            const requestId = Date.now();
+            const requestId = ++this._currentRequestId;
             if (this.mode0ScreenInCalc) {
                 // 取消之前积压的计算任务，优先响应当前输入
                 await WorkerTools.restart();
 
                 // 也可以使用软取消（性能更好）
                 // WorkerTools.cancelWorker();
+
+                // 等待期间若有更新的请求进来，直接放弃本次过期调用。
+                if (this._currentRequestId !== requestId) {
+                    return;
+                }
             }
             this.mode0ScreenInCalc = true;
             this._currentRequestId = requestId;
@@ -4964,39 +5136,45 @@
          */
         static async _exeMode1() {
             const screenData = PageConfig.screenData['1'];
+            const nextData = screenData.map((row) => [...row]);
             const listA = [], listB = [];
+            let hasPatchedZero = false;
 
             // 每次计算都先回到 X 统计页，避免沿用上次结果页的横向偏移。
             PageControlTools.triggerSelection(HtmlTools.getHtml('#statistics_results_top_x'));
             PageControlTools.switchStatisticsResults('x');
 
-            for (let i = 0; i < screenData.length; i++) {
-                let currentPushA = screenData[i][0];
-                let currentPushB = screenData[i][1];
+            for (let i = 0; i < nextData.length; i++) {
+                let currentPushA = nextData[i][0];
+                let currentPushB = nextData[i][1];
 
                 if (currentPushA.startsWith('[syntax_error]') || currentPushB.startsWith('[syntax_error]')) {
                     this._setMode1Results('error');
                     this.mode1Results = 'error';
-                    PageConfig.syncScreenData();
                     return;
                 }
 
-                // 整行为空时忽略；仅一侧为空时以 0 补齐成有效数据对。
+                // 整行为空时忽略；仅一侧为空时暂存为 '0'，循环结束后一次性写回。
                 if (currentPushA.length === 0 && currentPushB.length === 0) {
                     continue;
                 } else if (currentPushA.length === 0) {
-                    PageConfig.screenData = {'1': [i, 0, '0']};
+                    nextData[i][0] = '0';
                     currentPushA = '0';
+                    hasPatchedZero = true;
                 } else if (currentPushB.length === 0) {
-                    PageConfig.screenData = {'1': [i, 1, '0']};
+                    nextData[i][1] = '0';
                     currentPushB = '0';
+                    hasPatchedZero = true;
                 }
 
                 listA.push(currentPushA);
                 listB.push(currentPushB);
             }
 
-            PageConfig.syncScreenData();
+            // 仅在确实补零时触发一次整表刷新与持久化。
+            if (hasPatchedZero) {
+                PageConfig.screenData = {'1': nextData};
+            }
 
             try {
                 const resultList = await WorkerTools.statisticsCalc(listA, listB);
@@ -5013,7 +5191,10 @@
                     'choose_ra_5': resultList.axb,
                     'choose_ra_6': resultList.reciprocal
                 };
-            } catch {
+            } catch (error) {
+                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                    return;
+                }
                 this._setMode1Results('error');
                 this.mode1Results = 'error';
             }
@@ -5126,7 +5307,7 @@
              */
             const powerFunctionTextToHtml = (target, textList, useBracket = false) => {
                 if (textList.includes('error')) {
-                    HtmlTools.appendDOMs(target, ['error']);
+                    HtmlTools.appendDOMs(target, ['_error_'], {mode: 'replace'});
                     return;
                 }
 
@@ -5406,30 +5587,32 @@
 
             HtmlTools.getHtml('#load_cover').classList.remove('NoDisplay');
             HtmlTools.getHtml('#main').classList.remove('Input');
-            switch (currentMode) {
-                case '0':
-                    await this._exeMode0();
-                    break;
-                case '1':
-                    await this._exeMode1();
+            try {
+                switch (currentMode) {
+                    case '0':
+                        await this._exeMode0();
+                        break;
+                    case '1':
+                        await this._exeMode1();
 
-                    // 结果页接管视图后暂停输入网格，返回时再由 closePrint 恢复。
-                    if (!HtmlTools.getHtml('#main').classList.contains('Input') && InputManager.statisticsRenderer.isRunning()) {
-                        InputManager.statisticsRenderer.pause();
-                    }
-                    break;
-                case '2_1':
-                    await this._exeMode2();
-                    break;
-                case '3':
-                    await this._exeMode3();
-                    break;
-                case '4':
-                    await this._exeMode4();
-                    break;
+                        // 结果页接管视图后暂停输入网格，返回时再由 closePrint 恢复。
+                        if (!HtmlTools.getHtml('#main').classList.contains('Input') && InputManager.statisticsRenderer.isRunning()) {
+                            InputManager.statisticsRenderer.pause();
+                        }
+                        break;
+                    case '2_1':
+                        await this._exeMode2();
+                        break;
+                    case '3':
+                        await this._exeMode3();
+                        break;
+                    case '4':
+                        await this._exeMode4();
+                        break;
+                }
+            } finally {
+                HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
             }
-
-            HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
         }
     }
 
@@ -5739,12 +5922,16 @@
          * 此方法响应导出按钮的点击事件，将计算出的回归方程填充到对应的函数输入框中，
          * 以便用户可以在函数列表模式下进一步使用该方程（例如求值或绘图）。
          *
-         * @param {'export_0'|'export_1'} func - 触发导出的按钮 ID，也决定回归表达式写入哪个函数槽位。
+         * @param {'export_0'|'export_1'|''} func - 触发导出的按钮 ID，也决定回归表达式写入哪个函数槽位。
          *   - `'export_0'`: 导出到 f(x) (对应 DOM ID `#screen_input_inner_2_00`)。
          *   - `'export_1'`: 导出到 g(x) (对应 DOM ID `#screen_input_inner_2_01`)。
          * @returns {void}
          */
         static exportRa(func) {
+            if (func === '') {
+                return;
+            }
+
             const clickArea = HtmlTools.getHtml(`#${func}`);
 
             // 忽略已成功导出的重复点击。
@@ -5936,7 +6123,9 @@
                     PrintManager.mode0ShowOnScreen.cancel();
 
                     if (PrintManager.mode0ScreenInCalc) {
-                        WorkerTools.restart();
+                        WorkerTools.restart().catch((err) => {
+                            console.warn('[UI] Worker restart failed:', err);
+                        });
                         PrintManager.mode0ScreenInCalc = false;
                     }
 
@@ -5964,7 +6153,9 @@
          * @returns {void}
          */
         static cancelPrint() {
-            WorkerTools.restart();
+            WorkerTools.restart().catch((err) => {
+                console.warn('[UI] Worker restart failed:', err);
+            });
             PrintManager.mode0ScreenInCalc = false;
 
             PageControlTools.closePrint();
@@ -6264,16 +6455,27 @@
             }
 
             if (currentMode === '1') {
-                const current = PageConfig.subModes['1'];
-                PageConfig.screenData = {'1': [current[0], current[1], HtmlTools.htmlClassToText(expr)]};
-
+                const [row, col] = PageConfig.subModes['1'];
+                const newVal = HtmlTools.htmlClassToText(expr);
                 const gridData = PageConfig.screenData['1'];
-                const gridDataLast = gridData.at(-1);
-                let addSucceed = true;
+                const lastIdx = gridData.length - 1;
 
-                // 最后一行一旦含值就追加空占位行，保证连续录入无需手动新增。
-                if (gridDataLast[0].length !== 0 || gridDataLast[1].length !== 0) {
-                    addSucceed = InputManager.statisticsAddLine();
+                // 预判写入后末行是否非空，决定合并追加空行（1 次 load）还是原地刷新（0 次 load）。
+                const lastRowX = (row === lastIdx && col === 0) ? newVal : gridData[lastIdx][0];
+                const lastRowY = (row === lastIdx && col === 1) ? newVal : gridData[lastIdx][1];
+                const needAppendEmptyRow = lastRowX.length !== 0 || lastRowY.length !== 0;
+
+                let addSucceed = true;
+                if (needAppendEmptyRow && gridData.length + 1 <= InputManager.MAX_STATISTICS_ROW) {
+                    const nextData = gridData.map((r) => [...r]);
+                    nextData[row][col] = newVal;
+                    nextData.push(['', '']);
+                    PageConfig.screenData = {'1': nextData};
+                } else {
+                    if (needAppendEmptyRow) {
+                        addSucceed = false;
+                    }
+                    PageConfig.screenData = {'1': [row, col, newVal]};
                 }
 
                 if (moveCursor && addSucceed) {

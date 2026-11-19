@@ -2,7 +2,7 @@
 <html dir="ltr" lang="zh-CN">
 
 <head>
-    <!-- Whalgebra Version: v3.1.3 | Updated: 2026-09-09 -->
+    <!-- Whalgebra Version: v3.1.4 | Updated: 2026-11-19 -->
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0, user-scalable=yes" name="viewport"/>
     <title>Whalgebra</title>
@@ -66,6 +66,13 @@
                 );
 
                 /**
+                 * 已知 token 的配置信息。
+                 *
+                 * @type {Map}
+                 */
+                static tokenInfoMap = new Map();
+
+                /**
                  * 阻止实例化静态配置类。
                  *
                  * @throws {Error} 始终抛出。
@@ -108,6 +115,48 @@
                         levelTokens.forEach((token) => {
                             this.priorityMap.set(token, index);
                         });
+                    });
+
+                    // 为所有固定词元、空白和空串预构建冻结元信息，运行时直接 O(1) 复用。
+                    const prebuiltTokens = new Set(['', ' ', ...this.allSigns, ...this.htmlClassLenOneFunc]);
+                    prebuiltTokens.forEach((token) => {
+                        const info = {
+                            token,
+                            class: 'illegal',
+                            isHtmlClassLenOne: this.htmlClassLenOneFunc.has(token)
+                        };
+
+                        // 检查 token 是否为函数或运算符
+                        if (this.allFunc.has(token)) {
+                            info.class = 'func';
+                            if (this.params_1_set.has(token)) {
+                                info.parameters = 1;
+                            } else if (this.params_2_set.has(token)) {
+                                info.parameters = 2;
+                            }
+                            if (this.PlaceFrontSet.has(token)) {
+                                info.funcPlace = 'front';
+                            } else if (this.PlaceMiddleSet.has(token)) {
+                                info.funcPlace = 'middle';
+                            } else if (this.PlaceBackSet.has(token)) {
+                                info.funcPlace = 'back';
+                            }
+                            info.associativity = this.rightAssocFunc.has(token) ? 'right' : 'left';
+                            info.needKh = this.needParensFunc.has(token);
+                            info.isPrivate = this.privateFunc.has(token);
+                            info.priority = this.priorityMap.has(token) ? this.priorityMap.get(token) : Infinity;
+                        } else if (this.codeNumbers.has(token) || (token.length > 0 && this.baseNumbers.has(token[0]))) {
+                            // 检查 token 是否为数字或变量 (通过常量匹配或首字母匹配)
+                            info.class = 'number';
+                            info.numClass = this.codeNumbers.has(token) ? 'codeNumbers' : 'baseNumber';
+                            info.priority = Infinity;
+                        } else if (this.other.has(token)) {
+                            // 检查 token 是否为其他合法符号
+                            info.class = 'other';
+                            info.priority = Infinity;
+                        }
+
+                        this.tokenInfoMap.set(token, Object.freeze(info));
                     });
                 }
             }
@@ -202,7 +251,7 @@
                     const acc = input.acc;
                     const newInput = new ComplexNumber(input, {acc: Math.max(Math.floor(0.9 * acc), acc - 8)});
                     if (newInput.re.power >= 0 && newInput.im.isZero()) {
-                        return newInput;
+                        return new ComplexNumber(newInput, {acc});
                     }
                     return input;
                 }
@@ -259,7 +308,7 @@
                                     result.push('error');
                                 } else {
                                     const num = new ComplexNumber(x[i]);
-                                    const realAcc = getRealAcc(num.acc);
+                                    const realAcc = Math.max(1, getRealAcc(num.acc));
                                     result.push(Public.zeroCorrect(num).toString({
                                         acc: realAcc,
                                         printMode: printMode
@@ -270,7 +319,7 @@
                         }
                         default:
                             const num = new ComplexNumber(x);
-                            const realAcc = getRealAcc(num.acc);
+                            const realAcc = Math.max(1, getRealAcc(num.acc));
                             return Public.zeroCorrect(num).toString({
                                 acc: realAcc,
                                 printMode: printMode
@@ -301,7 +350,7 @@
                         return 'error';
                     }
 
-                    list = Public.idealizationToString(list);
+                    list = Public.idealizationToString(list, {printMode: 'algebra'});
                     const a = list[0];
                     const b = list[1];
                     let result = '';
@@ -357,7 +406,7 @@
                             if (b === '0') {
                                 return a;
                             }
-                            return Public.funcToString([0, a], 'powerFunc', `exp(${Public.funcToString([0, b], 'powerFunc')})`);
+                            return Public.funcToString([0, a], 'powerFunc', `exp(${Public.funcToString([0, b], 'powerFunc', asX)})`);
 
                         // 指数模型：a·b^x。
                         case 'abxFunc':
@@ -372,10 +421,10 @@
                             } else if (a !== '1') {
                                 result += a.includes('E') ? `(${a})*` : `${a}*`;
                             }
-                            if (!b.includes('E') && !b.includes('-')) {
-                                result += `${b}^${asX}`;
-                            } else {
+                            if (/[+\-E]|\[toPolar]/.test(b)) {
                                 result += `(${b})^${asX}`;
+                            } else {
+                                result += `${b}^${asX}`;
                             }
                             return result;
 
@@ -481,47 +530,27 @@
                         return;
                     }
 
-                    const result = {token: token, class: 'illegal'};
-                    result.isHtmlClassLenOne = TokenConfig.htmlClassLenOneFunc.has(token);
-                    const firstChar = token.length > 0 ? token[0] : null;
-
-                    if (!TokenConfig.allSigns.has(token) && !TokenConfig.baseNumbers.has(firstChar)) {
-                        return result;
+                    const cached = TokenConfig.tokenInfoMap.get(token);
+                    if (cached !== undefined) {
+                        return cached;
                     }
 
-                    // 检查 token 是否为函数或运算符
-                    if (TokenConfig.allFunc.has(token)) {
-                        result.class = 'func';
-
-                        if (TokenConfig.params_1_set.has(token)) {
-                            result.parameters = 1;
-                        } else if (TokenConfig.params_2_set.has(token)) {
-                            result.parameters = 2;
-                        }
-
-                        if (TokenConfig.PlaceFrontSet.has(token)) {
-                            result.funcPlace = 'front';
-                        } else if (TokenConfig.PlaceMiddleSet.has(token)) {
-                            result.funcPlace = 'middle';
-                        } else if (TokenConfig.PlaceBackSet.has(token)) {
-                            result.funcPlace = 'back';
-                        }
-
-                        result.associativity = TokenConfig.rightAssocFunc.has(token) ? 'right' : 'left';
-                        result.needKh = TokenConfig.needParensFunc.has(token);
-                        result.isPrivate = TokenConfig.privateFunc.has(token);
-                    } else if (TokenConfig.codeNumbers.has(token) || TokenConfig.baseNumbers.has(firstChar)) {
-                        // 检查 token 是否为数字或变量 (通过常量匹配或首字母匹配)
-                        result.class = 'number';
-                        result.numClass = TokenConfig.codeNumbers.has(token) ? 'codeNumbers' : 'baseNumber';
-                    } else if (TokenConfig.other.has(token)) {
-                        // 检查 token 是否为其他合法符号
-                        result.class = 'other';
+                    // 仅多位数字字符串（如 "123.45"）和未知非法词元会走到这里。
+                    if (TokenConfig.baseNumbers.has(token[0])) {
+                        return {
+                            token,
+                            class: 'number',
+                            numClass: 'baseNumber',
+                            isHtmlClassLenOne: false,
+                            priority: Infinity
+                        };
                     }
 
-                    result.priority = TokenConfig.priorityMap.has(token) ? TokenConfig.priorityMap.get(token) : Infinity;
-
-                    return result;
+                    return {
+                        token,
+                        class: 'illegal',
+                        isHtmlClassLenOne: false
+                    };
                 }
 
                 /**
@@ -1335,17 +1364,22 @@
                  */
                 static _syncToWorker(methodName, value) {
                     // Worker 内没有 window；在这里返回可防止 Worker 应用配置后再次反向同步，形成消息回环。
-                    if (typeof window === 'undefined') {
+                    if (typeof window === 'undefined' || typeof WorkerTools === 'undefined') {
                         return;
                     }
 
-                    if (typeof WorkerTools === 'undefined') {
+                    // Worker 正在重启时跳过零散同步，避免产生无意义请求；重启末尾的 _restoreState() 会统一恢复最新配置。
+                    if (!WorkerTools.isReady || WorkerTools.isRestarting) {
                         return;
                     }
 
-                    if (WorkerTools.isReady) {
-                        WorkerTools[methodName](value);
-                    }
+                    Promise.resolve(WorkerTools[methodName](value)).catch((err) => {
+                        // 同步途中被主动取消或重启打断属于预期竞态，新 Worker 会通过 _restoreState 拿到最新值。
+                        if (err?.name === 'CancellationError' || err?.name === 'TerminationError') {
+                            return;
+                        }
+                        console.warn(`[CalcConfig] Failed to sync '${methodName}' to Worker:`, err);
+                    });
                 }
             }
 
@@ -1367,6 +1401,31 @@
              * @class BigNumber
              */
             class BigNumber {
+                /**
+                 * 线性缓存 `10^exp` 的最大指数上限。
+                 * 512 足以覆盖全局最高计算精度（220）和 Lanczos 最高内部精度（420），
+                 * 常规舍入全部 O(1) 命中，且常驻内存上限仅约 55 KB。
+                 * @private
+                 */
+                static _MAX_POW10_CACHE_EXP = 512;
+                /**
+                 * 线性缓存表：`_pow10Cache[i] === 10n ** BigInt(i)`，长度不超过 `_MAX_POW10_CACHE_EXP + 1`。
+                 * @private
+                 */
+                static _pow10Cache = [1n];
+                /**
+                 * 二次幂指数缓存上限：`k = 14` 对应 `10^(2^14) = 10^16384`。
+                 * 15 项合计常驻内存仅约 14 KB；超过此规模的超大数在单次调用内临时计算，用完即由 GC 回收。
+                 * @private
+                 */
+                static _MAX_POW10_TWO_POW_K = 14;
+                /**
+                 * 二次幂指数缓存表：`_pow10TwoPowCache[k] === 10n ** (2n ** BigInt(k))`。
+                 * 即 `[10^1, 10^2, 10^4, 10^8, ...]`。
+                 * @private
+                 */
+                static _pow10TwoPowCache = [10n];
+
                 /**
                  * 从数值、字符串、同类对象或内部元组创建高精度十进制数。
                  *
@@ -1447,7 +1506,11 @@
                                 power: powerFromBigInt
                             } = BigNumber._roundAndNormalize(x, 0, acc);
 
-                            this.power = mantissaFromBigInt === 0n ? 0 : powerFromBigInt + pow;
+                            const finalPow = powerFromBigInt + pow;
+                            if (mantissaFromBigInt !== 0n && !Number.isSafeInteger(finalPow)) {
+                                throw new Error('[BigNumber] Input error: Power too large or too small');
+                            }
+                            this.power = mantissaFromBigInt === 0n ? 0 : finalPow;
                             this.mantissa = mantissaFromBigInt;
                             this.acc = acc;
                             return;
@@ -1457,15 +1520,20 @@
                             if (!Number.isFinite(x)) {
                                 throw new Error('[BigNumber] Input error: Non-finite numbers (Infinity, NaN) are not supported.');
                             }
-                            if (Number.isInteger(x)) {
+                            // 仅安全整数直接走 BigInt 快速路径；超过 2^53 - 1 的浮点整数交给 toExponential() 按十进制解析。
+                            if (Number.isSafeInteger(x)) {
                                 acc = acc ?? CalcConfig.globalCalcAccuracy;
                                 const {
-                                    mantissa: mantissaFromBigInt,
-                                    power: powerFromBigInt
+                                    mantissa: mantissaFromInt,
+                                    power: powerFromInt
                                 } = BigNumber._roundAndNormalize(x, 0, acc);
 
-                                this.power = mantissaFromBigInt === 0n ? 0 : powerFromBigInt + pow;
-                                this.mantissa = mantissaFromBigInt;
+                                const finalPow = powerFromInt + pow;
+                                if (mantissaFromInt !== 0n && !Number.isSafeInteger(finalPow)) {
+                                    throw new Error('[BigNumber] Input error: Power too large or too small');
+                                }
+                                this.power = mantissaFromInt === 0n ? 0 : finalPow;
+                                this.mantissa = mantissaFromInt;
                                 this.acc = acc;
                                 return;
                             }
@@ -1542,25 +1610,20 @@
                 }
 
                 /**
-                 * 获取 10 的指定非负整数次幂，并使用缓存避免重复计算。
-                 * 该方法返回 `10 ** exp` 的 `BigInt` 结果，用于高精度整数运算中的位数判断、
-                 * 舍入除数计算等场景。内部会按需扩展 `_pow10Cache`，因此多次调用相同或较小指数时
-                 * 可以直接复用已有结果。
+                 * 获取 10 的指定非负整数次幂。
+                 * 小指数走 O(1) 缓存表，大指数直接用原生 BigInt 快速幂，避免常驻内存膨胀。
                  *
                  * @private
-                 * @param {number} exp - 10 的指数；必须是可安全循环处理的非负整数。结果缓存按该整数键复用，
-                 *   小数、负数和非有限值会在任何 BigInt 幂运算前被拒绝。
-                 * @returns {bigint} `10 ** exp` 的 BigInt 结果。
-                 * @throws {Error} 如果 `exp` 不是非负整数。
+                 * @param {number} exp
+                 * @returns {bigint}
                  */
                 static _pow10(exp) {
                     if (!Number.isInteger(exp) || exp < 0) {
                         throw new Error('[BigNumber] Input error: exponent for pow10 must be a non-negative integer.');
                     }
 
-                    // 首次调用时初始化 `10^i` 缓存。
-                    if (BigNumber._pow10Cache === undefined) {
-                        BigNumber._pow10Cache = [1n];
+                    if (exp > BigNumber._MAX_POW10_CACHE_EXP) {
+                        return 10n ** BigInt(exp);
                     }
 
                     const cache = BigNumber._pow10Cache;
@@ -1575,43 +1638,68 @@
 
                 /**
                  * 计算一个 BigInt 的十进制位数。
-                 * 该方法通过比较 `n` 与 10 的幂来确定其十进制长度：若
-                 * `10^(d - 1) <= n < 10^d`，则 `d` 即为十进制位数。
-                 * 内部使用指数扩张寻找上界，再通过二分查找确定精确位数。
+                 * 利用 `10^(2^k)` 倍增定位上界，再按二进制位从高到低整除缩减，
+                 * 无需构造任何中间的 `10^mid`，内存占用严格有界。
                  *
-                 * @private
-                 * @param {bigint} n - 要统计的整数；符号位不计入十进制位数，`0n` 特判为一位。
-                 * @returns {number} `n` 的十进制位数；对于 `0n` 返回 `1`。
+                 * @param {bigint} n
+                 * @returns {number}
                  */
-                static _decimalLengthBigInt(n) {
+                static decimalLengthBigInt(n) {
                     if (n < 0n) {
                         n = -n;
                     }
-
                     if (n < 10n) {
                         return 1;
                     }
 
-                    let lo = 1;
-                    let hi = 2;
+                    const cache = BigNumber._pow10TwoPowCache;
+                    const maxK = BigNumber._MAX_POW10_TWO_POW_K;
 
-                    while (n >= BigNumber._pow10(hi)) {
-                        lo = hi + 1;
-                        hi *= 2;
+                    // 超过常驻上限时，把临时平方结果放进局部变量，函数返回后立即释放。
+                    let extraPows = null;
+                    const getPow = (k) => {
+                        if (k < cache.length) {
+                            return cache[k];
+                        }
+                        return extraPows[k - maxK - 1];
+                    };
+
+                    // 1. 倍增找到最小 k，使 n < 10^(2^k)
+                    let k = 0;
+                    while (true) {
+                        let p;
+                        if (k < cache.length) {
+                            p = cache[k];
+                        } else if (k <= maxK) {
+                            const prev = cache[k - 1];
+                            p = prev * prev;
+                            cache.push(p);
+                        } else {
+                            if (extraPows === null) {
+                                extraPows = [];
+                            }
+                            const prev = getPow(k - 1);
+                            p = prev * prev;
+                            extraPows.push(p);
+                        }
+
+                        if (n < p) {
+                            break;
+                        }
+                        k++;
                     }
 
-                    // 二分查找满足 n < 10^d 的最小 d。
-                    while (lo < hi) {
-                        const mid = Math.floor((lo + hi) / 2);
-
-                        if (n < BigNumber._pow10(mid)) {
-                            hi = mid;
-                        } else {
-                            lo = mid + 1;
+                    // 2. 从高位向低位逐次折半逼近精确位数
+                    let len = 1;
+                    for (let j = k - 1; j >= 0; j--) {
+                        const p = getPow(j);
+                        if (n >= p) {
+                            n /= p;
+                            len += 2 ** j;
                         }
                     }
 
-                    return lo;
+                    return len;
                 }
 
                 /**
@@ -1661,7 +1749,7 @@
                     const threshold = BigNumber._pow10(acc);
 
                     if (absMantissa > threshold) {
-                        const mantissaLength = BigNumber._decimalLengthBigInt(absMantissa);
+                        const mantissaLength = BigNumber.decimalLengthBigInt(absMantissa);
                         const digitsToShift = mantissaLength - acc;
 
                         if (digitsToShift > 0) {
@@ -1896,11 +1984,11 @@
 
                             const midString = mantissaStr.slice(1);
                             const midLength = midString.length;
-                            const scientificPower = BigInt(midLength === 0 ? finalPower : (finalPower + midLength)).toString();
+                            const scientificPower = BigInt(midLength === 0 ? finalPower : (finalPower + midLength));
                             if (midLength === 0) {
-                                resultString = `${mantissaStr}${scientificPower < 0 ? 'E' : 'E+'}${scientificPower}`;
+                                resultString = `${mantissaStr}${scientificPower < 0n ? 'E' : 'E+'}${scientificPower.toString()}`;
                             } else {
-                                resultString = `${mantissaStr[0]}.${midString}${scientificPower < 0 ? 'E' : 'E+'}${scientificPower}`;
+                                resultString = `${mantissaStr[0]}.${midString}${scientificPower < 0n ? 'E' : 'E+'}${scientificPower.toString()}`;
                             }
 
                             if (isNegative) {
@@ -1918,6 +2006,20 @@
              * @class ComplexNumber
              */
             class ComplexNumber {
+                /**
+                 * 预编译的复数完整语法正则：
+                 * - 允许空白出现在首尾、项间 +/- 两侧及 * 两侧，禁止出现在数字内部；
+                 * - 虚部支持 NUM[*]?i、i[*]?NUM、单独 i，杜绝 NUM i NUM 拼接；
+                 * - 存在第二项时，中间必须有显式的 + 或 - 分隔。
+                 * @private
+                 */
+                static _COMPLEX_REGEX = (() => {
+                    const NUM = '(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
+                    const IMAG = `(?:(?:${NUM})(?:\\s*\\*\\s*)?i|i(?:\\s*\\*\\s*)?(?:${NUM})|i)`;
+                    const TERM = `(?:${IMAG}|${NUM})`;
+                    return new RegExp(`^\\s*([+-]?)\\s*(${TERM})(?:\\s*([+-])\\s*(${TERM}))?\\s*$`);
+                })();
+
                 /**
                  * 从代数字符串、实数、同类对象或内部数组创建复数。
                  *
@@ -1941,8 +2043,8 @@
                                 throw new Error('[ComplexNumber] Input error: Array length must be 2 or 3.');
                             }
                             if (len === 2) {
-                                let r = new BigNumber(x[0], {acc: acc});
-                                let i = new BigNumber(x[1], {acc: acc});
+                                let r = new BigNumber(x[0], {acc: acc, pow: pow});
+                                let i = new BigNumber(x[1], {acc: acc, pow: pow});
 
                                 const finalAcc = Math.min(r.acc, i.acc);
 
@@ -2032,68 +2134,43 @@
                  * @throws {Error} 如果输入字符串的格式无效或不明确。
                  */
                 static _parseComplex(complexString) {
-                    // 预处理和规范化输入字符串：
-                    //   - 移除所有空白字符和下划线
-                    //   - 将所有虚数单位 (I, j, J) 统一转换为小写的 'i'
-                    let sanitizedStr = complexString.replace(/[\s_]/g, '').replace(/[JjI]/g, 'i').replace(/\[i]/g, 'i');
+                    // 仅统一虚数单位并移除数字间的千分位下划线，不盲目删空白、不做字符置换。
+                    const normalized = complexString
+                        .replace(/[JjI]/g, 'i')
+                        .replace(/\[i]/g, 'i')
+                        .replace(/(?<=\d)_(?=\d)/g, '');
 
-                    // 标准化虚部格式，处理数字在 'i' 之后的情况：
-                    //   例如，将 "i*2.5" 或 "i2.5" 转换为标准的 "2.5i"。
-                    //   这使得后续的正则表达式可以基于 'i' 在末尾的假设进行匹配。
-                    const numPatternForSwap = /i[*]?((?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g;
-                    sanitizedStr = sanitizedStr.replace(numPatternForSwap, '$1i');
-
-                    if (sanitizedStr === '') {
+                    const match = normalized.match(ComplexNumber._COMPLEX_REGEX);
+                    if (!match) {
                         throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
                     }
 
-                    // 使用正则表达式匹配所有可能的实部和虚部项。
-                    // 这个正则表达式由两部分组成，用 OR (|) 连接：
-                    //   1. `([+-]?(...)?i)`: 匹配一个完整的虚部项。它能捕获可选的符号、可选的数字（包括科学记数法）、可选的乘号 '*'，并以 'i' 结尾。
-                    //   2. `([+-]?(...))`: 匹配一个完整的实部项（一个数字，包括科学记数法）。
-                    const termRegex = /([+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)?[*]?i)|([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g;
-                    const allMatches = [...sanitizedStr.matchAll(termRegex)];
-                    /** 保留非空的正则匹配项。 */
-                    const validTerms = allMatches.filter((match) => match[0] !== '');
+                    const [, sign1, term1, sign2, term2] = match;
+                    const terms = term2 !== undefined
+                                  ? [[sign1, term1], [sign2, term2]]
+                                  : [[sign1, term1]];
 
-                    // 验证匹配结果的完整性和合法性：
-                    //   检查所有匹配到的项的长度之和是否等于净化后字符串的总长度。
-                    //   如果不相等，说明字符串中包含无法识别的字符（如 "3+4i+j"）。
-                    const totalMatchedLength = validTerms.reduce((acc, term) => acc + term[0].length, 0);
-                    if (totalMatchedLength !== sanitizedStr.length) {
-                        throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
-                    }
-                    if (validTerms.length === 0 || validTerms.length > 2) {
-                        throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
-                    }
-
-                    // 分离并存储实部和虚部。
                     let realPart = '0', hasReal = false;
                     let imagPart = '0', hasImag = false;
 
-                    for (const match of validTerms) {
-                        const term = match[0];
-                        if (term.endsWith('i')) {
+                    for (const [sign, rawTerm] of terms) {
+                        const prefix = sign === '-' ? '-' : '';
+                        if (rawTerm.includes('i')) {
                             if (hasImag) {
                                 throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
                             }
                             hasImag = true;
-                            if (term === 'i' || term === '+i') {
-                                imagPart = '1';
-                            } else if (term === '-i') {
-                                imagPart = '-1';
-                            } else {
-                                // 移除末尾的 'i' 和可能存在的 '*'，得到虚部的数值字符串。
-                                imagPart = term.slice(0, -1).replace(/\*/g, '');
-                            }
+                            const mag = rawTerm === 'i' ? '1' : rawTerm.replace(/[i*\s]/g, '');
+                            imagPart = prefix + mag;
                         } else {
                             if (hasReal) {
                                 throw new Error(`[ComplexNumber] Invalid complex number format: '${complexString}'.`);
                             }
                             hasReal = true;
-                            realPart = term;
+                            realPart = prefix + rawTerm;
                         }
                     }
+
                     return {re: realPart, im: imagPart};
                 }
 
@@ -2137,32 +2214,25 @@
                     switch (printMode) {
                         case 'algebra': {
                             const reStr = this.re.toString({acc: acc, mode: mode});
-                            let imStr = this.im.toString({acc: acc, mode: mode});
-                            if (imStr.includes('E')) {
-                                imStr += '*';
-                            }
+                            const rawImStr = this.im.toString({acc: acc, mode: mode});
+                            const isOne = ['1', '1E+0'].includes(rawImStr);
+                            const isNegOne = ['-1', '-1E+0'].includes(rawImStr);
+                            const imStr = rawImStr.includes('E') ? `${rawImStr}*` : rawImStr;
 
-                            // 纯虚数
                             if (['0', '0E+0'].includes(reStr)) {
-                                if (['1', '1E+0'].includes(imStr)) {
+                                if (isOne) {
                                     return '[i]';
                                 }
-                                if (['-1', '-1E+0'].includes(imStr)) {
+                                if (isNegOne) {
                                     return '-[i]';
                                 }
-                                return imStr + '[i]';
+                                return `${imStr}[i]`;
                             }
 
                             if (this.im.isNegative()) {
-                                if (['-1', '-1E+0'].includes(imStr)) {
-                                    return `${reStr}-[i]`;
-                                }
-                                return `${reStr}${imStr}[i]`;
+                                return isNegOne ? `${reStr}-[i]` : `${reStr}${imStr}[i]`;
                             } else {
-                                if (['1', '1E+0'].includes(imStr)) {
-                                    return `${reStr}+[i]`;
-                                }
-                                return `${reStr}+${imStr}[i]`;
+                                return isOne ? `${reStr}+[i]` : `${reStr}+${imStr}[i]`;
                             }
                         }
 
@@ -2418,8 +2488,15 @@
                         // 纯实数直接在 BigNumber 的尾数上运算；复数分支则分别合并实部和虚部。
                         const reA = inputA.re;
                         const reB = inputB.re;
-
                         const resultAcc = Math.min(reA.acc, reB.acc);
+
+                        if (reA.isZero()) {
+                            return new ComplexNumber(inputB, {acc: resultAcc});
+                        }
+                        if (reB.isZero()) {
+                            return new ComplexNumber(inputA, {acc: resultAcc});
+                        }
+
                         let mantissaA = reA.mantissa;
                         let mantissaB = reB.mantissa;
                         const powerDifference = reB.power - reA.power;
@@ -2534,8 +2611,12 @@
 
                         const resultAcc = Math.min(reA.acc, reB.acc);
 
-                        const lenA = (reA.isNegative() ? -reA.mantissa : reA.mantissa).toString().length;
-                        const lenB = (reB.isNegative() ? -reB.mantissa : reB.mantissa).toString().length;
+                        const lenA = BigNumber.decimalLengthBigInt(
+                            (reA.isNegative() ? -reA.mantissa : reA.mantissa)
+                        );
+                        const lenB = BigNumber.decimalLengthBigInt(
+                            (reB.isNegative() ? -reB.mantissa : reB.mantissa)
+                        );
 
                         // BigInt 除法会截断，因此先按目标精度、尾数位数差和保护位放大被除数。
                         const scalingDigits = resultAcc + lenB - lenA + 4;
@@ -2614,12 +2695,14 @@
                             modResult = leftMod % calcB;
                         } else if (powOfB > CalcConfig.MAX_INPUT_EXPONENT) {
                             if (reA.acc < CalcConfig.MAX_INPUT_EXPONENT) {
-                                modResult = calcA;
-
-                                // 此处可能存在性能问题，因此需要判断是否会在后续触发 calcB 参与修正计算
-                                if (isNegativeA !== isNegativeB) {
-                                    calcB = calcB * (10n ** BigInt(powOfB));
+                                // 此时必然满足 |a| < |b|，直接按定义提前返回，避免构造巨型 BigInt
+                                if (reA.isZero()) {
+                                    return new ComplexNumber([0, 0n, resultAcc]);
                                 }
+                                if (isNegativeA !== isNegativeB) {
+                                    return MathPlus.plus(inputA, inputB);
+                                }
+                                return new ComplexNumber(inputA, {acc: resultAcc});
                             } else {
                                 calcB = calcB * (10n ** BigInt(powOfB));
                                 modResult = calcA % calcB;
@@ -2722,18 +2805,18 @@
                      * 目的：计算超大结果时，只保留需要的有效位数以避免内存溢出。
                      * @param {bigint} base - 底数
                      * @param {bigint} exponent - 指数
+                     * @param {number} acc - 精度
                      * @returns {ComplexNumber} 结果 (ComplexNumber 实例)
                      */
-                    function fastPow(base, exponent) {
-                        const currentAcc = CalcConfig.globalCalcAccuracy;
+                    function fastPow(base, exponent, acc) {
                         if (exponent === 0n) {
-                            return new ComplexNumber([0, 1n, CalcConfig.globalCalcAccuracy]);
+                            return new ComplexNumber([0, 1n, acc]);
                         }
 
-                        // 连续平方会累积舍入误差，额外 10 位仅作为中间保护位，最终结果仍按调用精度截断。
-                        let b = new ComplexNumber(base, {acc: currentAcc + 10});
-                        const acc = b.acc;
-                        let result = new ComplexNumber([0, 1n, acc]);
+                        // 连续平方会累积舍入误差，额外 10 位仅作为中间保护位
+                        let b = new ComplexNumber(base, {acc: acc + 10});
+                        const innerAcc = b.acc;
+                        let result = new ComplexNumber([0, 1n, innerAcc]);
 
                         // 二进制平方-乘：指数每次减半，只在当前二进制位为 1 时乘入结果。
                         while (exponent > 0n) {
@@ -2755,14 +2838,15 @@
                     const inputB = new ComplexNumber(b);
                     const resultAcc = Math.min(inputA.acc, inputB.acc);
 
-                    if (
-                        !inputB.onlyReal &&
-                        inputA.onlyReal &&
-                        /** 判断实部是否等于常量 e。 */
-                        inputA.re.valueOf().every((val, index) => val === CalcConfig.constants.e[index])
-                    ) {
-                        // e 的复数幂由 exp 专用实现计算，避免经通用 ln/pow 路径损失精度。
-                        return MathPlus.exp(inputB);
+                    if (!inputB.onlyReal && inputA.onlyReal) {
+                        const instanceE = new BigNumber(CalcConfig.constants.e, {acc: inputA.re.acc});
+                        if (
+                            inputA.re.power === instanceE.power &&
+                            inputA.re.mantissa === instanceE.mantissa
+                        ) {
+                            // e 的复数幂由 exp 专用实现计算，避免经通用 ln/pow 路径损失精度。
+                            return MathPlus.exp(inputB);
+                        }
                     }
 
                     if (inputA.onlyReal && inputB.onlyReal) {
@@ -2798,22 +2882,43 @@
                             }
 
                             const realMantissa = absB.mantissa * (10n ** BigInt(absB.power));
-
                             const orderOfMagnitude = estimateDigitCount(reA.mantissa, realMantissa);
-                            if (orderOfMagnitude >= Number.MAX_SAFE_INTEGER) {
+                            const resultPower = BigInt(reA.power) * realMantissa;
+
+                            // 估算 |a|^|b| 的总数量级（同时计入尾数位数与底数指数的贡献）
+                            const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+                            const minSafe = BigInt(Number.MIN_SAFE_INTEGER);
+
+                            const isOverflow =
+                                resultPower > maxSafe ||
+                                orderOfMagnitude >= Number.MAX_SAFE_INTEGER ||
+                                (resultPower >= minSafe && orderOfMagnitude + Number(resultPower) >= Number.MAX_SAFE_INTEGER);
+
+                            const isUnderflow =
+                                resultPower < minSafe ||
+                                (resultPower <= maxSafe && orderOfMagnitude + Number(resultPower) <= Number.MIN_SAFE_INTEGER);
+
+                            if (isOverflow) {
                                 if (isExponentNegative) {
-                                    return new ComplexNumber([0, 0n, resultAcc]);
+                                    return new ComplexNumber([0, 0n, resultAcc]); // 1 / 极大数 -> 0
                                 }
                                 throw new Error('[MathPlus] mathematical error: Result of power is too large to compute safely.');
+                            }
+
+                            if (isUnderflow) {
+                                if (isExponentNegative) {
+                                    throw new Error('[MathPlus] mathematical error: Result of power is too large to compute safely.'); // 1 / 极小数 -> 溢出
+                                }
+                                return new ComplexNumber([0, 0n, resultAcc]);
                             }
 
                             let resultMantissa;
                             if (orderOfMagnitude < CalcConfig.CRITICAL_MAGNITUDE_FAST_EXP) {
                                 resultMantissa = reA.mantissa ** realMantissa;
                             } else {
-                                resultMantissa = fastPow(reA.mantissa, realMantissa);
+                                resultMantissa = fastPow(reA.mantissa, realMantissa, resultAcc);
                             }
-                            const resultPower = BigInt(reA.power) * realMantissa;
+
                             let result = new ComplexNumber(resultMantissa, {
                                 pow: Number(resultPower),
                                 acc: resultAcc
@@ -2967,7 +3072,7 @@
                         const lowAccuracyRe = new BigNumber(absInput, {acc: 15});
                         const numberRe = Number(lowAccuracyRe.mantissa) * (10 ** lowAccuracyRe.power);
 
-                        if (!Number.isFinite(numberRe)) {
+                        if (!Number.isFinite(numberRe) || numberRe === 0) {
                             useAlternative = true;
                         }
 
@@ -2992,7 +3097,7 @@
                                 i++;
                             } while (difference.power > minPower && !difference.isZero() && i < max);
 
-                            if (i === max) {
+                            if (i >= max) {
                                 console.warn(`[MathPlus] Square root (${x.toString()}) calculation takes too long.`);
                                 useAlternative = true;
                             }
@@ -3039,7 +3144,7 @@
                         const lowAccuracyRe = new BigNumber(re, {acc: 15});
                         const numberRe = Number(lowAccuracyRe.mantissa) * (10 ** lowAccuracyRe.power);
 
-                        if (!Number.isFinite(numberRe)) {
+                        if (!Number.isFinite(numberRe) || numberRe === 0) {
                             useAlternative = true;
                         }
 
@@ -3069,7 +3174,7 @@
                                 i++;
                             } while (difference.power > minPower && !difference.isZero() && i < max);
 
-                            if (i === max) {
+                            if (i >= max) {
                                 console.warn(`[MathPlus] Cube root (${x.toString()}) calculation takes too long.`);
                                 useAlternative = true;
                             }
@@ -3157,7 +3262,7 @@
                             );
                         }
 
-                        if (i === max) {
+                        if (i >= max) {
                             throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: exp. Input: ${input.toString()}`);
                         }
 
@@ -3204,7 +3309,7 @@
                         // 先用 10 和 1.2 缩放到 0.9～1.1，再计算 y=(x-1)/(x+1)。
                         // ln(x) = 2·(y + y³/3 + y⁵/5 + ...)，最后补回缩放产生的 ln(10) 与 ln(1.2)。
                         // 将 x 标准化到 (0, 1] 范围内
-                        const mantissaLen = re.mantissa.toString().length;
+                        const mantissaLen = BigNumber.decimalLengthBigInt(re.mantissa);
                         const mantissaChangedBy10 = mantissaLen + re.power;
                         let mid = new ComplexNumber([re.power - mantissaChangedBy10, re.mantissa, acc]);
 
@@ -3246,7 +3351,7 @@
                             );
                         }
 
-                        if (i === max) {
+                        if (i >= max) {
                             throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: ln. Input: ${input.toString()}`);
                         }
 
@@ -3337,8 +3442,8 @@
                             result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
                         }
 
-                        if (i === max) {
-                            throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: cos. Input: ${input.toString()}`);
+                        if (i >= max) {
+                            throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: sin. Input: ${input.toString()}`);
                         }
 
                         // 反复应用三倍角公式 sin(3x) = 3sin(x) - 4sin³(x) 来还原结果
@@ -3474,7 +3579,7 @@
                             );
                         }
 
-                        if (i === max) {
+                        if (i >= max) {
                             throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: cos. Input: ${input.toString()}`);
                         }
 
@@ -3598,7 +3703,7 @@
                                 2 * i + 3
                             ).re;
                         }
-                        if (i === max) {
+                        if (i >= max) {
                             throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: arctan. Input: ${input.toString()}`);
                         }
 
@@ -4089,23 +4194,6 @@
                  */
                 static calc(expr, {unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy} = {}) {
                     /**
-                     * (内部辅助函数) 检查一个字符串数组中是否至少有一个元素包含指定的子字符串。
-                     *
-                     * @private
-                     * @param {string[]} list - 要检查的字符串数组。
-                     * @param {string} str - 要搜索的子字符串。
-                     * @returns {boolean} 如果找到任何包含该子字符串的元素，则返回 true；否则返回 false。
-                     */
-                    function listIncludesStr(list, str) {
-                        for (let i = 0; i < list.length; i++) {
-                            if (list[i].includes(str)) {
-                                return true;
-                            }
-                        }
-                        return false;
-                    }
-
-                    /**
                      * (内部辅助函数) 将一个词法单元（token）转换为其内部表示或可执行的等价物。
                      * 这是连接词法分析和计算执行的关键步骤。它将运算符、函数名、常量和变量等字符串
                      * 映射到实际的 MathPlus 方法名、预计算的常量值或变量的当前值。
@@ -4174,13 +4262,19 @@
                      * 它是逆波兰表示法 (RPN) 的核心执行引擎。
                      *
                      * @private
-                     * @param {string} token - 要执行的运算符或函数词法单元，例如 "+", "sin", "N"。
+                     * @param {string} rawToken - 要执行的运算符或函数词法原始单元，例如 "+", "sin", "N"。
                      * @returns {void} 此函数不返回值，它通过修改 `valueStack` 来产生副作用。
                      * @throws {Error} 如果 `valueStack` 中的操作数不足以满足 `token` 所需的参数数量。
                      * @throws {Error} 如果尝试调用一个未定义的自定义函数 'f' 或 'g'。
                      */
-                    function evaluationRPN(token) {
+                    function evaluationRPN(rawToken) {
+                        const hasCommaMark = rawToken.endsWith('~');
+                        const token = hasCommaMark ? rawToken.slice(0, -1) : rawToken;
                         let tokenInfo = Public.getTokenInfo(token);
+
+                        if (tokenInfo.funcPlace === 'front' && tokenInfo.parameters === 2 && !hasCommaMark) {
+                            throw new Error(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
+                        }
 
                         // --- 处理一元运算符（前缀或后缀） ---
                         if (tokenInfo.parameters === 1) {
@@ -4227,7 +4321,8 @@
                     // 初始验证和准备
                     const inputType = Public.typeOf(expr);
                     if (['number', 'bigint', 'complexnumber', 'bignumber'].includes(inputType)) {
-                        return [new ComplexNumber(expr), expr];
+                        const val = new ComplexNumber(expr, {acc: acc});
+                        return [val, val.toString()];
                     }
                     if (inputType !== 'string') {
                         throw new Error('[MathPlus] Disallowed input type.');
@@ -4254,6 +4349,8 @@
                     let lastTokenInfo = {};
                     // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 为内层循环的括号记录。
                     let kh = 0, minKh = 0, addKh = 0;
+                    let tempBracketIdx = -1; // 记录临时 隐式乘法前括号 应该插在哪个索引后面，-1 表示当前没有
+                    const openAfter1 = [];   // 延迟插入 '(' 的计数表
                     const orderOfTimes = Public.getTokenInfo('*').priority;
                     const orderOfInvisibleTimes = Public.getTokenInfo('&').priority;
                     const absKhStack = []; // 栈用于跟踪绝对值符号的嵌套层级。
@@ -4335,7 +4432,10 @@
                             )
                         ) {
                             // 缺少左操作数的 `-` 转为内部一元负号 `N`；一元 `+` 可直接忽略。
-                            currentPush = currentPush === '-' ? 'N' : '';
+                            if (currentPush === '+') {
+                                continue;
+                            }
+                            currentPush = 'N';
                         }
 
                         // --- 处理绝对值 ---
@@ -4373,7 +4473,7 @@
                         // 为了消除歧义。例如，`1/2x` 应该是 `1/(2&x)`。
                         if (
                             (output[output.length - 1] === '&' || (output[output.length - 1] === 'A' && output[output.length - 2] === '&')) &&
-                            !output.includes('[')
+                            tempBracketIdx === -1
                         ) {
                             addKh = 0;
                             for (let j = output.length - (output[output.length - 1] === '&' ? 2 : 3); j >= 0; j--) {
@@ -4392,7 +4492,7 @@
                                     addKh === 0
                                 ) {
                                     if (tokenInfoJ.priority <= orderOfTimes && currentTokenJ !== '*') {
-                                        output.splice(j + 1, 0, '[');
+                                        tempBracketIdx = j;
                                     }
                                     break;
                                 }
@@ -4401,7 +4501,7 @@
                         }
 
                         if ( // 解决为隐式乘法添加的另一半括号
-                            output.includes('[') && (
+                            tempBracketIdx !== -1 && (
                                 (
                                     tokenInfo.class === 'func' &&
                                     tokenInfo.priority > orderOfInvisibleTimes &&
@@ -4411,20 +4511,17 @@
                                 i + 1 === input.length
                             )
                         ) {
-                            if (tokenInfo.priority >= orderOfTimes) {
-                                // 目前 token 优先级低于显式乘法，需要添加括号
-                                /** 将临时左括号标记转换为普通左括号。 */
-                                output = output.map((item) => item === '[' ? '(' : item);
+                            if (tokenInfo.priority >= orderOfTimes || i + 1 === input.length) {
+                                // 目前 token 优先级低于显式乘法，或已到达表达式末尾，需要补全括号
+                                openAfter1[tempBracketIdx] = (openAfter1[tempBracketIdx] || 0) + 1;
                                 if (i + 1 === input.length) {
                                     output.push(currentPush);
                                     currentPush = ')';
                                 } else {
                                     output.push(')');
                                 }
-                            } else {
-                                /** 移除无需保留的临时左括号标记。 */
-                                output = output.filter((item) => item !== '[');
                             }
+                            tempBracketIdx = -1;
                         }
 
                         if (i + 1 !== input.length) {
@@ -4435,21 +4532,34 @@
                         output.push(currentPush);
                     }
 
-                    // 添加缺失的左括号
-                    while (minKh < 0) {
-                        output = ['(', ...output];
-                        minKh += 1;
-                        kh += 1;
+                    // 1) 一次性展开第一轮延迟插入的 '('
+                    if (openAfter1.length > 0) {
+                        const expanded = [];
+                        for (let i = 0; i < output.length; i++) {
+                            expanded.push(output[i]);
+                            for (let k = 0; k < (openAfter1[i] || 0); k++) {
+                                expanded.push('(');
+                            }
+                        }
+                        output = expanded;
                     }
-                    // 关闭任何未闭合的绝对值符号 以及 绝对值内部未闭合的括号。
+
+                    // 2) 一次性补齐缺失的左括号（替代 while 里的 ['(', ...output]）
+                    if (minKh < 0) {
+                        output = Array(-minKh).fill('(').concat(output);
+                        kh -= minKh;
+                    }
+
+                    // 3) 闭合绝对值时用 push 替代 [...output, '|', ')']
                     for (let i = absKhStack.length - 1; i >= 0; i--) {
                         for (let j = 0; j < absKhStack[i]; j++) {
                             output.push(')');
                         }
-                        output = [...output, '|', ')'];
+                        output.push('|', ')');
                         kh -= absKhStack[i] + 1;
                     }
-                    // 关闭剩余未闭合的常规括号。
+
+                    // 4) 关闭剩余未闭合的常规括号。
                     while (kh > 0) {
                         output.push(')');
                         kh -= 1;
@@ -4468,6 +4578,50 @@
                     let absAdd = false; // 跳过绝对值标记。
                     const orderOfSin = Public.getTokenInfo('sin').priority;
                     const orderOfPow = Public.getTokenInfo('^').priority;
+                    const openAfter2 = [];
+                    const markerMap = new Map(); // key: '#0#' / ':1@' 等, value: 索引数组(升序)
+
+                    const addMarker = (key, idx) => {
+                        let arr = markerMap.get(key);
+                        if (!arr) {
+                            arr = [];
+                            markerMap.set(key, arr);
+                        }
+                        arr.push(idx);
+                    };
+                    const hasMarker = (key) => {
+                        const arr = markerMap.get(key);
+                        return arr !== undefined && arr.length > 0;
+                    };
+                    const takeMarker = (key) => {
+                        const arr = markerMap.get(key);
+                        if (!arr || arr.length === 0) {
+                            return [];
+                        }
+                        markerMap.delete(key);
+                        return arr;
+                    };
+                    const moveMarker = (fromKey, toKey) => {
+                        const arr = takeMarker(fromKey);
+                        for (let i = 0; i < arr.length; i++) {
+                            addMarker(toKey, arr[i]);
+                        }
+                    };
+                    // 弹出同层级最新的 ':' 标记（对应去掉最后一个 '^' 的标记）
+                    const popLastPowMarker = (level) => {
+                        const arr1 = markerMap.get(`:${level}#`);
+                        const arr2 = markerMap.get(`:${level}@`);
+                        const last1 = arr1?.length ? arr1[arr1.length - 1] : -1;
+                        const last2 = arr2?.length ? arr2[arr2.length - 1] : -1;
+                        if (last1 === -1 && last2 === -1) {
+                            return;
+                        }
+                        if (last1 > last2) {
+                            arr1.pop();
+                        } else {
+                            arr2.pop();
+                        }
+                    };
 
                     for (let i = 0; i < input.length; i++) {
                         const currentToken = input[i];
@@ -4486,86 +4640,58 @@
                         const tokenCheck = [',', ')'].includes(currentToken);
 
                         if (
-                            (
-                                ((funcCheck && tokenInfo.priority > orderOfSin) || tokenCheck) && // for 'func_01_1'
-                                listIncludesStr(output, '#' + kh + '@') // 含有二级条件
-                            ) ||
-                            (
-                                ((funcCheck && tokenInfo.priority > orderOfPow) || tokenCheck) && // for '^'
-                                listIncludesStr(output, ':' + kh + '@') // 含有二级条件
-                            )
-                        ) { // 进入此条件一定会添加括号
-                            if (listIncludesStr(output, ':' + kh + '@')) {
-                                // 去除最后一个为 '^' 准备的标记，因为 2^3^4 -> 2^(3^4) 而不是 2^(3^(4))
-                                const pattern = new RegExp(`:${kh}[@#]`);
-                                for (let j = output.length - 1; j > -1; j--) {
-                                    if (pattern.test(output[j])) {
-                                        output[j] = output[j].replace(pattern, '');
-                                        break;
-                                    }
-                                }
+                            (((funcCheck && tokenInfo.priority > orderOfSin) || tokenCheck) && hasMarker(`#${kh}@`) /* 含有二级条件 */) || // for 'func_01_1'
+                            (((funcCheck && tokenInfo.priority > orderOfPow) || tokenCheck) && hasMarker(`:${kh}@`) /* 含有二级条件 */) // for '^'
+                        ) {
+                            if (hasMarker(`:${kh}@`)) {
+                                popLastPowMarker(kh);
                             }
-                            // 替换每个标记并添加括号。
-                            const pattern = new RegExp(`[#:]${kh}[@#]`);
-                            for (let j = 0; j < output.length; j++) {
-                                if (pattern.test(output[j])) {
-                                    output[j] = output[j].replace(pattern, '');
-                                    output.splice(j + 1, 0, '(');
-                                    output.push(')');
-                                }
+                            const indices = [
+                                ...takeMarker(`#${kh}#`),
+                                ...takeMarker(`#${kh}@`),
+                                ...takeMarker(`:${kh}#`),
+                                ...takeMarker(`:${kh}@`)
+                            ];
+                            for (let j = 0; j < indices.length; j++) {
+                                const idx = indices[j];
+                                openAfter2[idx] = (openAfter2[idx] || 0) + 1;
+                                output.push(')');
                             }
                         }
 
-                        if (
-                            (funcCheck || tokenCheck) &&
-                            (listIncludesStr(output, '#' + kh + '#') || listIncludesStr(output, ':' + kh + '#'))
-                        ) {
-                            // 进入此条件不一定会添加括号
+                        if ((funcCheck || tokenCheck) && (hasMarker(`#${kh}#`) || hasMarker(`:${kh}#`))) {
                             // for 'func_01_1'
-                            if (listIncludesStr(output, '#' + kh + '#')) {
+                            if (hasMarker(`#${kh}#`)) {
                                 if (tokenInfo.priority > orderOfSin) {
-                                    // 该 token 作用域到此结束，添加括号。
-                                    for (let j = 0; j < output.length; j++) {
-                                        if (output[j].includes('#' + kh + '#')) {
-                                            // 判断原始表达式是否自带括号。
-                                            const needKh = !(output[j + 1] === '(' && output[output.length - 1] === ')');
-                                            output[j] = output[j].replace('#' + kh + '#', '');
-                                            if (needKh) {
-                                                output.splice(j + 1, 0, '(');
-                                                output.push(')');
-                                            }
+                                    const indices = takeMarker(`#${kh}#`);
+                                    for (let j = 0; j < indices.length; j++) {
+                                        const idx = indices[j];
+                                        const needKh = !(output[idx + 1] === '(' && output[output.length - 1] === ')');
+                                        if (needKh) {
+                                            openAfter2[idx] = (openAfter2[idx] || 0) + 1;
+                                            output.push(')');
                                         }
                                     }
                                 } else if (tokenInfo.priority < orderOfSin) {
-                                    // 该 token 作用域未结束，转换为二级条件。
-                                    for (let j = 0; j < output.length; j++) {
-                                        output[j] = output[j].replace('#' + kh + '#', '#' + kh + '@');
-                                    }
+                                    moveMarker(`#${kh}#`, `#${kh}@`);
                                 }
                             }
 
                             // for '^'，除特殊标注外逻辑同理 for 'func_01_1'
-                            if (listIncludesStr(output, ':' + kh + '#')) {
+                            if (hasMarker(`:${kh}#`)) {
                                 if (tokenInfo.priority > orderOfPow) {
-                                    // 可能出现两级条件混杂情况。
-                                    const pattern = new RegExp(`:${kh}[@#]`);
-                                    // 最后一个 '^' 不用添加括号。
-                                    let theLast = true;
-                                    for (let j = output.length - 1; j > -1; j--) {
-                                        if (pattern.test(output[j])) {
-                                            const needKh = !(output[j + 1] === '(' && output[output.length - 1] === ')');
-                                            output[j] = output[j].replace(pattern, '');
-                                            if (needKh && !theLast) { // 最后一个 '^' 不用添加括号。
-                                                output.splice(j + 1, 0, '(');
-                                                output.push(')');
-                                            }
-                                            theLast = false;
+                                    popLastPowMarker(kh); // 跳过最后一个 '^'
+                                    const indices = [...takeMarker(`:${kh}#`), ...takeMarker(`:${kh}@`)];
+                                    for (let j = 0; j < indices.length; j++) {
+                                        const idx = indices[j];
+                                        const needKh = !(output[idx + 1] === '(' && output[output.length - 1] === ')');
+                                        if (needKh) {
+                                            openAfter2[idx] = (openAfter2[idx] || 0) + 1;
+                                            output.push(')');
                                         }
                                     }
                                 } else if (tokenInfo.priority < orderOfPow) {
-                                    for (let j = 0; j < output.length; j++) {
-                                        output[j] = output[j].replace(':' + kh + '#', ':' + kh + '@');
-                                    }
+                                    moveMarker(`:${kh}#`, `:${kh}@`);
                                 }
                             }
                         }
@@ -4577,7 +4703,8 @@
 
                         // 为需要添加括号的运算符添加标记
                         if (lastTokenInfo.needKh) {
-                            output[output.length - 1] += (lastTokenInfo.token === '^' ? ':' : '#') + (currentToken === '(' ? kh - 1 : kh) + '#';
+                            const markKey = (lastTokenInfo.token === '^' ? ':' : '#') + (currentToken === '(' ? kh - 1 : kh) + '#';
+                            addMarker(markKey, output.length - 1);
                         }
 
                         if (absAdd) { // 跳过的绝对值标记。
@@ -4589,31 +4716,40 @@
                         output.push(currentToken);
                     }
 
-                    let theLast = true;
-                    const powPattern = /:\d+[@#]/;
-                    const patternNotSure = /[#:]\d+#/; // 不一定需要添加括号
-                    const patternSure = /[#:]\d+@/; // 一定需要添加括号
+                    // 收集所有未结算的标记，按索引从大到小处理
+                    const remaining = [];
+                    for (const [key, indices] of markerMap.entries()) {
+                        const isPow = key[0] === ':';
+                        const isSure = key[key.length - 1] === '@';
+                        for (let i = 0; i < indices.length; i++) {
+                            remaining.push({idx: indices[i], isPow, isSure});
+                        }
+                    }
+                    remaining.sort((a, b) => b.idx - a.idx);
 
-                    for (let i = output.length - 1; i > -1; i--) {
-                        if (powPattern.test(output[i]) && theLast) {
-                            // 跳过最后一个 '^' 的标记
-                            output[i] = output[i].replace(powPattern, '');
+                    let theLast = true;
+                    for (let i = 0; i < remaining.length; i++) {
+                        const {idx, isPow, isSure} = remaining[i];
+                        if (isPow && theLast) {
                             theLast = false;
+                            continue;
                         }
-                        if (patternNotSure.test(output[i])) {
-                            // 判断是否需要添加括号。
-                            const needKh = !(output[i + 1] === '(' && output[output.length - 1] === ')');
-                            output[i] = output[i].replace(patternNotSure, '');
-                            if (needKh) {
-                                output.splice(i + 1, 0, '(');
-                                output.push(')');
-                            }
-                        }
-                        if (patternSure.test(output[i])) {
-                            output[i] = output[i].replace(patternSure, '');
-                            output.splice(i + 1, 0, '(');
+                        if (isSure || !(output[idx + 1] === '(' && output[output.length - 1] === ')')) {
+                            openAfter2[idx] = (openAfter2[idx] || 0) + 1;
                             output.push(')');
                         }
+                    }
+
+                    // 一次性展开第二轮延迟插入的 '('
+                    if (openAfter2.length > 0) {
+                        const expanded = [];
+                        for (let i = 0; i < output.length; i++) {
+                            expanded.push(output[i]);
+                            for (let k = 0; k < (openAfter2[i] || 0); k++) {
+                                expanded.push('(');
+                            }
+                        }
+                        output = expanded;
                     }
 
                     // 将 input 指向处理后的 output。
@@ -4661,7 +4797,7 @@
                                 ) && tokenInfo.funcPlace !== 'front' // 防止提前出栈
                                 ) {
                                 // 使用 pop() 从栈顶弹出一个运算符，并用 evaluationRPN 更新求值栈的值。
-                                evaluationRPN(operatorStack.pop().replace('~', ''));
+                                evaluationRPN(operatorStack.pop());
                                 // 更新栈顶元素以供下一次循环判断。
                                 topOfStack = operatorStack[operatorStack.length - 1];
                                 if (topOfStack !== undefined) {
@@ -4675,7 +4811,7 @@
                             operatorStack.push(currentToken);
                         } else if (currentToken === ')') {
                             while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                                evaluationRPN(operatorStack.pop().replace('~', ''));
+                                evaluationRPN(operatorStack.pop());
                             }
                             if (operatorStack.length === 0) {
                                 throw new Error('[MathPlus] syntax error: The parentheses do not match.');
@@ -4684,7 +4820,7 @@
                             operatorStack.pop();
                         } else if (currentToken === ',') {
                             while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                                evaluationRPN(operatorStack.pop().replace('~', ''));
+                                evaluationRPN(operatorStack.pop());
                             }
                             const subTopOfStack = Public.getTokenInfo(operatorStack[operatorStack.length - 2]);
                             if (operatorStack.length < 2 || !(subTopOfStack.funcPlace === 'front' && subTopOfStack.parameters === 2)) {
@@ -4696,7 +4832,7 @@
                     }
 
                     while (operatorStack.length > 0) {
-                        const operator = operatorStack.pop().replace('~', '');
+                        const operator = operatorStack.pop();
                         if (operator === '(') {
                             throw new Error('[MathPlus] syntax error: The parentheses do not match.');
                         }
@@ -4853,8 +4989,8 @@
                     if (n === 1) {
                         return [new ComplexNumber(0), 'error'];
                     }
-                    averageA = averageA === null ? this._averageAndSum(listA) : averageA;
-                    averageB = averageB === null ? this._averageAndSum(listB) : averageB;
+                    averageA = averageA === null ? this._averageAndSum(listA).average : averageA;
+                    averageB = averageB === null ? this._averageAndSum(listB).average : averageB;
                     let cov = new ComplexNumber(0);
                     for (let i = 0; i < n; i++) {
                         cov = MathPlus.plus(
@@ -5026,6 +5162,7 @@
                     const n = coefficients.length;
 
                     const augmentedMatrix = [];
+                    let maxAbs = new ComplexNumber(0);
                     // 复制系数并附加常数列，构造增广矩阵，避免修改调用方传入的数组。
                     for (let i = 0; i < n; i++) {
                         if (coefficients[i].length !== n) {
@@ -5033,10 +5170,19 @@
                         }
                         const newRow = [];
                         for (let j = 0; j < n; j++) {
-                            newRow.push(new ComplexNumber(coefficients[i][j]));
+                            const cell = new ComplexNumber(coefficients[i][j]);
+                            const cellAbs = MathPlus.abs(cell);
+                            if (!cellAbs.isZero() && (maxAbs.isZero() || MathPlus.minus(cellAbs, maxAbs).re.isPositive())) {
+                                maxAbs = cellAbs;
+                            }
+                            newRow.push(cell);
                         }
                         newRow.push(new ComplexNumber(constants[i]));
                         augmentedMatrix.push(newRow);
+                    }
+
+                    if (maxAbs.isZero()) {
+                        throw new Error('[StatisticsTools] The system of equations has no unique solution.');
                     }
 
                     for (let i = 0; i < n; i++) {
@@ -5051,6 +5197,11 @@
                         [augmentedMatrix[i], augmentedMatrix[maxRow]] = [augmentedMatrix[maxRow], augmentedMatrix[i]];
 
                         const pivot = augmentedMatrix[i][i];
+
+                        if (pivot.isZero() || Public.zeroCorrect(MathPlus.divide(pivot, maxAbs)).isZero()) {
+                            // 主元为零或在相对精度阈值内近似为零，表示矩阵奇异，方程组没有唯一解。
+                            throw new Error('[StatisticsTools] The system of equations has no unique solution.');
+                        }
 
                         if (pivot.re.isZero()) {
                             // 主元为零表示矩阵奇异，方程组没有唯一解。
@@ -5138,26 +5289,36 @@
                  * @param {Array<ComplexNumber|string|number>} listB - 与 `listA` 等长的真实观测值，用于计算残差平方和。
                  * @param {function(ComplexNumber|string|number): ComplexNumber} func - 同步预测函数；对每个 `xᵢ`
                  *   返回对应 `ŷᵢ`。常量数据导致 `SS_tot = 0` 时，R² 不可定义。
+                 * @param {ComplexNumber|string|number} ssTot - 可以复用的 SS_tot
                  * @returns {ComplexNumber} 决定系数。
                  */
-                static _calcR2(listA, listB, func) {
-                    let n = listA.length;
-                    const averageB = StatisticsTools._averageAndSum(listB).average;
-                    // 分母为总平方和 SS_tot，分子为残差平方和 SS_res。
-                    let denominator = new ComplexNumber(0);
+                static _calcR2(listA, listB, func, ssTot = null) {
+                    const n = listA.length;
+                    let noSsTot = ssTot === null;
+                    let denominator = noSsTot ? new ComplexNumber(0) : ssTot;
                     let numerator = new ComplexNumber(0);
+                    let averageB;
+
+                    if (noSsTot) {
+                        averageB = StatisticsTools._averageAndSum(listB).average;
+                    }
+
                     for (let i = 0; i < n; i++) {
-                        const addDenominator = MathPlus.minus(listB[i], averageB);
-                        denominator = MathPlus.plus(
-                            denominator,
-                            MathPlus.times(addDenominator, addDenominator)
-                        );
+                        if (noSsTot) {
+                            const addDenominator = MathPlus.minus(listB[i], averageB);
+                            denominator = MathPlus.plus(
+                                denominator,
+                                MathPlus.times(addDenominator, addDenominator)
+                            );
+                        }
+
                         const addNumerator = MathPlus.minus(listB[i], func(listA[i]));
                         numerator = MathPlus.plus(
                             numerator,
                             MathPlus.times(addNumerator, addNumerator)
                         );
                     }
+
                     return MathPlus.minus(1, MathPlus.divide(numerator, denominator));
                 }
 
@@ -5211,11 +5372,12 @@
                  * @param {Array<ComplexNumber|string|number>} originalListB - 未变换的实际因变量；仅用于在原始量纲上计算 R²。
                  * @param {function(ComplexNumber|string|number, Array<ComplexNumber|string|number>): ComplexNumber} func -
                  *   模型预测函数，参数依次为原始 `x` 和已求得的系数数组；返回值用于和 `originalListB` 比较。
+                 * @param {ComplexNumber|string|number} ssTot - 可以复用的 SS_tot
                  * @returns {{parameter: Array<ComplexNumber|'error'>, R2: ComplexNumber|'error'}} 尚未格式化的回归结果；
                  *   `parameter` 含 `power + 1` 个按升幂排列的系数，求解失败时为等长 `error` 数组；`R2`
                  *   使用 `originalListB` 独立计算，因而参数可求而 R² 仍可能为 `error`，反之不会发生。
                  */
-                static _getRegressionInfo(listA, listB, power, originalListB, func) {
+                static _getRegressionInfo(listA, listB, power, originalListB, func, ssTot = null) {
                     const result = {};
 
                     try {
@@ -5226,10 +5388,13 @@
                     }
 
                     try {
-                        // R² 使用未变换的原始 y 值。
-                        result.R2 = StatisticsTools._calcR2(listA, originalListB,
+                        // R² 使用未变换的原始 y 值，并复用外部预计算的 SS_tot。
+                        result.R2 = StatisticsTools._calcR2(
+                            listA,
+                            originalListB,
                             // 使用已求得的参数计算预测值
-                            (x) => func(x, result.parameter)
+                            (x) => func(x, result.parameter),
+                            ssTot
                         );
                     } catch {
                         result.R2 = 'error';
@@ -5280,6 +5445,14 @@
                     if (listA.length !== listB.length) {
                         throw new Error('[StatisticsTools] Data mismatch.');
                     }
+                    if (listA.length === 0) {
+                        throw new Error('[StatisticsTools] Input data cannot be empty.');
+                    }
+
+                    // 不污染传入的原始数组
+                    listA = structuredClone(listA);
+                    listB = structuredClone(listB);
+
                     for (let i = 0; i < listA.length; i++) {
                         if (typeof listA[i] === 'string') {
                             listA[i] = MathPlus.calc(listA[i])[0];
@@ -5304,16 +5477,16 @@
                     result.n = listA.length.toString();
                     const averageAndSumA = this._averageAndSum(listA);
                     const averageAndSumB = this._averageAndSum(listB);
-                    const varianceA = this._variance(listA);
-                    const varianceB = this._variance(listB);
+                    const varianceA = this._variance(listA, averageAndSumA);
+                    const varianceB = this._variance(listB, averageAndSumB);
 
                     const statisticsInfoA = this._getStatisticsInfo(listA, {
                         averageAndSum: averageAndSumA,
-                        variance: varianceA
+                        varianceList: varianceA
                     });
                     const statisticsInfoB = this._getStatisticsInfo(listB, {
                         averageAndSum: averageAndSumB,
-                        variance: varianceB
+                        varianceList: varianceB
                     });
                     for (let key in statisticsInfoA.statisticsResult) {
                         result[key + 'A'] = statisticsInfoA.statisticsResult[key];
@@ -5378,19 +5551,29 @@
                         return result;
                     }
                     if (!statesB.positive && !statesB.negative && statesB.zero) {
-                        /** 为当前双参数模型写入零函数结果。 */
+                        const invalidModels = new Set();
+                        if (statesA.negative || statesA.zero) {
+                            invalidModels.add('ln');
+                            invalidModels.add('axb');
+                        }
+                        if (statesA.zero) {
+                            invalidModels.add('reciprocal');
+                        }
+
                         twoParamModels.forEach((key) => {
+                            const invalid = invalidModels.has(key);
                             result[key] = {
-                                parameter: ['0', '0'],
-                                regressionEquation: '0',
+                                parameter: invalid ? ['error', 'error'] : ['0', '0'],
+                                regressionEquation: invalid ? 'error' : '0',
                                 R2: 'error',
                                 model: key
                             };
                         });
 
+                        const squareInvalid = listA.length <= 2;
                         result.square = {
-                            parameter: ['0', '0', '0'],
-                            regressionEquation: '0',
+                            parameter: squareInvalid ? ['error', 'error', 'error'] : ['0', '0', '0'],
+                            regressionEquation: squareInvalid ? 'error' : '0',
                             R2: 'error',
                             model: 'square'
                         };
@@ -5398,15 +5581,24 @@
                         return result;
                     }
 
+                    // 计算 ssTotB
+                    let ssTotB = new ComplexNumber(0);
+                    for (let i = 0; i < listB.length; i++) {
+                        const diff = MathPlus.minus(listB[i], averageAndSumB.average);
+                        ssTotB = MathPlus.plus(ssTotB, MathPlus.times(diff, diff));
+                    }
+
                     result.linear = this._getRegressionInfo(listA, listB, 1, listB,
-                        (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
+                        (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
+                        ssTotB
                     );
 
                     result.square = this._getRegressionInfo(listA, listB, 2, listB,
                         (x, coefficient) => MathPlus.plus(
                             MathPlus.times(coefficient[2], MathPlus.times(x, x)),
                             MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
-                        )
+                        ),
+                        ssTotB
                     );
                     result.bestModel = this._findBestModel(result, 'square');
 
@@ -5415,7 +5607,8 @@
                         result.ln = structuredClone(errorWith2parameter);
                     } else {
                         result.ln = this._getRegressionInfo(lnListA, listB, 1, listB,
-                            (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
+                            (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
+                            ssTotB
                         );
                     }
                     result.bestModel = this._findBestModel(result, 'ln');
@@ -5428,7 +5621,8 @@
                             (x, coefficient) => {
                                 const mid = MathPlus.exp(MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]));
                                 return statesB.negative ? MathPlus.minus(0, mid) : mid;
-                            }
+                            },
+                            ssTotB
                         );
                         const p0 = result.axb.parameter[0];
                         if (p0 !== 'error') {
@@ -5450,7 +5644,8 @@
                                     coefficient[0]
                                 ));
                                 return statesB.negative ? MathPlus.minus(0, mid) : mid;
-                            }
+                            },
+                            ssTotB
                         );
                         const p0 = result.exp.parameter[0];
                         if (p0 !== 'error') {
@@ -5479,7 +5674,8 @@
                         /** 将自变量转换为倒数。 */
                         const reciprocalListA = this._changeInner(listA, (x) => MathPlus.divide(1, x));
                         result.reciprocal = this._getRegressionInfo(reciprocalListA, listB, 1, listB,
-                            (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
+                            (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
+                            ssTotB
                         );
                     }
                     result.bestModel = this._findBestModel(result, 'reciprocal');
@@ -5749,14 +5945,11 @@
                         const root1 = MathPlus.minus(k, MathPlus.divide(b, a));
                         const root2 = MathPlus.divide(k, -2);
 
-                        const mid = MathPlus.divide(MathPlus.plus(root1, root2), 2);
-                        const func1 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.plus(root1, mid));
-                        const func2 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.minus(root1, mid));
+                        const step = MathPlus.divide(MathPlus.minus(root2, root1), 2);
+                        const func1 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.plus(root1, step));
+                        const func2 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.minus(root1, step));
                         const sign = MathPlus.times(func1, func2).re.mantissa;
-                        if (sign > 0n) {
-                            return [root2, root1];
-                        }
-                        return [root1, root2];
+                        return sign > 0n ? [root2, root1] : [root1, root2];
                     }
 
                     const absA = MathPlus.abs(A);
@@ -6412,8 +6605,19 @@
                 static radicalFunctionAnalysis(z, n) {
                     z = Public.zeroCorrect(MathPlus.calc(z)[0]);
                     n = Public.integerCorrect(Public.zeroCorrect(MathPlus.calc(n)[0]));
+
                     if (!n.onlyReal || n.re.power < 0 || !n.re.isPositive()) {
                         throw new Error('[radicalFunctionTools] n can only be a positive integer.');
+                    }
+                    if (z.isZero()) {
+                        return {
+                            z: '0',
+                            n: Public.idealizationToString(n),
+                            formula: '0',
+                            kRange: ['0', '0'],
+                            numericalResults: ['0'],
+                            overflow: false
+                        };
                     }
 
                     const result = {};
@@ -6471,7 +6675,6 @@
                  * @throws {Error} 边界或步长不是有效实数时抛出。
                  */
                 static valueList(f, g, start, step, end) {
-                    let overflow = false;
                     start = Public.zeroCorrect(MathPlus.calc(start)[0]);
                     step = Public.zeroCorrect(MathPlus.calc(step)[0]);
                     end = Public.zeroCorrect(MathPlus.calc(end)[0]);
@@ -6488,33 +6691,52 @@
                     }
 
                     const varList = [];
-                    let i = start;
-                    for (; !MathPlus.minus(i, end).re.isPositive() && varList.length < CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS; i = MathPlus.plus(i, step)) {
-                        varList.push(Public.idealizationToString(i));
+                    const resultF = [];
+                    const resultG = [];
+                    const hasF = typeof f === 'string' ? f.trim() !== '' : f != null;
+                    const hasG = typeof g === 'string' ? g.trim() !== '' : g != null;
+                    const maxCount = CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS;
+
+                    let k = 0;
+                    let currentX = start;
+                    while (!MathPlus.minus(currentX, end).re.isPositive() && k < maxCount) {
+                        varList.push(Public.idealizationToString(currentX));
+
+                        if (hasF) {
+                            try {
+                                resultF.push(Public.idealizationToString(MathPlus.calc(f, {g, unknown: currentX})[0]));
+                            } catch {
+                                resultF.push('error');
+                            }
+                        } else {
+                            resultF.push('error');
+                        }
+
+                        if (hasG) {
+                            try {
+                                resultG.push(Public.idealizationToString(MathPlus.calc(g, {f, unknown: currentX})[0]));
+                            } catch {
+                                resultG.push('error');
+                            }
+                        } else {
+                            resultG.push('error');
+                        }
+
+                        k++;
+                        // 用 start + k * step 替代连续累加，消除长区间误差漂移。
+                        currentX = MathPlus.plus(start, MathPlus.times(step, k));
                     }
 
-                    if (varList.length === CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS && !MathPlus.minus(i, end).re.isPositive()) {
-                        // 用半步后的临时终点让两个函数值列表恰好计算到最后一个已显示自变量，
-                        // 再以专用词元表示仍有结果被省略，避免创建超长数组。
-                        overflow = true;
-                        end = MathPlus.minus(i, MathPlus.divide(step, 2n));
+                    if (k === maxCount && !MathPlus.minus(currentX, end).re.isPositive()) {
                         varList.push('[print_content_omit]');
+                        resultF.push('[not_applicable]');
+                        resultG.push('[not_applicable]');
                     }
-
-                    const resultF = Public.idealizationToString(Public.functionValueList(
-                        (x) => MathPlus.calc(f, {g: g, unknown: x})[0],
-                        start, step, end
-                    ));
-
-                    const resultG = Public.idealizationToString(Public.functionValueList(
-                        (x) => MathPlus.calc(g, {f: f, unknown: x})[0],
-                        start, step, end
-                    ));
 
                     return {
-                        varList: varList,
-                        f: overflow ? [...resultF, '[not_applicable]'] : resultF,
-                        g: overflow ? [...resultG, '[not_applicable]'] : resultG
+                        varList,
+                        f: resultF,
+                        g: resultG
                     };
                 }
             }
@@ -6707,13 +6929,20 @@
                  * @returns {void}
                  */
                 _init() {
-                    const {callableFunctions, dependencies = []} = this._config;
+                    const {callableFunctions, dependencies = [], injectCancelSignal = false} = this._config;
                     if (!Array.isArray(dependencies)) {
                         throw new Error('[SyncWorker] dependencies must be an array.');
                     }
+                    if (typeof injectCancelSignal !== 'boolean') {
+                        throw new Error('[SyncWorker] injectCancelSignal must be a boolean.');
+                    }
 
                     // 缓存脚本，避免重启时受外部配置变更影响。
-                    const workerCode = this._workerCode ??= this._generateWorkerCode(callableFunctions, dependencies);
+                    const workerCode = this._workerCode ??= this._generateWorkerCode(
+                        callableFunctions,
+                        dependencies,
+                        injectCancelSignal
+                    );
                     // Blob URL 把动态生成的源码交给 Worker；创建失败或终止时必须撤销 URL。
                     const blob = new Blob([workerCode], {type: 'application/javascript'});
                     const workerUrl = URL.createObjectURL(blob);
@@ -6831,10 +7060,12 @@
                  *   `functionName`，实现会被转换为源码，不能依赖未列入 `deps` 的词法闭包。
                  * @param {Array<{name: string, value: *}>} deps - 顶层依赖声明，按数组顺序生成源码；后项可引用
                  *   已生成的前项。名称重复、非法或值不可序列化时应在创建 Worker 前失败。
+                 * @param {boolean} [injectCancelSignal=false] - 是否向可调用函数的参数末尾自动追加协作式取消信号
+                 *   `cancellationSignal`；默认关闭，避免覆盖含默认参数函数的可选形参。
                  * @returns {string} 可执行的 Worker 脚本。
                  * @private
                  */
-                _generateWorkerCode(funcs, deps) {
+                _generateWorkerCode(funcs, deps, injectCancelSignal = false) {
                     /**
                      * 将支持的值序列化为 JavaScript 源码。
                      *
@@ -6927,7 +7158,10 @@
                                     // 计算属性名可避免 __proto__ 被解释为原型设置器。
                                     props.push(`[${JSON.stringify(key)}]: ${serializeValue(descriptor.value, seen)}`);
                                 }
-                                return `{${props.join(',')}}`;
+                                // 保留 Object.create(null) 的无原型特性。
+                                return prototype === null
+                                       ? `Object.assign(Object.create(null),{${props.join(',')}})`
+                                       : `{${props.join(',')}}`;
                             } finally {
                                 seen.delete(value);
                             }
@@ -6947,15 +7181,17 @@
                      */
                     const serializeFunction = (func, allowClass = true) => {
                         const source = Function.prototype.toString.call(func).trim();
-                        if (source.includes('[native code]')) {
+                        // 合法用户 JS 函数的函数体不可能仅由 `{ [native code] }` 组成，避免误伤含该文本的注释或字符串。
+                        if (/^[^{]*\{\s*\[native code]\s*}$/.test(source)) {
                             throw new TypeError('Native or bound functions are not supported.');
                         }
                         if (/^(?:get|set)\s/.test(source)) {
                             throw new TypeError('Getter and setter functions are not supported.');
                         }
 
-                        const isFunctionExpression = /^(?:async\s+)?function(?:\s*\*)?\b/.test(source);
-                        const isArrowFunction = /^(?:async\s+)?(?:\([\s\S]*\)|[A-Za-z_$][\w$]*)\s*=>/.test(source);
+                        // `\b` 放在 function 之后，避免 `function*()` 因 `*` 与 `(` 间无词边界而误判。
+                        const isFunctionExpression = /^(?:async\s+)?function\b(?:\s*\*)?/.test(source);
+                        const isArrowFunction = /^(?:async\s+)?(?:\([\s\S]*\)|[$_\p{ID_Start}][$\u200C\u200D_\p{ID_Continue}]*)\s*=>/u.test(source);
                         const isClass = /^class\b/.test(source);
 
                         if (isClass && !allowClass) {
@@ -7028,6 +7264,28 @@
                             throw new Error(`[SyncWorker] Function '${key}' could not be serialized: ${e.message}.`);
                         }
                     }
+
+                    const cancelSignalSetup = injectCancelSignal ? `
+            /* Create a cancel signal object that will be passed as the last parameter to the user function. */
+            /* This imitates the pattern of AbortController/AbortSignal, which is a standard asynchronous cancellation pattern. */
+            const cancellationSignal = {
+                isCancelled: () => cancellationState.cancelled,
+                throwIfCancelled: () => {
+                    if (cancellationState.cancelled) {
+                        const error = new Error('[SyncWorker] Task was cancelled.');
+                        error.name = 'CancellationError';
+                        throw error;
+                    }
+                }
+            };
+` : '';
+
+                    const invokeLine = injectCancelSignal
+                                       ? `/* Execute the function and inject cancellationSignal. 'await' can handle both synchronous and asynchronous functions. */
+                const result = await func(...args, cancellationSignal);`
+                                       : `/* Execute the function. 'await' can handle both synchronous and asynchronous functions. */
+                const result = await func(...args);`;
+
                     code += `
     /* -- Worker internal status -- */
     /* A Map used to track running tasks and their cancellation status. */
@@ -7044,7 +7302,7 @@
                 name = error.name;
             }
         } catch {
-            // 忽略异常属性访问，继续使用默认错误名称。
+            /* Ignore property access errors and keep the default error name. */
         }
     
         try {
@@ -7052,7 +7310,7 @@
                 message = error.message;
             }
         } catch {
-            // 忽略异常属性访问，稍后使用安全的字符串回退值。
+            /* Ignore property access errors and fall back to a safe string later. */
         }
     
         if (message === undefined) {
@@ -7068,7 +7326,7 @@
                 stack = error.stack;
             }
         } catch {
-            // 忽略异常属性访问，继续使用空堆栈。
+            /* Ignore property access errors and keep an empty stack trace. */
         }
     
         return {name, message, stack};
@@ -7102,23 +7360,9 @@
             /* Create and store the cancellation status for new tasks. */
             const cancellationState = { cancelled: false };
             runningTasks.set(id, cancellationState);
-    
-            /* Create a cancel signal object that will be passed as the last parameter to the user function. */
-            /* This imitates the pattern of AbortController/AbortSignal, which is a standard asynchronous cancellation pattern. */
-            const cancellationSignal = {
-                isCancelled: () => cancellationState.cancelled,
-                throwIfCancelled: () => {
-                    if (cancellationState.cancelled) {
-                        const error = new Error('[SyncWorker] Task was cancelled.');
-                        error.name = 'CancellationError';
-                        throw error;
-                    }
-                }
-            };
-    
+            ${cancelSignalSetup}
             try {
-                /* Execute the function and inject cancellationSignal. 'await' can handle both synchronous and asynchronous functions. */
-                const result = await func(...args, cancellationSignal);
+                ${invokeLine}
     
                 /* Check if the task is marked as cancelled after completion. If so, no results will be sent to avoid race conditions. */
                 if (cancellationState.cancelled) {
@@ -7377,12 +7621,22 @@
                 static _WORKER_TIMEOUT = 60000;
 
                 /**
-                 * Worker 是否处于重启状态。
+                 * 当前进行中的重启 Promise，用于合并并发重启请求。
                  *
                  * @private
+                 * @type {Promise<void>|null}
+                 */
+                static _restartPromise = null;
+
+                /**
+                 * 判断 Worker 是否正在重启。
+                 *
+                 * @readonly
                  * @type {boolean}
                  */
-                static _isRestarting = false;
+                static get isRestarting() {
+                    return this._restartPromise !== null;
+                }
 
                 /**
                  * 阻止实例化静态工具类。
@@ -7415,6 +7669,11 @@
                  *   业务计算错误、取消和超时保持原拒绝原因，不被包装成成功值。
                  */
                 static async _dispatch(funcName, args = []) {
+                    // 若 Worker 正在重启，等待其初始化完成后再派发，避免误杀紧随 restart() 后的新请求。
+                    if (this._restartPromise) {
+                        await this._restartPromise;
+                    }
+
                     try {
                         return await this._mathWorker.exec(funcName, {
                             args,
@@ -7422,26 +7681,20 @@
                         });
                     } catch (e) {
                         // 主动终止或取消不触发自动恢复。
-                        if (e.name === 'TerminationError' || e.name === 'CancellationError') {
+                        if (e?.name === 'TerminationError' || e?.name === 'CancellationError') {
                             throw e;
                         }
 
-                        if (WorkerTools._isRestarting) {
-                            const err = new Error('[WorkerTools] Worker is restarting, request aborted.');
-                            err.name = 'TerminationError';
-                            throw err;
+                        // 仅在 Worker 真正崩溃/已终止或同步阻塞超时时重启；普通业务/语法错误直接抛出。
+                        const needRestart = !this._mathWorker || this._mathWorker.isTerminated || e?.name === 'TimeoutError';
+                        if (!needRestart) {
+                            throw e;
                         }
 
-                        WorkerTools._isRestarting = true;
                         try {
-                            // 意外错误会重建 Worker 并恢复配置；失败的当前请求不自动重放，防止副作用重复。
-                            if (this._mathWorker) {
-                                this._mathWorker.terminate();
-                                this._mathWorker.restart();
-                            }
-                            await WorkerTools._restoreState();
-                        } finally {
-                            WorkerTools._isRestarting = false;
+                            await this.restart();
+                        } catch (restartErr) {
+                            console.error('[WorkerTools] Auto-restart failed:', restartErr);
                         }
 
                         // 恢复 Worker 后仍向调用方报告本次失败。
@@ -7456,14 +7709,28 @@
                  * @returns {Promise<void>}
                  */
                 static async _restoreState() {
-                    // 直接调用 Worker，避免恢复失败再次触发重启。
-                    await this._mathWorker.exec('initEnv', {
-                        args: [{
+                    // 若 initEnv 等待期间主线程配置再次变更，补同步一次最新快照，消除重启窗口期配置丢失。
+                    while (true) {
+                        const snapshot = {
                             calcAcc: CalcConfig.globalCalcAccuracy,
                             outputAcc: CalcConfig.outputAccuracy,
                             printMode: CalcConfig.globalPrintMode
-                        }]
-                    });
+                        };
+
+                        // 为 initEnv 加上超时保护，避免极端情况下 _restartPromise 永久挂起。
+                        await this._mathWorker.exec('initEnv', {
+                            args: [snapshot],
+                            timeout: 10000
+                        });
+
+                        if (
+                            snapshot.calcAcc === CalcConfig.globalCalcAccuracy &&
+                            snapshot.outputAcc === CalcConfig.outputAccuracy &&
+                            snapshot.printMode === CalcConfig.globalPrintMode
+                        ) {
+                            break;
+                        }
+                    }
                 }
 
                 /**
@@ -7472,11 +7739,22 @@
                  * @returns {Promise<void>}
                  */
                 static async restart() {
-                    if (this._mathWorker) {
-                        WorkerTools.cancelWorker();
-                        this._mathWorker.restart();
-                        await WorkerTools._restoreState();
+                    if (!this._mathWorker) {
+                        return;
                     }
+
+                    if (!this._restartPromise) {
+                        this._restartPromise = (async () => {
+                            try {
+                                this._mathWorker.restart();
+                                await this._restoreState();
+                            } finally {
+                                this._restartPromise = null;
+                            }
+                        })();
+                    }
+
+                    await this._restartPromise;
                 }
 
                 /**
@@ -7701,6 +7979,13 @@
                 };
 
                 /**
+                 * 统计表高亮切换的挂起 rAF 句柄，用于取消未完成的旧高亮任务。
+                 * @private
+                 * @type {number|null}
+                 */
+                static _gridHighlightRaf = null;
+
+                /**
                  * 阻止实例化静态配置类。
                  *
                  * @throws {Error} 始终抛出。
@@ -7763,44 +8048,73 @@
                      * @private
                      */
                     function _changeSubModes(name, dealMode) {
+                        // 先解析 default 再判断模式 '0'，避免在模式 '0' 下传入 default 时触发 modeValidations['0'] 报错。
+                        if (dealMode === 'default') {
+                            dealMode = PageConfig.currentMode;
+                        }
                         if (dealMode === '0') {
                             return;
                         }
 
-                        if (dealMode === 'default') {
-                            dealMode = PageConfig.currentMode;
-                        }
-
                         // 统计模式使用 [row, column] 坐标，其余模式使用固定字符串枚举。
                         if (dealMode === '1') {
-                            if (!Array.isArray(name)) {
-                                name = name.split(',');
+                            const raw = Array.isArray(name)
+                                        ? name
+                                        : (typeof name === 'string' ? name.split(',') : null);
+                            if (!raw || raw.length !== 2) {
+                                throw new Error('[PageConfig] Unsupported sub-mode (invalid format).');
                             }
-                            [name[0], name[1]] = [Number(name[0]), Number(name[1])];
 
+                            const row = Number(raw[0]);
+                            const col = Number(raw[1]);
                             const children = PageConfig.screenData['1'];
-                            if (![0, 1].includes(name[1]) || name[0] >= children.length || name.length !== 2) {
+                            if (
+                                !Number.isInteger(row) ||
+                                row < 0 ||
+                                row >= children.length ||
+                                ![0, 1].includes(col)
+                            ) {
                                 throw new Error('[PageConfig] Unsupported sub-mode (out of range).');
                             }
 
-                            /**
-                             * 双重 requestAnimationFrame 封装，用于确保 DOM 初始状态已完全上屏（渲染），
-                             * 避免浏览器由于批量渲染合并样式，从而完美触发 CSS 过渡动画。
-                             * - @param {Function} callback - 在第二帧重绘前执行的回调函数
-                             */
-                            const safeRaf = (callback) => {
-                                requestAnimationFrame(() => requestAnimationFrame(callback));
-                            };
+                            // 生成新数组，避免原地修改调用方传入的数组。
+                            name = [row, col];
+                            PageConfig._subModes[dealMode] = name;
 
                             if (PageConfig.currentMode === '1') {
-                                const gridOn = HtmlTools.getHtml('.GridOn');
-                                if (gridOn) {
-                                    safeRaf(() => gridOn.classList.remove('GridOn'));
+                                // 取消上一次尚未落地的双重 rAF，确保连续快速切换只执行最后一次高亮。
+                                if (PageConfig._gridHighlightRaf !== null) {
+                                    cancelAnimationFrame(PageConfig._gridHighlightRaf);
+                                    PageConfig._gridHighlightRaf = null;
                                 }
 
-                                InputManager.statisticsRenderer.applyToItem(name[0], (el) => {
-                                    const targetEl = el.children[name[1] + 1];
-                                    safeRaf(() => targetEl.classList.add('GridOn'));
+                                PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
+                                    PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
+                                        PageConfig._gridHighlightRaf = null;
+                                        if (PageConfig.currentMode !== '1') {
+                                            return;
+                                        }
+
+                                        const [targetRow, targetCol] = PageConfig._subModes['1'];
+                                        let targetEl = null;
+
+                                        // 在第二帧才从虚拟滚动查询节点，避免给已被回收/卸载的旧节点加类。
+                                        InputManager.statisticsRenderer.applyToItem(targetRow, (el) => {
+                                            targetEl = el.children[targetCol + 1] ?? null;
+                                        });
+
+                                        // 清除所有旧高亮（getHtml(..., -1) 返回实时 HTMLCollection，需先转静态数组）。
+                                        const gridOnList = /** @type {HTMLCollection} */ (HtmlTools.getHtml('.GridOn', -1));
+                                        for (const el of Array.from(gridOnList)) {
+                                            if (el !== targetEl) {
+                                                el.classList.remove('GridOn');
+                                            }
+                                        }
+
+                                        if (targetEl) {
+                                            targetEl.classList.add('GridOn');
+                                        }
+                                    });
                                 });
                             }
                         } else {
@@ -7812,16 +8126,15 @@
                             };
 
                             const validation = modeValidations[dealMode];
-
-                            if (!validation.includes(name)) {
+                            if (!validation || !validation.includes(name)) {
                                 throw new Error('[PageConfig] Unsupported sub-mode');
                             }
 
                             HtmlTools.getHtml(`#screen_input_${dealMode}${PageConfig._subModes[dealMode]}`).classList.remove('ScreenInputsOn');
                             HtmlTools.getHtml(`#screen_input_${dealMode}${name}`).classList.add('ScreenInputsOn');
+                            PageConfig._subModes[dealMode] = name;
                         }
 
-                        PageConfig._subModes[dealMode] = name;
                         PageControlTools.keyboardFuncBecomeX();
                         PageControlTools.changeInputTip();
                         try {
@@ -7884,9 +8197,6 @@
                     PageConfig._currentMode = mode;
                     // 虚拟统计表只在统计模式保持运行，离开时暂停以免隐藏容器参与测量。
                     if (mode === '1') {
-                        if (InputManager.statisticsRenderer.isPaused()) {
-                            InputManager.statisticsRenderer.resume();
-                        }
                         HtmlTools.getHtml('#keyboard_top').classList.add('ForMode1');
                         const data = PageConfig.screenData['1'];
                         InputManager.statisticsRenderer.load(data, data.length, {resetScroll: false});
@@ -7897,6 +8207,11 @@
                             InputManager.statisticsRenderer.pause();
                         }
                         HtmlTools.getHtml('#keyboard_top').classList.remove('ForMode1');
+                    }
+
+                    // 离开函数值列表模式时清理结果虚拟列表，避免隐藏后仍响应 ResizeObserver。
+                    if (mode !== '2_1' && PrintManager.printListRenderer.isRunning()) {
+                        PrintManager.printListRenderer.clear();
                     }
 
                     HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.add('SelectionOn');
@@ -8156,32 +8471,53 @@
                             return;
                         }
 
-                        // 统计键兼容单元格坐标补丁和完整二维表，首项不是数组时按坐标补丁解释。
-                        if (key === '1' && !Array.isArray(value[0])) {
+                        // 1) 单单元格局部更新：[row, col, newVal]
+                        if (
+                            key === '1' &&
+                            Array.isArray(value) &&
+                            value.length === 3 &&
+                            typeof value[0] === 'number' &&
+                            typeof value[1] === 'number'
+                        ) {
                             const [row, col, newVal] = value;
                             const targetMatrix = PageConfig._screenData['1'];
 
-                            const isValidRow = row >= 0 && row < targetMatrix.length;
-                            const isValidCol = col >= 0 && col < 2;
+                            const isValidRow = Number.isInteger(row) && row >= 0 && row < targetMatrix.length;
+                            const isValidCol = col === 0 || col === 1;
 
                             if (isValidRow && isValidCol) {
                                 targetMatrix[row][col] = newVal;
-                            }
 
-                            if (PageConfig.currentMode === '1') {
-                                InputManager.statisticsRenderer.load(targetMatrix, targetMatrix.length, {resetScroll: false});
+                                if (PageConfig.currentMode === '1') {
+                                    const renderer = InputManager.statisticsRenderer;
+                                    if (renderer.isRunning()) {
+                                        // 行数未变时仅刷新目标单行，不重建其他节点、不触发回流。
+                                        if (renderer.totalCount === targetMatrix.length) {
+                                            renderer.refreshItem(row, targetMatrix);
+                                        } else {
+                                            renderer.load(targetMatrix, targetMatrix.length, {resetScroll: false});
+                                        }
+                                    } else if (renderer.state === VirtualScroll.State.IDLE) {
+                                        renderer.load(targetMatrix, targetMatrix.length, {resetScroll: false});
+                                    }
+                                }
                             }
                             return;
                         }
 
-                        // 完整数组使用深拷贝，防止调用方后续原地修改绕过 setter 的同步副作用。
+                        // 2) 整表或普通子屏更新：深拷贝防止外部原地修改绕过 setter。
                         const val = Array.isArray(value) ? structuredClone(value) : value;
                         PageConfig._screenData[key] = val;
 
                         if (key === '1' && PageConfig.currentMode === '1') {
-                            InputManager.statisticsRenderer.load(val, val.length, {resetScroll: false});
+                            const renderer = InputManager.statisticsRenderer;
+                            // 避免在 PAUSED 状态（如结果页覆盖期间）意外切回 RUNNING。
+                            if (renderer.isRunning() || renderer.state === VirtualScroll.State.IDLE) {
+                                renderer.load(val, val.length, {resetScroll: false});
+                            }
                         }
                     });
+
                     try {
                         localStorage.setItem('screenData', JSON.stringify(PageConfig._screenData));
                     } catch {
@@ -8252,6 +8588,29 @@
 
                     return new RegExp(`(${symbolPattern})|(\\[[^\\]]*\])|([\\s\\S])`, 'g');
                 })();
+                /**
+                 * deleteIllegal 会删除的 token。
+                 * @private
+                 */
+                static _ILLEGAL_TOKENS = ['cdot', 'syntax_error'];
+                /**
+                 * 用于 deleteIllegal 的预编译正则表达式。
+                 * @private
+                 */
+                static _ILLEGAL_TOKEN_REGEX = new RegExp(
+                        `\\[(${[...this._ILLEGAL_TOKENS]
+                        .sort((a, b) => b.length - a.length)
+                        .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                        .join('|')})\\]`,
+                    'g'
+                );
+                /**
+                 * 用于 deleteIllegal。
+                 * @private
+                 */
+                static _ILLEGAL_CLASS_SET = new Set(
+                    this._ILLEGAL_TOKENS.map((name) => `_${name}_`)
+                );
 
                 /**
                  * 阻止实例化静态工具类。
@@ -8493,30 +8852,11 @@
                  * @returns {string|string[]} 清理后的字符串或数组，其中已移除了所有与 `cdot` 相关的标记。
                  */
                 static deleteIllegal(expr) {
-                    const deleteStrList = ['cdot', 'syntax_error'];
-
                     if (typeof expr === 'string') {
-                        // 先匹配较长词元，避免短词元提前截断。
-                        // 转义词元中的正则元字符。
-                        const sortedEscaped = deleteStrList
-                            .sort((a, b) => b.length - a.length)
-                            .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-
-                        const regex = new RegExp(`\\[(${sortedEscaped.join('|')})\\]`, 'g');
-
-                        return expr.replace(regex, '');
+                        return expr.replace(HtmlTools._ILLEGAL_TOKEN_REGEX, '');
                     }
 
-                    const resultList = [];
-                    const deleteClassList = deleteStrList.map((name) => `_${name}_`);
-                    for (let i = 0; i < expr.length; i++) {
-                        const className = expr[i];
-
-                        if (!deleteClassList.includes(className)) {
-                            resultList.push(className);
-                        }
-                    }
-                    return resultList;
+                    return expr.filter((className) => !HtmlTools._ILLEGAL_CLASS_SET.has(className));
                 }
 
                 /**
@@ -9384,6 +9724,8 @@
                     this._remeasureRAF = null;
                     this._smoothRAF = null;
                     this._resumeRAF = null;
+                    this._resumeRO = null;
+                    this._resumeFallbackTimer = null;
                     this._measured = false;
                     this._remeasurePending = false;
                     this._isSmoothScrolling = false;
@@ -9659,8 +10001,8 @@
 
                     try {
                         // 根据已有测量或回退行高预判滚动条需求。
-                        const expectedHeight = this._measured
-                                               ? this._heightMapper.virtualHeight
+                        const expectedHeight = (this._measured && this.itemHeight > 0)
+                                               ? this.totalCount * this.itemHeight
                                                : this.totalCount * VirtualScroll._FALLBACK_HEIGHT;
                         const willHaveScrollbar = expectedHeight > clientHeight || this.container.scrollHeight > clientHeight;
 
@@ -9708,8 +10050,16 @@
                         }
 
                         if (measured <= 0) {
-                            console.warn('[VirtualScroll] Measured item height is 0; falling back to 50px.');
-                            measured = VirtualScroll._FALLBACK_HEIGHT;
+                            if (this._measured && this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT) {
+                                console.warn(
+                                    `[VirtualScroll] Measured item height is 0 (container may be hidden); ` +
+                                    `keeping previous height (${this.itemHeight}px).`
+                                );
+                                measured = this.itemHeight;
+                            } else {
+                                console.warn('[VirtualScroll] Measured item height is 0; falling back to 50px.');
+                                measured = VirtualScroll._FALLBACK_HEIGHT;
+                            }
                         }
 
                         this.itemHeight = measured;
@@ -9905,48 +10255,53 @@
                  * @returns {void}
                  */
                 _bindResize() {
+                    const handleResize = () => {
+                        if (!this._sm.is(VirtualScroll.State.RUNNING)) {
+                            return;
+                        }
+
+                        if (!this.container || !this.container.isConnected) {
+                            console.warn('[VirtualScroll] Container detached, auto-destroying.');
+                            this.destroy();
+                            return;
+                        }
+
+                        const newW = this.container.clientWidth;
+                        const newH = this.container.clientHeight;
+
+                        // 容器被隐藏（display: none）或处于 DevTools 切换视口瞬间的 0×0 状态时直接忽略。
+                        if (newW <= 0 || newH <= 0) {
+                            return;
+                        }
+
+                        const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
+                        const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
+
+                        if (!widthChanged && !heightChanged) {
+                            return;
+                        }
+
+                        if (this._remeasureOnResize) {
+                            // 不在此处提前覆写 _lastContainerWidth/Height，等重测完成后再同步，
+                            // 避免中间帧突然变为 0×0 放弃重测后，恢复原尺寸时被误判为“未变化”。
+                            this._scheduleRemeasure();
+                        } else {
+                            this._lastContainerWidth = newW;
+                            this._lastContainerHeight = newH;
+                            if (heightChanged) {
+                                this._handleHeightChange(newH);
+                            }
+                            this._scheduleRender();
+                        }
+                    };
+
                     if (typeof ResizeObserver !== 'undefined') {
                         if (this._ro) {
                             return;
                         }
-
                         this._ro = new ResizeObserver((entries) => {
-                            if (!this._sm.is(VirtualScroll.State.RUNNING)) {
-                                return;
-                            }
-
-                            const entry = entries[0];
-                            if (!entry) {
-                                return;
-                            }
-
-                            if (!entry.target.isConnected) {
-                                console.warn('[VirtualScroll] Container detached, auto-destroying.');
-                                this.destroy();
-                                return;
-                            }
-
-                            const newW = entry.target.clientWidth;
-                            const newH = entry.target.clientHeight;
-
-                            const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
-                            const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
-
-                            if (!widthChanged && !heightChanged) {
-                                return;
-                            }
-
-                            this._lastContainerWidth = newW;
-                            this._lastContainerHeight = newH;
-
-                            if (this._remeasureOnResize) {
-                                // 配置启用后，宽高变化均触发重测，以兼容 `dvh` 和 `vh`。
-                                this._scheduleRemeasure();
-                            } else {
-                                if (heightChanged) {
-                                    this._handleHeightChange(newH);
-                                }
-                                this._scheduleRender();
+                            if (entries[0]) {
+                                handleResize();
                             }
                         });
                         this._ro.observe(this.container);
@@ -9954,38 +10309,7 @@
                         if (this._handleWindowResize) {
                             return;
                         }
-                        this._handleWindowResize = () => {
-                            if (!this._sm.is(VirtualScroll.State.RUNNING)) {
-                                return;
-                            }
-
-                            if (!this.container || !this.container.isConnected) {
-                                console.warn('[VirtualScroll] Container detached, auto-destroying fallback listener.');
-                                this.destroy();
-                                return;
-                            }
-
-                            const newW = this.container.clientWidth;
-                            const newH = this.container.clientHeight;
-                            const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
-                            const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
-
-                            if (!widthChanged && !heightChanged) {
-                                return;
-                            }
-
-                            this._lastContainerWidth = newW;
-                            this._lastContainerHeight = newH;
-
-                            if (this._remeasureOnResize) {
-                                this._scheduleRemeasure();
-                            } else {
-                                if (heightChanged) {
-                                    this._handleHeightChange(newH);
-                                }
-                                this._scheduleRender();
-                            }
-                        };
+                        this._handleWindowResize = handleResize;
                         window.addEventListener('resize', this._handleWindowResize, {passive: true});
                     }
                 }
@@ -10008,45 +10332,64 @@
                 }
 
                 /**
+                 * 写入上下占位符高度，压缩模式下用负 marginTop 表达负的顶部补偿量。
+                 *
+                 * @private
+                 * @param {number} top - 顶部占位像素值（压缩模式下可能为负）。
+                 * @param {number} bottom - 底部占位像素值。
+                 * @returns {void}
+                 */
+                _applySpacerStyles(top, bottom) {
+                    if (!this._spacerTop || !this._spacerBottom) {
+                        return;
+                    }
+
+                    if (top < 0) {
+                        this._spacerTop.style.height = '0px';
+                        this._spacerTop.style.marginTop = `${top}px`;
+                    } else {
+                        this._spacerTop.style.height = `${top}px`;
+                        this._spacerTop.style.marginTop = '0px';
+                    }
+                    this._spacerBottom.style.height = `${bottom}px`;
+                }
+
+                /**
                  * 处理容器高度变化：更新高度映射、调整 spacer 并修正 scrollTop。
-                 * - 被 ResizeObserver 回调和 window.resize 降级共同调用。
+                 * - 被 ResizeObserver 回调、window.resize 降级以及 `_render()` 的高度变化分支共同调用。
                  * - spacer 高度修正必须在 scrollTop 赋值之前完成，
                  *   避免 scrollHeight 还未撑开时 scrollTop 被静默截断。
                  *
                  * @private
                  *
-                 * @param {number} newH - ResizeObserver 得到的新 `clientHeight`（px）；必须为有限非负值。
-                 *   方法会更新高度映射并尽量保持当前虚拟锚点，而不是简单保留物理 `scrollTop`。
+                 * @param {number} newH - 容器最新的 `clientHeight`（px）；必须为有限非负值。
+                 *   方法会同步缓存高度、更新缓冲区与高度映射，并按逻辑位置重新计算物理 `scrollTop`。
+                 * @param {number|null} [targetVirtScroll=null] - 可选的目标虚拟滚动偏移量（px）；
+                 *   提供时优先按该偏移恢复位置（例如 `_render()` 在同帧检测到滚动与高度同时变化时传入的
+                 *   旧映射换算值），为 `null` 时回退到当前逻辑锚点 `(_anchorIndex + _anchorRatio) * itemHeight`。
                  * @returns {void}
                  */
-                _handleHeightChange(newH) {
+                _handleHeightChange(newH, targetVirtScroll = null) {
+                    this._lastContainerHeight = newH;
                     this._calcBufferSize();
                     this._heightMapper.update(this.totalCount, this.itemHeight, newH);
 
-                    // 用逻辑行锚点重算位置，避免压缩映射变化后物理 scrollTop 指向另一行。
-                    const exactVirtScroll = (this._anchorIndex + this._anchorRatio) * this.itemHeight;
+                    // 用逻辑行锚点（或调用方传入的当前虚拟偏移）重算位置，避免压缩映射变化后物理 scrollTop 偏移。
+                    const exactVirtScroll = targetVirtScroll !== null
+                                            ? targetVirtScroll
+                                            : (this._anchorIndex + this._anchorRatio) * this.itemHeight;
                     const maxVirt = this._heightMapper._effV;
-                    const clampedVirt = Math.min(exactVirtScroll, Math.max(0, maxVirt));
+                    const clampedVirt = Math.min(Math.max(0, exactVirtScroll), Math.max(0, maxVirt));
                     const nextPhysScrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
 
-                    if (this._spacerTop && this._spacerBottom) {
-                        const {top, bottom} = this._heightMapper.calcSpacerHeights(
-                            this._startIndex < 0 ? 0 : this._startIndex,
-                            this._endIndex < 0 ? 0 : this._endIndex,
-                            this.totalCount,
-                            this.itemHeight,
-                            nextPhysScrollTop
-                        );
-
-                        if (top < 0) {
-                            this._spacerTop.style.height = '0px';
-                            this._spacerTop.style.marginTop = `${top}px`;
-                        } else {
-                            this._spacerTop.style.height = `${top}px`;
-                            this._spacerTop.style.marginTop = '0px';
-                        }
-                        this._spacerBottom.style.height = `${bottom}px`;
-                    }
+                    const {top, bottom} = this._heightMapper.calcSpacerHeights(
+                        this._startIndex < 0 ? 0 : this._startIndex,
+                        this._endIndex < 0 ? 0 : this._endIndex,
+                        this.totalCount,
+                        this.itemHeight,
+                        nextPhysScrollTop
+                    );
+                    this._applySpacerStyles(top, bottom);
 
                     this.container.scrollTop = nextPhysScrollTop;
                 }
@@ -10068,27 +10411,47 @@
                     this._remeasurePending = true;
                     this._cancelRenderRAF();
 
-                    this._remeasureRAF = requestAnimationFrame(() => {
+                    let lastW = -1;
+                    let lastH = -1;
+                    let attempts = 0;
+                    const MAX_STABILIZE_FRAMES = 6;
+
+                    const runRemeasure = () => {
                         this._remeasureRAF = null;
 
-                        if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                        if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container || !this.container.isConnected) {
                             this._remeasurePending = false;
                             return;
                         }
 
+                        const curW = this.container.clientWidth;
+                        const curH = this.container.clientHeight;
+
+                        // 容器已隐藏或瞬态折叠，放弃本次重测，等待恢复非零尺寸时由 ResizeObserver 重新触发。
+                        if (curW <= 0 || curH <= 0) {
+                            this._remeasurePending = false;
+                            return;
+                        }
+
+                        // 等待 DevTools 视口切换 / 媒体查询重排在连续两帧内稳定后再测量。
+                        if ((curW !== lastW || curH !== lastH) && attempts < MAX_STABILIZE_FRAMES) {
+                            lastW = curW;
+                            lastH = curH;
+                            attempts++;
+                            this._remeasureRAF = requestAnimationFrame(runRemeasure);
+                            return;
+                        }
+
                         try {
-                            // 重测会重建 spacer，先保存逻辑锚点才能在新行高下恢复阅读位置。
                             const savedAnchorIndex = this._anchorIndex;
                             const savedAnchorRatio = this._anchorRatio;
 
-                            this._heightMapper.reset();
                             this._doMeasure();
                             this._syncContainerSize();
                             this._calcBufferSize(true);
 
                             this._buildDOM();
 
-                            // 按原逻辑行和相对偏移恢复滚动位置。
                             const clientHeight = this.container.clientHeight;
                             this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
                             this._syncContainerSize();
@@ -10103,7 +10466,9 @@
                         } finally {
                             this._remeasurePending = false;
                         }
-                    });
+                    };
+
+                    this._remeasureRAF = requestAnimationFrame(runRemeasure);
                 }
 
                 /**
@@ -10121,36 +10486,96 @@
                     this._unbindScroll();
 
                     if (this.container.clientWidth <= 0 || this.container.clientHeight <= 0) {
-                        let lastWidth = -1;
-                        let lastHeight = -1;
+                        // 容器恢复非零后，等待最多 6 帧确认布局尺寸稳定，再执行重测。
+                        const waitUntilStable = () => {
+                            let lastWidth = -1;
+                            let lastHeight = -1;
+                            let attempts = 0;
+                            const MAX_STABILIZE_FRAMES = 6;
 
-                        const waitForContainer = () => {
-                            this._resumeRAF = null;
+                            const step = () => {
+                                this._resumeRAF = null;
 
-                            if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
-                                return;
-                            }
+                                if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                                    return;
+                                }
+                                if (!this.container.isConnected) {
+                                    console.warn('[VirtualScroll] Container detached while waiting for resume.');
+                                    this.destroy();
+                                    return;
+                                }
 
-                            if (!this.container.isConnected) {
-                                console.warn('[VirtualScroll] Container detached while waiting for resume.');
-                                this.destroy();
-                                return;
-                            }
+                                const width = this.container.clientWidth;
+                                const height = this.container.clientHeight;
 
-                            const width = this.container.clientWidth;
-                            const height = this.container.clientHeight;
+                                // 稳定期又被重新隐藏，退回被动等待。
+                                if (width <= 0 || height <= 0) {
+                                    this._resumeWithRemeasure(pendingScroll);
+                                    return;
+                                }
 
-                            if (width <= 0 || height <= 0 || width !== lastWidth || height !== lastHeight) {
-                                lastWidth = width;
-                                lastHeight = height;
-                                this._resumeRAF = requestAnimationFrame(waitForContainer);
-                                return;
-                            }
+                                if ((width !== lastWidth || height !== lastHeight) && attempts < MAX_STABILIZE_FRAMES) {
+                                    lastWidth = width;
+                                    lastHeight = height;
+                                    attempts++;
+                                    this._resumeRAF = requestAnimationFrame(step);
+                                    return;
+                                }
 
-                            this._resumeWithRemeasure(pendingScroll);
+                                this._resumeWithRemeasure(pendingScroll);
+                            };
+
+                            this._resumeRAF = requestAnimationFrame(step);
                         };
 
-                        this._resumeRAF = requestAnimationFrame(waitForContainer);
+                        if (typeof ResizeObserver !== 'undefined') {
+                            this._resumeRO = new ResizeObserver(() => {
+                                if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                                    this._cancelResumeRAF();
+                                    return;
+                                }
+                                if (!this.container.isConnected) {
+                                    console.warn('[VirtualScroll] Container detached while waiting for resume.');
+                                    this.destroy();
+                                    return;
+                                }
+                                if (this.container.clientWidth > 0 && this.container.clientHeight > 0) {
+                                    this._resumeRO.disconnect();
+                                    this._resumeRO = null;
+                                    waitUntilStable();
+                                }
+                            });
+                            this._resumeRO.observe(this.container);
+                        } else {
+                            // 无 ResizeObserver 环境降级为有上限的低频轮询（最多等待约 5 秒）。
+                            let retries = 0;
+                            const MAX_RETRIES = 50;
+
+                            const poll = () => {
+                                this._resumeFallbackTimer = null;
+
+                                if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container) {
+                                    return;
+                                }
+                                if (!this.container.isConnected) {
+                                    console.warn('[VirtualScroll] Container detached while waiting for resume.');
+                                    this.destroy();
+                                    return;
+                                }
+                                if (this.container.clientWidth > 0 && this.container.clientHeight > 0) {
+                                    waitUntilStable();
+                                    return;
+                                }
+                                if (++retries < MAX_RETRIES) {
+                                    this._resumeFallbackTimer = setTimeout(poll, 100);
+                                } else {
+                                    console.warn('[VirtualScroll] Timed out waiting for container to become visible.');
+                                }
+                            };
+
+                            this._resumeFallbackTimer = setTimeout(poll, 100);
+                        }
+
                         return;
                     }
 
@@ -10159,7 +10584,7 @@
                     const savedAnchorIndex = this._anchorIndex;
                     const savedAnchorRatio = this._anchorRatio;
 
-                    this._heightMapper.reset();
+                    // 不再提前 reset _heightMapper，保留已有高度供 _doMeasure 准确预判滚动条显隐。
                     this._doMeasure();
                     this._measured = true;
 
@@ -10169,41 +10594,28 @@
                     this._buildDOM();
 
                     const clientHeight = this.container.clientHeight;
-
-                    this._heightMapper.update(
-                        this.totalCount,
-                        this.itemHeight,
-                        clientHeight
-                    );
-
+                    this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
                     this._syncContainerSize();
 
                     if (pendingScroll) {
                         const {index, behavior, block} = pendingScroll;
                         this.scrollToIndex(index, {behavior, block});
-
-                        // `_doMeasure()` 会解绑滚动监听，测量后需重新绑定。
                         this._bindEvents();
 
                         if (!this._isSmoothScrolling) {
                             this._render();
                             this._scheduleRender();
                         }
-
                         return;
                     }
 
-                    // 无排队跳转时恢复暂停前的锚点。
                     const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
                     const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
                     const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
                     this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
 
-                    // `_doMeasure()` 会解绑滚动监听，恢复后需重新绑定。
                     this._bindEvents();
-
                     this._render();
-                    // 下一帧补充渲染，等待恢复后的布局稳定。
                     this._scheduleRender();
                 }
 
@@ -10263,6 +10675,14 @@
                         cancelAnimationFrame(this._resumeRAF);
                         this._resumeRAF = null;
                     }
+                    if (this._resumeRO) {
+                        this._resumeRO.disconnect();
+                        this._resumeRO = null;
+                    }
+                    if (this._resumeFallbackTimer !== null) {
+                        clearTimeout(this._resumeFallbackTimer);
+                        this._resumeFallbackTimer = null;
+                    }
                 }
 
                 /**
@@ -10317,9 +10737,8 @@
                         if (this.totalCount <= 0 || this.itemHeight <= 0) {
                             if (this.totalCount <= 0) {
                                 this._recycleRenderedNodes();
-                                this._spacerTop.style.height = '0px';
-                                this._spacerTop.style.marginTop = '0px';
-                                this._spacerBottom.style.height = '0px';
+                                // 统一走 _applySpacerStyles，同步清零 height 与 marginTop。
+                                this._applySpacerStyles(0, 0);
                             }
                             return;
                         }
@@ -10332,28 +10751,9 @@
                         // 先更新缓存高度，避免重入或外部更新导致误判。
                         const heightChanged = clientHeight !== this._lastContainerHeight;
                         if (heightChanged) {
-                            this._lastContainerHeight = clientHeight;
-                            this._calcBufferSize();
-                            this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
-
-                            if (this._spacerTop && this._spacerBottom) {
-                                const hm = this._heightMapper;
-                                const s = this._startIndex < 0 ? 0 : this._startIndex;
-                                const e = this._endIndex < 0 ? 0 : this._endIndex;
-                                const {top, bottom} = hm.calcSpacerHeights(
-                                    s, e, this.totalCount, this.itemHeight
-                                );
-                                this._spacerTop.style.height = `${top}px`;
-                                this._spacerBottom.style.height = `${bottom}px`;
-                            }
-
-                            const hm = this._heightMapper;
-                            const maxPhysical = Math.max(0, hm.physicalHeight - clientHeight);
-                            const currentST = this.container.scrollTop;
-
-                            if (currentST > maxPhysical) {
-                                this.container.scrollTop = maxPhysical;
-                            }
+                            // 必须在 _heightMapper.update() 之前换算，保留本帧最新 scrollTop 对应的逻辑位置。
+                            const currentVirtScroll = this._heightMapper.physicalToVirtual(this.container.scrollTop);
+                            this._handleHeightChange(clientHeight, currentVirtScroll);
                         }
 
                         const hm = this._heightMapper;
@@ -10363,30 +10763,22 @@
                         const maxPhysScroll = Math.max(0, hm.physicalHeight - clientHeight);
                         const clampedPhysScrollTop = Math.max(0, Math.min(physScrollTop, maxPhysScroll));
                         const virtScrollTop = hm.physicalToVirtual(clampedPhysScrollTop);
-                        let visibleStart = Math.floor(virtScrollTop / this.itemHeight);
-                        let start = Math.max(0, visibleStart - this.bufferSize);
 
-                        // 在变更渲染窗口前记录当前逻辑锚点，供尺寸变化和重测恢复位置。
+                        const visibleStart = Math.floor(virtScrollTop / this.itemHeight);
+                        const start = Math.max(0, visibleStart - this.bufferSize);
+
+                        // 在变更渲染窗口前同步最新逻辑锚点，供后续尺寸变化与重测使用。
                         this._updateAnchor();
 
-                        let visibleEnd = visibleStart + Math.ceil(clientHeight / this.itemHeight);
-                        let end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
+                        const visibleEnd = visibleStart + Math.ceil(clientHeight / this.itemHeight);
+                        const end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
                         const rangeUnchanged = start === this._startIndex && end === this._endIndex;
 
-                        // 渲染范围不变时也要更新 spacer，以同步滚动视差。
+                        // 按新窗口 [start, end) 与当前物理偏移更新 spacer（统一处理负 marginTop）
                         const {top: spacerTopPx, bottom: spacerBottomPx} = hm.calcSpacerHeights(
                             start, end, this.totalCount, this.itemHeight, clampedPhysScrollTop
                         );
-
-                        // 压缩映射可能产生负的顶部补偿量，此时通过负 margin 表达而非负 height。
-                        if (spacerTopPx < 0) {
-                            this._spacerTop.style.height = '0px';
-                            this._spacerTop.style.marginTop = `${spacerTopPx}px`;
-                        } else {
-                            this._spacerTop.style.height = `${spacerTopPx}px`;
-                            this._spacerTop.style.marginTop = '0px';
-                        }
-                        this._spacerBottom.style.height = `${spacerBottomPx}px`;
+                        this._applySpacerStyles(spacerTopPx, spacerBottomPx);
 
                         if (!force && rangeUnchanged && !heightChanged) {
                             return;
@@ -10413,10 +10805,8 @@
                             const {top, bottom} = this._heightMapper.calcSpacerHeights(
                                 0, 0, this.totalCount, this.itemHeight, 0
                             );
-
-                            this._spacerTop.style.height = `${top}px`;
-                            this._spacerTop.style.marginTop = '0px';
-                            this._spacerBottom.style.height = `${bottom}px`;
+                            // 异常恢复分支同样统一走 _applySpacerStyles
+                            this._applySpacerStyles(top, bottom);
                         }
 
                         throw error;
@@ -10560,7 +10950,7 @@
                  * @throws {Error} 当 `itemHeight` 小于等于 0 或 `container` 未定义时，函数会静默返回
                  */
                 _updateAnchor() {
-                    if (this.itemHeight <= 0 || !this.container) {
+                    if (this.itemHeight <= 0 || !this.container || this.container.clientHeight <= 0) {
                         return;
                     }
 
@@ -10779,18 +11169,15 @@
                 /**
                  * 加载数据并启动或刷新虚拟滚动。
                  *
-                 * @param {any[]|object} data - 原样传给每次 `renderItem(index, data)` 的数据源；实例仅保存引用，
-                 *   不复制、冻结或推断其长度，因此后续原地修改会影响再次渲染。
-                 * @param {number} length - 逻辑条目总数；有限数值会截断为非负整数，不要求等于 `data.length`，
-                 *   因而也可配合对象、稀疏数组或按需数据源。
-                 * @param {object} [options={}] - 本次加载对测量缓存和滚动位置的处理方式。
-                 * @param {boolean} [options.remeasure=false] - 即使已有有效 `itemHeight` 也重新渲染样本测量；
-                 *   数据模板、字体或行样式变化后应设为 `true`。
-                 * @param {boolean} [options.resetScroll=true] - `true` 从逻辑顶部开始；`false` 尽量保留当前虚拟
-                 *   偏移并夹紧到新内容范围，适合刷新同一列表的数据。
+                 * @param {any[]|object} data - 原样传给每次 `renderItem(index, data)` 的数据源。
+                 * @param {number} length - 逻辑条目总数。
+                 * @param {object} [options={}] - 测量缓存、滚动位置和高度校验选项。
+                 * @param {boolean} [options.remeasure=false] - 是否强制重新采样测量行高。
+                 * @param {boolean} [options.resetScroll=true] - `true` 回到顶部；`false` 保留逻辑位置。
+                 * @param {boolean} [options.verifyHeight=false] - 复用缓存行高时是否采样校验偏差（调试用，开启会触发同步回流）。
                  * @throws {Error} 实例或容器不可用时抛出。
                  */
-                load(data, length, {remeasure = false, resetScroll = true} = {}) {
+                load(data, length, {remeasure = false, resetScroll = true, verifyHeight = false} = {}) {
                     this._assertNotDestroyed('load');
 
                     if (!this._sm.is(
@@ -10804,6 +11191,9 @@
                     const normalizedLength = this._normalizeLength(length, 'load');
 
                     try {
+                        const wasPaused = this._sm.is(VirtualScroll.State.PAUSED);
+                        const wasMeasured = this._measured;
+
                         this._unbindScroll();
                         this._unbindResize();
                         this._cancelAllRAF();
@@ -10812,20 +11202,38 @@
 
                         this._resolveContainer();
 
-                        // 数据长度变化前先保存逻辑偏移，resetScroll=false 时才能跨映射恢复位置。
+                        // 若当前仍处于可见运行态，先同步一次锚点，避免刚 scrollToIndex 后锚点滞后。
+                        if (!wasPaused && this._measured) {
+                            this._updateAnchor();
+                        }
+                        const savedAnchorIndex = this._anchorIndex;
+                        const savedAnchorRatio = this._anchorRatio;
                         const oldVirtScroll = this._heightMapper.physicalToVirtual(this.container.scrollTop);
 
                         this.data = data;
                         this.totalCount = normalizedLength;
 
-                        if (!this._measured || remeasure) {
+                        // 仅在从 PAUSED 恢复时兜底尺寸变化（RUNNING 态已由 ResizeObserver 监听，避免滚动条显隐误触发）。
+                        const currentWidth = this.container.clientWidth;
+                        const currentHeight = this.container.clientHeight;
+                        const sizeChanged = wasPaused && this._measured && this._remeasureOnResize &&
+                            currentWidth > 0 && currentHeight > 0 && (
+                                Math.round(currentWidth) !== Math.round(this._lastContainerWidth) ||
+                                Math.round(currentHeight) !== Math.round(this._lastContainerHeight)
+                            );
+
+                        const needMeasure = !this._measured || remeasure || sizeChanged;
+
+                        if (needMeasure) {
                             this._setupContainer();
                             this._doMeasure();
                             this._measured = true;
                         } else {
-                            this._verifyItemHeight();
+                            if (verifyHeight) {
+                                this._verifyItemHeight();
+                            }
                             this._heightMapper.update(
-                                this.totalCount, this.itemHeight, this.container.clientHeight
+                                this.totalCount, this.itemHeight, currentHeight
                             );
                         }
 
@@ -10835,25 +11243,33 @@
                             this._buildDOM();
                         }
 
-                        this._syncContainerSize();
-
-                        // 先撑开完整占位高度，避免浏览器钳制随后设置的 `scrollTop`。
+                        // 先撑开完整占位高度（使滚动条状态确定），再同步容器尺寸，防止 ResizeObserver 误重测。
                         {
                             const hm = this._heightMapper;
                             const {top, bottom} = hm.calcSpacerHeights(
                                 0, 0, this.totalCount, this.itemHeight
                             );
                             this._spacerTop.style.height = `${top}px`;
+                            this._spacerTop.style.marginTop = '0px';
                             this._spacerBottom.style.height = `${bottom}px`;
+                        }
+
+                        this._syncContainerSize();
+                        const clientHeight = this._lastContainerHeight;
+                        if (clientHeight !== currentHeight && clientHeight > 0) {
+                            this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
                         }
 
                         if (resetScroll) {
                             this.container.scrollTop = 0;
                         } else {
-                            const clientHeight = this.container.clientHeight;
                             const hm = this._heightMapper;
+                            // 从 PAUSED 恢复（display:none 会清空 scrollTop）或刚重测行高时，必须按逻辑锚点还原。
+                            const targetVirtScroll = (wasPaused || (needMeasure && wasMeasured))
+                                                     ? (savedAnchorIndex + savedAnchorRatio) * this.itemHeight
+                                                     : oldVirtScroll;
                             const newVirtScroll = Math.min(
-                                oldVirtScroll,
+                                Math.max(0, targetVirtScroll),
                                 Math.max(0, hm.virtualHeight - clientHeight)
                             );
 
@@ -10875,6 +11291,34 @@
 
                         throw error;
                     }
+                }
+
+                /**
+                 * 仅重绘渲染窗口内的单个条目，不触发全量重载、事件重绑或布局重测。
+                 *
+                 * @param {number} index - 要刷新的零基行索引。
+                 * @param {any} [data=this.data] - 可选的最新数据源引用。
+                 * @returns {boolean} 命中已渲染节点并成功替换时返回 `true`，否则返回 `false`。
+                 */
+                refreshItem(index, data = this.data) {
+                    this._assertNotDestroyed('refreshItem');
+                    this.data = data;
+
+                    if (!this._sm.is(VirtualScroll.State.RUNNING) || !this.container || this._rendering) {
+                        return false;
+                    }
+
+                    const i = Number(index);
+                    const oldEl = this._renderedNodes.get(i);
+                    if (!oldEl || !oldEl.isConnected) {
+                        return false;
+                    }
+
+                    const newEl = this._nodePool.toElement(this.renderItem(i, this.data));
+                    oldEl.replaceWith(newEl);
+                    this._renderedNodes.set(i, newEl);
+                    this._nodePool.recycle(oldEl);
+                    return true;
                 }
 
                 /**
@@ -10920,6 +11364,7 @@
                         return;
                     }
 
+                    this._updateAnchor();
                     this._unbindScroll();
                     this._cancelAllRAF();
                     this._sm.transition(VirtualScroll.State.PAUSED);
@@ -11102,6 +11547,7 @@
                     } else {
                         this._cancelSmoothScroll();
                         this.container.scrollTop = physicalTop;
+                        this._updateAnchor();
                     }
                 }
 
@@ -11161,6 +11607,7 @@
                     } else {
                         this._cancelSmoothScroll();
                         this.container.scrollTop = physicalBottom;
+                        this._updateAnchor();
                     }
                 }
 
@@ -11628,7 +12075,7 @@
                             const len0 = this._getTokenLen(tokenStack[0]);
                             totalRangeStart = centerIndex - leftSpaceCount - len0;
                         } else {
-                            if (shouldAddSpace(tokenStack[0], tokenStack[1])) {
+                            if (shouldAddSpace(tokenStack[1], tokenStack[0])) {
                                 addIndex.push(addPos);
                             }
                             const len0 = this._getTokenLen(tokenStack[0]);
@@ -11661,7 +12108,7 @@
                             }
                             const len0 = this._getTokenLen(tokenStack[0]);
                             const len1 = this._getTokenLen(tokenStack[1]);
-                            totalRangeEnd = centerIndex + len0 + len1 + rightSpaceCount;
+                            totalRangeEnd = centerIndex + 1 + len0 + len1 + rightSpaceCount;
                         }
                     } else {
                         const classList = HtmlTools.getClassList(target, {ignoreSpace: true, onlyP: false});
@@ -11677,11 +12124,13 @@
                     // 批量移除和插入空格时暂时隐藏容器，减少逐节点变更引发的中间重排。
                     target.style.display = 'none';
 
-                    for (let i = totalRangeStart; i < totalRangeEnd; i++) {
-                        const curr = children[i];
-                        if (curr.className === space) {
-                            curr.remove();
-                            totalRangeEnd -= 1;
+                    // 删除空格循环
+                    const safeStart = Math.max(0, totalRangeStart);
+                    const safeEnd = Math.min(children.length, totalRangeEnd);
+
+                    for (let i = safeEnd - 1; i >= safeStart; i--) {
+                        if (children[i].className === space) {
+                            children[i].remove();
                         }
                     }
 
@@ -11749,7 +12198,9 @@
                         HtmlTools.getHtml('#screen_0_display').classList.add('NoDisplay');
                         PrintManager.mode0ShowOnScreen.cancel();
                         if (PrintManager.mode0ScreenInCalc) {
-                            WorkerTools.restart();
+                            WorkerTools.restart().catch((err) => {
+                                console.warn('[UI] Worker restart failed:', err);
+                            });
                             PrintManager.mode0ScreenInCalc = false;
                         }
                     }
@@ -11810,13 +12261,13 @@
                             if (brotherTarget.length === 0) {
                                 InputManager.statisticsDelLine();
                             } else {
-                                // 统计单元格更新格式为 `[行, 列, 值]`。
+                                // 统计单元格更新格式为 [行, 列, 值]，由 setter 走 refreshItem 与持久化。
                                 PageConfig.screenData = {'1': [...current, '']};
                             }
                         } else {
                             this.ac({acArea: HtmlTools.getCurrentSubscreenArea()});
+                            PageConfig.syncScreenData();
                         }
-                        PageConfig.syncScreenData();
                         return;
                     }
 
@@ -12100,28 +12551,20 @@
                 ) {
                     const gridData = PageConfig.screenData['1'];
                     const len = gridData.length;
-                    let position;
-
-                    if (location === null) {
-                        const pos = len - 1;
-                        position = pos < 0 ? 0 : pos;
-                    } else {
-                        position = Array.isArray(location) ? location[0] : location;
-                    }
 
                     if (len + 1 > InputManager.MAX_STATISTICS_ROW) {
                         return false;
                     }
 
-                    const newItems = [
-                        [inputX, inputY]
-                    ];
+                    const position = location === null
+                                     ? Math.max(0, len - 1)
+                                     : (Array.isArray(location) ? location[0] : location);
 
                     try {
-                        gridData.splice(position + 1, 0, ...newItems);
-                        PageConfig.screenData = {'1': gridData};
-
-                        InputManager.statisticsRenderer.load(gridData, gridData.length, {resetScroll: false});
+                        const nextData = gridData.map((row) => [...row]);
+                        nextData.splice(position + 1, 0, [inputX, inputY]);
+                        // 统一由 PageConfig.screenData setter 触发一次虚拟列表刷新与持久化。
+                        PageConfig.screenData = {'1': nextData};
                     } catch {
                         return false;
                     }
@@ -12142,17 +12585,13 @@
                  * @returns {void}
                  */
                 static statisticsDelLine(location = null) {
-                    let target, position;
                     const gridData = PageConfig.screenData['1'];
                     const len = gridData.length;
+                    const position = location === null
+                                     ? PageConfig.subModes['1'][0]
+                                     : (Array.isArray(location) ? location[0] : location);
 
-                    if (location === null) {
-                        position = PageConfig.subModes['1'][0];
-                    } else {
-                        position = Array.isArray(location) ? location[0] : location;
-                    }
-
-                    target = gridData[position];
+                    const target = gridData[position];
                     if (!target) {
                         return;
                     }
@@ -12163,21 +12602,19 @@
                         return;
                     }
 
-                    gridData.splice(position, 1);
-                    PageConfig.screenData = {'1': gridData};
+                    const nextData = gridData.map((row) => [...row]);
+                    nextData.splice(position, 1);
 
-                    // 删除原末行后立即补回空占位行，维持统计表可继续输入的约定。
-                    if (gridData.length === position) {
-                        InputManager.statisticsAddLine();
+                    // 删除原末行时在同一次更新中补回空占位行，避免嵌套调用 statisticsAddLine()。
+                    if (nextData.length === position) {
+                        nextData.push(['', '']);
                     }
+
+                    PageConfig.screenData = {'1': nextData};
 
                     if (position === PageConfig.subModes['1'][0]) {
                         PageControlTools.syncScreenToInput(false);
                     }
-
-                    // 新增行后重新读取网格数据。
-                    const newData = PageConfig.screenData['1'];
-                    InputManager.statisticsRenderer.load(newData, newData.length, {resetScroll: false});
                 }
             }
 
@@ -12201,6 +12638,15 @@
                  * @type {number}
                  */
                 static _MAX_DELAY_TIME = 1640;
+
+                /**
+                 * `mode0ShowOnScreen` 异步计算请求的单调递增序号。
+                 * 使用 BigInt 避免长时间运行后超过 Number 安全整数范围，用于识别并忽略过期的 Worker 返回结果。
+                 *
+                 * @private
+                 * @type {bigint}
+                 */
+                static _currentRequestId = 0n;
 
                 /**
                  * VirtualScroll 实例。
@@ -12446,14 +12892,18 @@
                  * @returns {Promise<void>} 一个在 UI 更新完成后解析的 Promise。
                  */
                 static async _mode0ShowOnScreenFunc() {
-                    // 使用请求 ID 忽略过期结果。
-                    const requestId = Date.now();
+                    const requestId = ++this._currentRequestId;
                     if (this.mode0ScreenInCalc) {
                         // 取消之前积压的计算任务，优先响应当前输入
                         await WorkerTools.restart();
 
                         // 也可以使用软取消（性能更好）
                         // WorkerTools.cancelWorker();
+
+                        // 等待期间若有更新的请求进来，直接放弃本次过期调用。
+                        if (this._currentRequestId !== requestId) {
+                            return;
+                        }
                     }
                     this.mode0ScreenInCalc = true;
                     this._currentRequestId = requestId;
@@ -12598,39 +13048,45 @@
                  */
                 static async _exeMode1() {
                     const screenData = PageConfig.screenData['1'];
+                    const nextData = screenData.map((row) => [...row]);
                     const listA = [], listB = [];
+                    let hasPatchedZero = false;
 
                     // 每次计算都先回到 X 统计页，避免沿用上次结果页的横向偏移。
                     PageControlTools.triggerSelection(HtmlTools.getHtml('#statistics_results_top_x'));
                     PageControlTools.switchStatisticsResults('x');
 
-                    for (let i = 0; i < screenData.length; i++) {
-                        let currentPushA = screenData[i][0];
-                        let currentPushB = screenData[i][1];
+                    for (let i = 0; i < nextData.length; i++) {
+                        let currentPushA = nextData[i][0];
+                        let currentPushB = nextData[i][1];
 
                         if (currentPushA.startsWith('[syntax_error]') || currentPushB.startsWith('[syntax_error]')) {
                             this._setMode1Results('error');
                             this.mode1Results = 'error';
-                            PageConfig.syncScreenData();
                             return;
                         }
 
-                        // 整行为空时忽略；仅一侧为空时以 0 补齐成有效数据对。
+                        // 整行为空时忽略；仅一侧为空时暂存为 '0'，循环结束后一次性写回。
                         if (currentPushA.length === 0 && currentPushB.length === 0) {
                             continue;
                         } else if (currentPushA.length === 0) {
-                            PageConfig.screenData = {'1': [i, 0, '0']};
+                            nextData[i][0] = '0';
                             currentPushA = '0';
+                            hasPatchedZero = true;
                         } else if (currentPushB.length === 0) {
-                            PageConfig.screenData = {'1': [i, 1, '0']};
+                            nextData[i][1] = '0';
                             currentPushB = '0';
+                            hasPatchedZero = true;
                         }
 
                         listA.push(currentPushA);
                         listB.push(currentPushB);
                     }
 
-                    PageConfig.syncScreenData();
+                    // 仅在确实补零时触发一次整表刷新与持久化。
+                    if (hasPatchedZero) {
+                        PageConfig.screenData = {'1': nextData};
+                    }
 
                     try {
                         const resultList = await WorkerTools.statisticsCalc(listA, listB);
@@ -12647,7 +13103,10 @@
                             'choose_ra_5': resultList.axb,
                             'choose_ra_6': resultList.reciprocal
                         };
-                    } catch {
+                    } catch (error) {
+                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                            return;
+                        }
                         this._setMode1Results('error');
                         this.mode1Results = 'error';
                     }
@@ -12760,7 +13219,7 @@
                      */
                     const powerFunctionTextToHtml = (target, textList, useBracket = false) => {
                         if (textList.includes('error')) {
-                            HtmlTools.appendDOMs(target, ['error']);
+                            HtmlTools.appendDOMs(target, ['_error_'], {mode: 'replace'});
                             return;
                         }
 
@@ -13040,30 +13499,32 @@
 
                     HtmlTools.getHtml('#load_cover').classList.remove('NoDisplay');
                     HtmlTools.getHtml('#main').classList.remove('Input');
-                    switch (currentMode) {
-                        case '0':
-                            await this._exeMode0();
-                            break;
-                        case '1':
-                            await this._exeMode1();
+                    try {
+                        switch (currentMode) {
+                            case '0':
+                                await this._exeMode0();
+                                break;
+                            case '1':
+                                await this._exeMode1();
 
-                            // 结果页接管视图后暂停输入网格，返回时再由 closePrint 恢复。
-                            if (!HtmlTools.getHtml('#main').classList.contains('Input') && InputManager.statisticsRenderer.isRunning()) {
-                                InputManager.statisticsRenderer.pause();
-                            }
-                            break;
-                        case '2_1':
-                            await this._exeMode2();
-                            break;
-                        case '3':
-                            await this._exeMode3();
-                            break;
-                        case '4':
-                            await this._exeMode4();
-                            break;
+                                // 结果页接管视图后暂停输入网格，返回时再由 closePrint 恢复。
+                                if (!HtmlTools.getHtml('#main').classList.contains('Input') && InputManager.statisticsRenderer.isRunning()) {
+                                    InputManager.statisticsRenderer.pause();
+                                }
+                                break;
+                            case '2_1':
+                                await this._exeMode2();
+                                break;
+                            case '3':
+                                await this._exeMode3();
+                                break;
+                            case '4':
+                                await this._exeMode4();
+                                break;
+                        }
+                    } finally {
+                        HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
                     }
-
-                    HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
                 }
             }
 
@@ -13373,12 +13834,16 @@
                  * 此方法响应导出按钮的点击事件，将计算出的回归方程填充到对应的函数输入框中，
                  * 以便用户可以在函数列表模式下进一步使用该方程（例如求值或绘图）。
                  *
-                 * @param {'export_0'|'export_1'} func - 触发导出的按钮 ID，也决定回归表达式写入哪个函数槽位。
+                 * @param {'export_0'|'export_1'|''} func - 触发导出的按钮 ID，也决定回归表达式写入哪个函数槽位。
                  *   - `'export_0'`: 导出到 f(x) (对应 DOM ID `#screen_input_inner_2_00`)。
                  *   - `'export_1'`: 导出到 g(x) (对应 DOM ID `#screen_input_inner_2_01`)。
                  * @returns {void}
                  */
                 static exportRa(func) {
+                    if (func === '') {
+                        return;
+                    }
+
                     const clickArea = HtmlTools.getHtml(`#${func}`);
 
                     // 忽略已成功导出的重复点击。
@@ -13570,7 +14035,9 @@
                             PrintManager.mode0ShowOnScreen.cancel();
 
                             if (PrintManager.mode0ScreenInCalc) {
-                                WorkerTools.restart();
+                                WorkerTools.restart().catch((err) => {
+                                    console.warn('[UI] Worker restart failed:', err);
+                                });
                                 PrintManager.mode0ScreenInCalc = false;
                             }
 
@@ -13598,7 +14065,9 @@
                  * @returns {void}
                  */
                 static cancelPrint() {
-                    WorkerTools.restart();
+                    WorkerTools.restart().catch((err) => {
+                        console.warn('[UI] Worker restart failed:', err);
+                    });
                     PrintManager.mode0ScreenInCalc = false;
 
                     PageControlTools.closePrint();
@@ -13898,16 +14367,27 @@
                     }
 
                     if (currentMode === '1') {
-                        const current = PageConfig.subModes['1'];
-                        PageConfig.screenData = {'1': [current[0], current[1], HtmlTools.htmlClassToText(expr)]};
-
+                        const [row, col] = PageConfig.subModes['1'];
+                        const newVal = HtmlTools.htmlClassToText(expr);
                         const gridData = PageConfig.screenData['1'];
-                        const gridDataLast = gridData.at(-1);
-                        let addSucceed = true;
+                        const lastIdx = gridData.length - 1;
 
-                        // 最后一行一旦含值就追加空占位行，保证连续录入无需手动新增。
-                        if (gridDataLast[0].length !== 0 || gridDataLast[1].length !== 0) {
-                            addSucceed = InputManager.statisticsAddLine();
+                        // 预判写入后末行是否非空，决定合并追加空行（1 次 load）还是原地刷新（0 次 load）。
+                        const lastRowX = (row === lastIdx && col === 0) ? newVal : gridData[lastIdx][0];
+                        const lastRowY = (row === lastIdx && col === 1) ? newVal : gridData[lastIdx][1];
+                        const needAppendEmptyRow = lastRowX.length !== 0 || lastRowY.length !== 0;
+
+                        let addSucceed = true;
+                        if (needAppendEmptyRow && gridData.length + 1 <= InputManager.MAX_STATISTICS_ROW) {
+                            const nextData = gridData.map((r) => [...r]);
+                            nextData[row][col] = newVal;
+                            nextData.push(['', '']);
+                            PageConfig.screenData = {'1': nextData};
+                        } else {
+                            if (needAppendEmptyRow) {
+                                addSucceed = false;
+                            }
+                            PageConfig.screenData = {'1': [row, col, newVal]};
                         }
 
                         if (moveCursor && addSucceed) {
@@ -13957,6 +14437,16 @@
         document.addEventListener('click', (event) => {
             "use strict";
 
+            // 统一读取 HTML / SVG 元素的类名字符串，避免 SVGAnimatedString 引发 TypeError。
+            const getClassName = (el) => {
+                if (!el) {
+                    return '';
+                }
+                return typeof el.className === 'string'
+                       ? el.className
+                       : (el.getAttribute('class') || '');
+            };
+
             let target = event.target;
 
             // 键帽文字由内部 p 元素承载；除主输入区外统一提升到按钮容器，保证点击图标和空白处行为一致。
@@ -13964,9 +14454,10 @@
                 target = target.parentNode;
             }
 
-            const {id: targetID, className: targetClass} = target;
+            const targetID = target.id || '';
+            const targetClass = getClassName(target);
 
-            const firstChildClass = target.firstElementChild?.className || '';
+            const firstChildClass = getClassName(target.firstElementChild);
             const parent = target.parentNode;
             const parentID = parent?.id || '';
 
@@ -14184,6 +14675,10 @@
 
             PageControlTools.hideExplain();
 
+            if (event.ctrlKey || event.metaKey) {
+                return;
+            }
+
             switch (key) {
                 case 'Backspace':
                     event.preventDefault();
@@ -14260,7 +14755,13 @@
         window.addEventListener('load', () => {
             "use strict";
 
-            const getStore = (key) => localStorage.getItem(key);
+            const getStore = (key) => {
+                try {
+                    return localStorage.getItem(key);
+                } catch {
+                    return null;
+                }
+            };
 
             /**
              * 恢复单项本地数据，并清除无法解析的值。
@@ -14276,15 +14777,21 @@
             const recoverData = (dataName, func, defaultFunc = null) => {
                 const currentData = getStore(dataName);
 
+                if (currentData === null) {
+                    defaultFunc?.();
+                    return;
+                }
+
                 try {
-                    if (currentData !== null) {
-                        func(currentData);
-                    } else if (defaultFunc) {
-                        defaultFunc();
-                    }
+                    func(currentData);
                 } catch (e) {
                     console.warn(`[GLOBAL] LocalStorage ${dataName} corrupted, resetting.`);
-                    localStorage.removeItem(dataName);
+                    try {
+                        localStorage.removeItem(dataName);
+                    } catch {
+                        // 存储不可用时忽略删除失败。
+                    }
+                    defaultFunc?.();
                 }
             };
 
@@ -14317,9 +14824,13 @@
 
             recoverData('subModes', (data) => {
                 data = JSON.parse(data);
+                if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                    throw new Error('[GLOBAL] Invalid subModes structure.');
+                }
+
                 const dataLen = PageConfig.screenData['1'].length;
                 // 存储的数据行可能已被最大行数限制截断，选中坐标必须随之回退到最后一行。
-                if (data['1'][0] + 1 > dataLen) {
+                if (Array.isArray(data['1']) && data['1'][0] + 1 > dataLen) {
                     data['1'][0] = dataLen - 1;
                 }
                 PageConfig.subModes = data;
@@ -15684,7 +16195,7 @@
 
         ._info_show_ {
             height: min(5dvh, 6dvmin);
-            content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDIuNyAxMi4xOSI+PGRlZnM+PHN0eWxlPi5jbHMtNXtmaWxsOiNmYmJjMDV9PC9zdHlsZT48L2RlZnM+PGcgaWQ9Im1haW4iPjxwYXRoIGQ9Ik0xMy42LjI1Yy0uMTYuMTQtLjI3LjI0LS4zMi4zMi0uMDYuMDgtLjEzLjIyLS4yLjQybC0uMzEuOTRjLS4zNC45OS0uNjkgMS45OS0xLjA2IDIuOThsLS42NiAxLjhjLS4yNi43NC0uNDggMS4zLS42NyAxLjY4LS40Ny4wNi0uODguMTUtMS4yNS4yN3EtLjI4NS0uODU1LS41NC0xLjcxYy0uNC0xLjM5LS43NS0yLjY3LTEuMDYtMy44NS0uMTktLjczLS4zNS0xLjM2LS40OS0xLjg5LS4zOCAxLjExLS43NSAyLjIyLTEuMTIgMy4zMy0uMjMuNjYtLjQ3IDEuMzEtLjcxIDEuOTctLjI4Ljg5LS41MiAxLjUxLS43MSAxLjg4LS41MS4wNi0uOTQuMTUtMS4zLjI3LS4yLS42Ny0uNC0xLjM1LS41OC0yLjAzLS4zNi0xLjM0LS43MS0yLjc4LTEuMDgtNC4zMS0uMTUtLjYxLS4yOS0xLjIzLS40NC0xLjg4TC4wMi40OC43NCAwaDIuMDhsLS4yNC4zYy0uMTEuMTEtLjE2LjIyLS4xNi4zMyAwIC4xNi4wNy41Mi4yMiAxLjA3LjA5LjMyLjE2LjY1LjIzLjk3bC42MSAyLjQxYy4xMy41Mi4yNiAxLjA0LjM5IDEuNTQuMTUuNi4yOCAxLjAzLjM2IDEuMy4yNS0uNjcuNTktMS42NCAxLjA0LTIuOTFsLjUxLTEuNDljLjU1LTEuNjcuODYtMi43LjkzLTMuMDdINS42NGwuNzUtLjQ0SDguNmwtLjI3LjM0Yy0uMS4wOS0uMTYuMi0uMTYuMzUgMCAuMDMgMCAuMDcuMDEuMTEtLjAyLjAyLjA3LjM2LjI2IDEuMDMuMDEuMDUuMTMuNS4zNSAxLjM2bC41NiAyLjA2cS4xOTUuNzA1LjM5IDEuMzhjLjE1LjU1LjI5Ljk4LjQgMS4yOC4zOS0uOTkuNzMtMS45MiAxLjA0LTIuODFsLjcyLTEuOTljLjE1LS40Ni4yOS0uOTIuNDQtMS4zOC4xOS0uNTcuMzEtMSAuMzctMS4yOEgxMS4zbC43OC0uNDRoMS44bC0uMjcuMjVabTYuMyA4LjIzaC0xLjkyYy4xMi0uMTQuMTktLjI0LjIyLS4zMnMuMDUtLjIuMDUtLjM0bC4wNS0yLjI2Yy4wMi0uMzggMC0uNzMtLjAzLTEuMDMtLjA0LS4zLS4xNS0uNTQtLjM0LS43MmEuOTguOTggMCAwIDAtLjctLjI2Yy0uMjggMC0uNS4wOC0uNjcuMjJxLS4yODUuMjEtLjQyLjM5Yy0uMTcuMjEtLjI4LjM4LS4zNC40OGwtLjAyIDIuODFjMCAuMjEuMDIuMzYuMDUuNDcuMDMuMS4xMS4xNy4yNC4yMi4yNC4wNC40OS4wNy43NC4xMWwtLjQuMjVoLTIuMDJjLjExLS4xNC4xOS0uMjQuMjItLjMxLjAyLS4wNy4wMy0uMTguMDMtLjMxVjYuODVjLjAyLTEuNDUuMDQtMi44OC4wNy00LjI4LjAzLTEuMzQuMDUtMi4wNS4wNS0yLjEybC0uOTIuMDUuOTItLjQ5aDEuNjJjLS4yOS4yLS40My4zMy0uNDMuMzktLjA1LjA5LS4wNy4yNy0uMDguNTYtLjAyLjQ4LS4wNC45Ny0uMDQgMS40OGwtLjA0IDEuNTJjLjA3LS4wOS4xNy0uMTkuMjgtLjMxcy4yNS0uMjQuNC0uMzVjLjE2LS4xMi4zNi0uMjIuNTgtLjNhMi40NyAyLjQ3IDAgMCAxIDEuMzItLjA0cS4zLjA3NS42LjM5Yy4yLjIyLjMyLjQ2LjM3LjcyLjAzLjI3LjA1LjUzLjA1LjggMCAuOTYtLjAzIDEuOTEtLjA2IDIuODZ2LjA2YzAgLjEzLjAyLjIxLjA2LjI1cy4wOC4wNi4xMi4wN2MuMDQgMCAuMDkgMCAuMTcuMDMuMDggMCAuMTcuMDIuMjYuMDQuMjEuMDIuMzUuMDQuNDQuMDZsLS40OS4yNloiIHN0eWxlPSJmaWxsOiM0Mjg1ZjQiLz48cGF0aCBkPSJNMjQuNTYgNS45Yy4xNy42My4zNSAxLjE5LjUzIDEuNjcuMTIuMjguMjIuNDkuMzEuNjQuMDkuMTQuMTguMjcuMjcuMzgtLjEyLjAyLS4yNC4wMy0uMzQuMDRhMS40OCAxLjQ4IDAgMCAxLTEuMTMtLjZjLS4xLS4xNC0uMTgtLjI2LS4yMy0uMzdsLS41NS41NWMtLjExLjA3LS4yOC4xNS0uNTEuMjUtLjI0LjExLS41NC4xNy0uOTEuMTgtLjQ4IDAtLjg0LS4xNC0xLjA3LS4zOS0uMjUtLjI0LS4zNy0uNTItLjM3LS44NiAwLS4zNS4xLS42Ni4zMS0uOTIuMTktLjI2LjQzLS40OS43Mi0uNjcuMjktLjE5LjU4LS4zNS44OS0uNDdxLjQyLS4xOC43Mi0uMjdsLS4xOC0uNTRxLS4yNy0uODI1LS42My0xLjAyYy0uMjUtLjEyLS42Mi0uMTctMS4xMi0uMTNsLjg1LS4zNmMuMjYgMCAuNTIgMCAuNzcuMDIuMjQuMDIuNDYuMS42NC4yMy4yLjE0LjM2LjM0LjQ3LjYycS4xNjUuNDIuMzYgMS4xN2wuMjMuODVabS0xLjE2LS4wNmMtLjA1LS4yOS0uMTQtLjQ0LS4yNy0uNDMtLjE2IDAtLjQzLjE0LS44MS40MXEtLjI3LjE5NS0uNDUuNDhjLS4xNC4xOS0uMjEuNDItLjIxLjY4IDAgLjE3LjA0LjMxLjEyLjQzLjA3LjEzLjE2LjIzLjI3LjMxLjIyLjE2LjQ3LjI0LjczLjI0LjMgMCAuNTUtLjA2LjczLS4xOS4xNy0uMTEuMjktLjIxLjM2LS4yOS0uMTEtLjMxLS4yMy0uNzEtLjM2LTEuMjN6bTQuNzUgMi42NGgtMi4wNmMuMTQtLjE4LjIzLS4zLjI3LS4zNy4wMy0uMDcuMDUtLjE2LjA1LS4yN1Y1Ljg5YzAtMS4wMi4wMi0yLjE5LjA1LTMuNTIuMDItLjY3LjA1LTEuMzIuMDctMS45M2gtLjkxbC44Ny0uNDNoMS42NmMtLjE3LjEtLjI5LjE5LS4zNy4yOC0uMDguMDgtLjEyLjIzLS4xNS40My0uMDguOTgtLjEyIDIuMzQtLjExIDQuMDl2Mi43N2MwIC4yMi4wMy4zNy4xLjQ1LjA3LjA3LjE5LjEyLjM3LjEzbC42LjA2LS40My4yNloiIGNsYXNzPSJjbHMtNSIvPjxwYXRoIGQ9Ik0zMi40NCAzLjQ4Yy4wOC4wNS4xNi4xMi4yNS4yMXMuMTguMjEuMjcuMzVjLjA4LjEzLjE2LjI4LjIyLjQ2LjA1LjE4LjA4LjM4LjA4LjYyIDAgLjQzLS4xLjc3LS4yOCAxLjAzLS4wOS4xMi0uMTguMjQtLjI4LjM1LS4xMS4xMS0uMjMuMjEtLjM1LjMyLS4wNy4wNy0uMTQuMTYtLjIuMjUtLjA3LjEtLjExLjIxLS4xMS4zNHMuMDQuMjMuMTEuMzFxLjA5LjEyLjE4LjIxbC40MS4zM2MuMjUuMjEuNDguNDQuNjcuNjkuMTguMjUuMjcuNTkuMjggMSAwIC41OC0uMjYgMS4xLS43NyAxLjU1LS41My40Ni0xLjMuNzEtMi4zMS43Mi0uODQgMC0xLjQ3LS4xOS0xLjg4LS41NC0uNDItLjMzLS42My0uNzItLjYzLTEuMTggMC0uMjIuMDctLjQ3LjItLjc0cS4xOTUtLjQwNS43Mi0uNzJjLjM5LS4yMi44LS4zNyAxLjIzLS40NC40Mi0uMDYuNzgtLjEgMS4wNi0uMTEtLjA5LS4xMS0uMTYtLjI0LS4yMy0uMzdhLjg0Ljg0IDAgMCAxLS4wNy0uNzJjLjAzLS4wNy4wNS0uMTQuMDctLjIxLS4xNC4wMi0uMjcuMDItLjM5LjAyLS42NCAwLTEuMTMtLjIxLTEuNDYtLjYtLjM1LS4zNy0uNTMtLjc5LS41My0xLjI4IDAtLjU5LjI1LTEuMTIuNzUtMS42LjM0LS4yOC43LS40NiAxLjA2LS41NS4zNi0uMDcuNzEtLjExIDEuMDItLjExaDIuNGwtLjc0LjQzaC0uNzRabS40NiA2LjkyYzAtLjMxLS4xLS41Ny0uMy0uOC0uMjEtLjIxLS41NC0uNDgtLjk5LS43OS0uMDggMC0uMTctLjAxLS4yNy0uMDEtLjA2IDAtLjIyIDAtLjQ3LjAyLS4yNS4wNC0uNS4wOS0uNzYuMTctLjA2LjAyLS4xNS4wNi0uMjYuMTFzLS4yMi4xMi0uMzQuMjJjLS4xMS4xLS4yLjIyLS4yOC4zNi0uMDkuMTUtLjEzLjM0LS4xMy41NSAwIC40Mi4xOS43Ny41NyAxLjA0LjM2LjI3Ljg2LjQxIDEuNDkuNDIuNTcgMCAxLS4xMyAxLjMtLjM4LjI5LS4yNC40NC0uNTQuNDQtLjkyWm0tMS42Ny0zLjUzYy4zMi0uMDEuNTgtLjEyLjc5LS4zNC4xLS4xNS4xNy0uMzEuMi0uNDcuMDItLjE2LjAzLS4zLjAzLS40MSAwLS40Ny0uMTItLjk1LS4zNi0xLjQzYTEuNSAxLjUgMCAwIDAtLjQ1LS41NmMtLjE5LS4xNC0uNDEtLjIxLS42NS0uMjItLjMzIDAtLjYuMTQtLjgxLjM5LS4xOC4yNy0uMjcuNTYtLjI2Ljg5IDAgLjQzLjEzLjg5LjM4IDEuMzYuMTIuMjIuMjguNDEuNDguNTYuMTkuMTUuNDIuMjMuNjcuMjNaIiBjbGFzcz0iY2xzLTUiLz48cGF0aCBkPSJNMzguNjEgOC4yM3EtLjE4LjEyLS4zOS4yMWMtLjM5LjE2LS43Ny4yMy0xLjEyLjIzLS4xOSAwLS40MS0uMDMtLjY5LS4wOC0uMjctLjA1LS41Ni0uMTktLjg2LS4zOS0uNC0uMzEtLjctLjctLjg5LTEuMTdhMy42IDMuNiAwIDAgMS0uMjktMS4zN2MuMDItLjk0LjMxLTEuNjMuODktMi4wOS41NS0uNDUgMS4xNC0uNjggMS43Ny0uNjguNDQgMCAuODMuMTEgMS4yLjMzLjI5LjIuNDkuNDEuNjEuNjMuMTEuMjIuMTguNDEuMjEuNTZsLTIuNzMgMS4xNC0uOS4wOGMuMTYuNzYuNDcgMS4zNS45MSAxLjc3LjQzLjQzLjkzLjY1IDEuNDkuNjUuMyAwIC41Ny0uMDUuNzktLjE0LjIyLS4wOC40My0uMTcuNjMtLjI4bC0uNjIuNlptLTEuMDktMy41OGMuMjMtLjA3LjM0LS4xOC4zNC0uMzMgMC0uMjUtLjEyLS40OS0uMzQtLjdhMS4xOSAxLjE5IDAgMCAwLTEuMi0uMjdjLS4xNi4wNS0uMy4xNS0uNDQuMjgtLjE0LjEyLS4yNi4zLS4zNS41MnEtLjE1LjMzLS4xNS44MWMwIC4yMS4wMS40Mi4wNC42M2wyLjExLS45NFoiIHN0eWxlPSJmaWxsOiNlYTQzMzUiLz48cGF0aCBkPSJNMzkuNjcgOC40OGMuMTctLjE3LjI4LS4zLjMyLS40LjAyLS4wOS4wMy0uMjQuMDMtLjQzdi0uNTZjMC0xLjE4LjAyLTIuMjUuMDQtMy4xOS4wMi0xLjEyLjA1LTIuMjkuMDktMy40OWgtLjg1bC44NS0uNDFoMS41NnEtLjI4NS4xNjUtLjM2LjNjLS4wNi4xMS0uMDkuMjctLjEuNWwtLjEgMi40OC43Ny0uMjljLjE0IDAgLjI4IDAgLjQzLS4wMS45My4wMiAxLjYxLjI4IDIuMDUuNzguNDMuNS42NSAxLjEuNjUgMS43OCAwIC42LS4xNiAxLjE1LS40OSAxLjYzcS0uNDk1LjczNS0xLjUzIDEuMTEtLjYxNS4xOTUtMS4xMS4xOGgtMi4yNFptMS40Ni00LjA1YzAgLjgzLS4wMSAxLjY2LS4wMSAyLjQ4IDAgLjUyIDAgLjguMDIuODQgMCAuMTIuMDQuMjIuMTEuMjkuMDcuMDguMjUuMTIuNTYuMTIuMzIgMCAuNTgtLjAzLjc5LS4wOS4yOC0uMDkuNTEtLjIxLjctLjM3LjE3LS4xNS4zLS4zMy40LS41Mi4xMS0uMi4xOC0uNDEuMjEtLjYycy4wNS0uNC4wNS0uNTljMC0uMzctLjA4LS44MS0uMjctMS4zMWEyLjEgMi4xIDAgMCAwLS40Ni0uNjhjLS4xOS0uMi0uNDUtLjM2LS43Ny0uNDgtLjI2LS4xLS40OS0uMTYtLjctLjE4LS4yMi0uMDItLjQyLS4wMi0uNjIgMHYxLjA5Wm03LjE0IDQuMDVoLTIuMDFjLjEzLS4xOS4yMi0uMzUuMjUtLjQ3LjAyLS4xMi4wMy0uMjkuMDMtLjUyIDAtMS41LjAyLTIuODYuMDMtNC4wN2gtLjg5bC43OS0uMzloMS40MWMtLjE1LjE1LS4yMy4zMy0uMjMuNTR2LjM4Yy4wOS0uMS4yLS4yMS4zMy0uMzIuMTItLjExLjI3LS4yMi40My0uMzIuMzMtLjIzLjcyLS4zNSAxLjE4LS4zNi4xMiAwIC4yMSAwIC4yNy4wMi4wNS4wMi4xLjA1LjE1LjA3bC0uNDggMS4yMy0uMzMuMTkuMS0uNTgtLjE1LS4wOWMtLjA1LS4wMi0uMTQtLjAyLS4yNi0uMDItLjIxIDAtLjQyLjA2LS42My4xNy0uMjEuMTMtLjQxLjM0LS42MS42M2wtLjAyIDMuMDNjMCAuMjIuMDQuMzUuMTEuNDEuMDcuMDcuMTkuMS4zNC4xMWwuNjEuMDItLjQzLjMzWm01LjgxLTIuNThjLjE3LjYzLjM1IDEuMTkuNTMgMS42Ny4xMi4yOC4yMi40OS4zMS42NC4wOS4xNC4xOC4yNy4yNy4zOC0uMTIuMDItLjI0LjAzLS4zNC4wNGExLjQ4IDEuNDggMCAwIDEtMS4xMy0uNmMtLjEtLjE0LS4xOC0uMjYtLjIzLS4zN2wtLjU1LjU1Yy0uMTEuMDctLjI4LjE1LS41MS4yNS0uMjQuMTEtLjU0LjE3LS45MS4xOC0uNDggMC0uODQtLjE0LTEuMDctLjM5LS4yNS0uMjQtLjM3LS41Mi0uMzctLjg2IDAtLjM1LjEtLjY2LjMxLS45Mi4xOS0uMjYuNDMtLjQ5LjcyLS42Ny4yOS0uMTkuNTgtLjM1Ljg5LS40N3EuNDItLjE4LjcyLS4yN2wtLjE4LS41NHEtLjI3LS44MjUtLjYzLTEuMDJjLS4yNS0uMTItLjYyLS4xNy0xLjEyLS4xM2wuODUtLjM2Yy4yNiAwIC41MiAwIC43Ny4wMi4yNC4wMi40Ni4xLjY0LjIzLjIuMTQuMzYuMzQuNDcuNjJxLjE2NS40Mi4zNiAxLjE3bC4yMy44NVptLTEuMTYtLjA2Yy0uMDUtLjI5LS4xNC0uNDQtLjI3LS40My0uMTYgMC0uNDMuMTQtLjgxLjQxcS0uMjcuMTk1LS40NS40OGMtLjE0LjE5LS4yMS40Mi0uMjEuNjggMCAuMTcuMDQuMzEuMTIuNDMuMDcuMTMuMTYuMjMuMjcuMzEuMjIuMTYuNDcuMjQuNzMuMjQuMyAwIC41NS0uMDYuNzMtLjE5LjE3LS4xMS4yOS0uMjEuMzYtLjI5LS4xMS0uMzEtLjIzLS43MS0uMzYtMS4yM3oiIHN0eWxlPSJmaWxsOiMzNGE4NTMiLz48cGF0aCBkPSJtNjQuNDIgOC40OC0yLjEzLTYuMjFoMS42MmwxLjQ4IDQuODJoLjExbDEuNDgtNC44MmgxLjYybC0yLjEzIDYuMjFoLTIuMDRabTYuNjUtMy41MS0uMTQtMS4zNWMuNTUtLjA3Ljk5LS4xNyAxLjMzLS4zcy41OS0uMjkuNzUtLjQ4LjI0LS40LjI0LS42M2MwLS4yMi0uMDctLjM5LS4yMi0uNTFzLS4zNi0uMTgtLjY1LS4xOGMtLjMxIDAtLjY2LjA2LTEuMDMuMTlzLS43My4zMS0xLjA3LjU2bC0uODEtMS4ycS41Ny0uNTQgMS4yOS0uNzhjLjcyLS4yNCAxLjAzLS4yNCAxLjYzLS4yNHExLjE4NSAwIDEuODMuNDhjLjY0NS40OC42NC43OC42NCAxLjM4IDAgLjUyLS4xOC45OC0uNTQgMS4zNnMtLjgyLjY1LTEuNC44di42bC0xLjg4LjI5Wm0uNzggMy42M2MtLjQ1IDAtLjg2LS4wMy0xLjI0LS4wOHMtLjcxLS4xMi0xLS4yMWwuMTUtMS41MmMuMjUuMDcuNTQuMTQuODUuMjFzLjcxLjExIDEuMTkuMTFxLjc4IDAgMS4yLS4yN2MuNDItLjI3LjQyLS40My40Mi0uNzYgMC0uMjQtLjA4LS40NS0uMjUtLjYxcy0uNDItLjI5LS43NC0uMzgtLjcyLS4xMy0xLjE4LS4xM2gtLjE5bC0uMTQtMS4zNSAxLjY5LjYzYy43MiAwIDEuMzEuMTkgMS43Ni41NHMuNjguODQuNjggMS40N2MwIC43NC0uMjggMS4zMi0uODQgMS43M3MtMS4zNS42Mi0yLjM3LjYyWm03LjQyIDBjLS4zIDAtLjU1LS4xLS43Ni0uMzFzLS4zMS0uNDYtLjMxLS43NS4xLS41NS4zMS0uNzYuNDYtLjMxLjc2LS4zMS41NS4xLjc2LjMxLjMxLjQ2LjMxLjc2LS4xLjU0LS4zMS43NS0uNDYuMzEtLjc2LjMxbTQuMjktLjEyVjcuMTFoMi4xMnYxLjM3em0uMTItNi4xNFYuODdsMS44OS0uN3YxLjVsLTEuODkuNjhabTEuODggNi4xNFYuMTZoMS41OHY4LjMyem0xLjQ3IDBWNy4xMWgxLjl2MS4zN3ptNi4wNi4xMmMtLjMgMC0uNTUtLjEtLjc2LS4zMXMtLjMxLS40Ni0uMzEtLjc1LjEtLjU1LjMxLS43Ni40Ni0uMzEuNzYtLjMxLjU1LjEuNzYuMzEuMzEuNDYuMzEuNzYtLjEuNTQtLjMxLjc1LS40Ni4zMS0uNzYuMzFtNS42Mi0zLjYzLS4xNC0xLjM1Yy41NS0uMDcuOTktLjE3IDEuMzMtLjNzLjU5LS4yOS43NS0uNDguMjQtLjQuMjQtLjYzYzAtLjIyLS4wNy0uMzktLjIyLS41MXMtLjM2LS4xOC0uNjUtLjE4Yy0uMzEgMC0uNjYuMDYtMS4wMy4xOXMtLjczLjMxLTEuMDcuNTZsLS44MS0xLjJxLjU3LS41NCAxLjI5LS43OGMuNzItLjI0IDEuMDMtLjI0IDEuNjMtLjI0cTEuMTg1IDAgMS44My40OGMuNjQ1LjQ4LjY0Ljc4LjY0IDEuMzggMCAuNTItLjE4Ljk4LS41NCAxLjM2cy0uODIuNjUtMS40Ljh2LjZsLTEuODguMjlabS43OSAzLjYzYy0uNDUgMC0uODYtLjAzLTEuMjQtLjA4cy0uNzEtLjEyLTEtLjIxbC4xNS0xLjUyYy4yNS4wNy41NC4xNC44NS4yMXMuNzEuMTEgMS4xOS4xMXEuNzggMCAxLjItLjI3Yy40Mi0uMjcuNDItLjQzLjQyLS43NiAwLS4yNC0uMDgtLjQ1LS4yNS0uNjFzLS40Mi0uMjktLjc0LS4zOC0uNzItLjEzLTEuMTgtLjEzaC0uMTlsLS4xNC0xLjM1IDEuNjkuNjNjLjcyIDAgMS4zMS4xOSAxLjc2LjU0cy42OC44NC42OCAxLjQ3YzAgLjc0LS4yOCAxLjMyLS44NCAxLjczcy0xLjM1LjYyLTIuMzcuNjJaIiBzdHlsZT0iZmlsbDojYjNiM2IzIi8+PC9nPjwvc3ZnPg==);
+            content: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDMuMTUgMTIuMTkiPjxkZWZzPjxzdHlsZT4uY2xzLTV7ZmlsbDojZmJiYzA1fTwvc3R5bGU+PC9kZWZzPjxnIGlkPSJtYWluIj48cGF0aCBkPSJNMTMuNi4yNWMtLjE2LjE0LS4yNy4yNC0uMzIuMzItLjA2LjA4LS4xMy4yMi0uMi40MmwtLjMxLjk0Yy0uMzQuOTktLjY5IDEuOTktMS4wNiAyLjk4bC0uNjYgMS44Yy0uMjYuNzQtLjQ4IDEuMy0uNjcgMS42OC0uNDcuMDYtLjg4LjE1LTEuMjUuMjdxLS4yODUtLjg1NS0uNTQtMS43MWMtLjQtMS4zOS0uNzUtMi42Ny0xLjA2LTMuODUtLjE5LS43My0uMzUtMS4zNi0uNDktMS44OS0uMzggMS4xMS0uNzUgMi4yMi0xLjEyIDMuMzMtLjIzLjY2LS40NyAxLjMxLS43MSAxLjk3LS4yOC44OS0uNTIgMS41MS0uNzEgMS44OC0uNTEuMDYtLjk0LjE1LTEuMy4yNy0uMi0uNjctLjQtMS4zNS0uNTgtMi4wMy0uMzYtMS4zNC0uNzEtMi43OC0xLjA4LTQuMzEtLjE1LS42MS0uMjktMS4yMy0uNDQtMS44OEwuMDIuNDguNzQgMGgyLjA4bC0uMjQuM2MtLjExLjExLS4xNi4yMi0uMTYuMzMgMCAuMTYuMDcuNTIuMjIgMS4wNy4wOS4zMi4xNi42NS4yMy45N2wuNjEgMi40MWMuMTMuNTIuMjYgMS4wNC4zOSAxLjU0LjE1LjYuMjggMS4wMy4zNiAxLjMuMjUtLjY3LjU5LTEuNjQgMS4wNC0yLjkxbC41MS0xLjQ5Yy41NS0xLjY3Ljg2LTIuNy45My0zLjA3SDUuNjRsLjc1LS40NEg4LjZsLS4yNy4zNGMtLjEuMDktLjE2LjItLjE2LjM1IDAgLjAzIDAgLjA3LjAxLjExLS4wMi4wMi4wNy4zNi4yNiAxLjAzLjAxLjA1LjEzLjUuMzUgMS4zNmwuNTYgMi4wNnEuMTk1LjcwNS4zOSAxLjM4Yy4xNS41NS4yOS45OC40IDEuMjguMzktLjk5LjczLTEuOTIgMS4wNC0yLjgxbC43Mi0xLjk5Yy4xNS0uNDYuMjktLjkyLjQ0LTEuMzguMTktLjU3LjMxLTEgLjM3LTEuMjhIMTEuM2wuNzgtLjQ0aDEuOGwtLjI3LjI1Wm02LjMgOC4yM2gtMS45MmMuMTItLjE0LjE5LS4yNC4yMi0uMzJzLjA1LS4yLjA1LS4zNGwuMDUtMi4yNmMuMDItLjM4IDAtLjczLS4wMy0xLjAzLS4wNC0uMy0uMTUtLjU0LS4zNC0uNzJhLjk4Ljk4IDAgMCAwLS43LS4yNmMtLjI4IDAtLjUuMDgtLjY3LjIycS0uMjg1LjIxLS40Mi4zOWMtLjE3LjIxLS4yOC4zOC0uMzQuNDhsLS4wMiAyLjgxYzAgLjIxLjAyLjM2LjA1LjQ3LjAzLjEuMTEuMTcuMjQuMjIuMjQuMDQuNDkuMDcuNzQuMTFsLS40LjI1aC0yLjAyYy4xMS0uMTQuMTktLjI0LjIyLS4zMS4wMi0uMDcuMDMtLjE4LjAzLS4zMVY2Ljg1Yy4wMi0xLjQ1LjA0LTIuODguMDctNC4yOC4wMy0xLjM0LjA1LTIuMDUuMDUtMi4xMmwtLjkyLjA1LjkyLS40OWgxLjYyYy0uMjkuMi0uNDMuMzMtLjQzLjM5LS4wNS4wOS0uMDcuMjctLjA4LjU2LS4wMi40OC0uMDQuOTctLjA0IDEuNDhsLS4wNCAxLjUyYy4wNy0uMDkuMTctLjE5LjI4LS4zMXMuMjUtLjI0LjQtLjM1Yy4xNi0uMTIuMzYtLjIyLjU4LS4zYTIuNDcgMi40NyAwIDAgMSAxLjMyLS4wNHEuMy4wNzUuNi4zOWMuMi4yMi4zMi40Ni4zNy43Mi4wMy4yNy4wNS41My4wNS44IDAgLjk2LS4wMyAxLjkxLS4wNiAyLjg2di4wNmMwIC4xMy4wMi4yMS4wNi4yNXMuMDguMDYuMTIuMDdjLjA0IDAgLjA5IDAgLjE3LjAzLjA4IDAgLjE3LjAyLjI2LjA0LjIxLjAyLjM1LjA0LjQ0LjA2bC0uNDkuMjZaIiBzdHlsZT0iZmlsbDojNDI4NWY0Ii8+PHBhdGggZD0iTTI0LjU2IDUuOWMuMTcuNjMuMzUgMS4xOS41MyAxLjY3LjEyLjI4LjIyLjQ5LjMxLjY0LjA5LjE0LjE4LjI3LjI3LjM4LS4xMi4wMi0uMjQuMDMtLjM0LjA0YTEuNDggMS40OCAwIDAgMS0xLjEzLS42Yy0uMS0uMTQtLjE4LS4yNi0uMjMtLjM3bC0uNTUuNTVjLS4xMS4wNy0uMjguMTUtLjUxLjI1LS4yNC4xMS0uNTQuMTctLjkxLjE4LS40OCAwLS44NC0uMTQtMS4wNy0uMzktLjI1LS4yNC0uMzctLjUyLS4zNy0uODYgMC0uMzUuMS0uNjYuMzEtLjkyLjE5LS4yNi40My0uNDkuNzItLjY3LjI5LS4xOS41OC0uMzUuODktLjQ3cS40Mi0uMTguNzItLjI3bC0uMTgtLjU0cS0uMjctLjgyNS0uNjMtMS4wMmMtLjI1LS4xMi0uNjItLjE3LTEuMTItLjEzbC44NS0uMzZjLjI2IDAgLjUyIDAgLjc3LjAyLjI0LjAyLjQ2LjEuNjQuMjMuMi4xNC4zNi4zNC40Ny42MnEuMTY1LjQyLjM2IDEuMTdsLjIzLjg1Wm0tMS4xNi0uMDZjLS4wNS0uMjktLjE0LS40NC0uMjctLjQzLS4xNiAwLS40My4xNC0uODEuNDFxLS4yNy4xOTUtLjQ1LjQ4Yy0uMTQuMTktLjIxLjQyLS4yMS42OCAwIC4xNy4wNC4zMS4xMi40My4wNy4xMy4xNi4yMy4yNy4zMS4yMi4xNi40Ny4yNC43My4yNC4zIDAgLjU1LS4wNi43My0uMTkuMTctLjExLjI5LS4yMS4zNi0uMjktLjExLS4zMS0uMjMtLjcxLS4zNi0xLjIzem00Ljc1IDIuNjRoLTIuMDZjLjE0LS4xOC4yMy0uMy4yNy0uMzcuMDMtLjA3LjA1LS4xNi4wNS0uMjdWNS44OWMwLTEuMDIuMDItMi4xOS4wNS0zLjUyLjAyLS42Ny4wNS0xLjMyLjA3LTEuOTNoLS45MWwuODctLjQzaDEuNjZjLS4xNy4xLS4yOS4xOS0uMzcuMjgtLjA4LjA4LS4xMi4yMy0uMTUuNDMtLjA4Ljk4LS4xMiAyLjM0LS4xMSA0LjA5djIuNzdjMCAuMjIuMDMuMzcuMS40NS4wNy4wNy4xOS4xMi4zNy4xM2wuNi4wNi0uNDMuMjZaIiBjbGFzcz0iY2xzLTUiLz48cGF0aCBkPSJNMzIuNDQgMy40OGMuMDguMDUuMTYuMTIuMjUuMjFzLjE4LjIxLjI3LjM1Yy4wOC4xMy4xNi4yOC4yMi40Ni4wNS4xOC4wOC4zOC4wOC42MiAwIC40My0uMS43Ny0uMjggMS4wMy0uMDkuMTItLjE4LjI0LS4yOC4zNS0uMTEuMTEtLjIzLjIxLS4zNS4zMi0uMDcuMDctLjE0LjE2LS4yLjI1LS4wNy4xLS4xMS4yMS0uMTEuMzRzLjA0LjIzLjExLjMxcS4wOS4xMi4xOC4yMWwuNDEuMzNjLjI1LjIxLjQ4LjQ0LjY3LjY5LjE4LjI1LjI3LjU5LjI4IDEgMCAuNTgtLjI2IDEuMS0uNzcgMS41NS0uNTMuNDYtMS4zLjcxLTIuMzEuNzItLjg0IDAtMS40Ny0uMTktMS44OC0uNTQtLjQyLS4zMy0uNjMtLjcyLS42My0xLjE4IDAtLjIyLjA3LS40Ny4yLS43NHEuMTk1LS40MDUuNzItLjcyYy4zOS0uMjIuOC0uMzcgMS4yMy0uNDQuNDItLjA2Ljc4LS4xIDEuMDYtLjExLS4wOS0uMTEtLjE2LS4yNC0uMjMtLjM3YS44NC44NCAwIDAgMS0uMDctLjcyYy4wMy0uMDcuMDUtLjE0LjA3LS4yMS0uMTQuMDItLjI3LjAyLS4zOS4wMi0uNjQgMC0xLjEzLS4yMS0xLjQ2LS42LS4zNS0uMzctLjUzLS43OS0uNTMtMS4yOCAwLS41OS4yNS0xLjEyLjc1LTEuNi4zNC0uMjguNy0uNDYgMS4wNi0uNTUuMzYtLjA3LjcxLS4xMSAxLjAyLS4xMWgyLjRsLS43NC40M2gtLjc0Wm0uNDYgNi45MmMwLS4zMS0uMS0uNTctLjMtLjgtLjIxLS4yMS0uNTQtLjQ4LS45OS0uNzktLjA4IDAtLjE3LS4wMS0uMjctLjAxLS4wNiAwLS4yMiAwLS40Ny4wMi0uMjUuMDQtLjUuMDktLjc2LjE3LS4wNi4wMi0uMTUuMDYtLjI2LjExcy0uMjIuMTItLjM0LjIyYy0uMTEuMS0uMi4yMi0uMjguMzYtLjA5LjE1LS4xMy4zNC0uMTMuNTUgMCAuNDIuMTkuNzcuNTcgMS4wNC4zNi4yNy44Ni40MSAxLjQ5LjQyLjU3IDAgMS0uMTMgMS4zLS4zOC4yOS0uMjQuNDQtLjU0LjQ0LS45MlptLTEuNjctMy41M2MuMzItLjAxLjU4LS4xMi43OS0uMzQuMS0uMTUuMTctLjMxLjItLjQ3LjAyLS4xNi4wMy0uMy4wMy0uNDEgMC0uNDctLjEyLS45NS0uMzYtMS40M2ExLjUgMS41IDAgMCAwLS40NS0uNTZjLS4xOS0uMTQtLjQxLS4yMS0uNjUtLjIyLS4zMyAwLS42LjE0LS44MS4zOS0uMTguMjctLjI3LjU2LS4yNi44OSAwIC40My4xMy44OS4zOCAxLjM2LjEyLjIyLjI4LjQxLjQ4LjU2LjE5LjE1LjQyLjIzLjY3LjIzWiIgY2xhc3M9ImNscy01Ii8+PHBhdGggZD0iTTM4LjYxIDguMjNxLS4xOC4xMi0uMzkuMjFjLS4zOS4xNi0uNzcuMjMtMS4xMi4yMy0uMTkgMC0uNDEtLjAzLS42OS0uMDgtLjI3LS4wNS0uNTYtLjE5LS44Ni0uMzktLjQtLjMxLS43LS43LS44OS0xLjE3YTMuNiAzLjYgMCAwIDEtLjI5LTEuMzdjLjAyLS45NC4zMS0xLjYzLjg5LTIuMDkuNTUtLjQ1IDEuMTQtLjY4IDEuNzctLjY4LjQ0IDAgLjgzLjExIDEuMi4zMy4yOS4yLjQ5LjQxLjYxLjYzLjExLjIyLjE4LjQxLjIxLjU2bC0yLjczIDEuMTQtLjkuMDhjLjE2Ljc2LjQ3IDEuMzUuOTEgMS43Ny40My40My45My42NSAxLjQ5LjY1LjMgMCAuNTctLjA1Ljc5LS4xNC4yMi0uMDguNDMtLjE3LjYzLS4yOGwtLjYyLjZabS0xLjA5LTMuNThjLjIzLS4wNy4zNC0uMTguMzQtLjMzIDAtLjI1LS4xMi0uNDktLjM0LS43YTEuMTkgMS4xOSAwIDAgMC0xLjItLjI3Yy0uMTYuMDUtLjMuMTUtLjQ0LjI4LS4xNC4xMi0uMjYuMy0uMzUuNTJxLS4xNS4zMy0uMTUuODFjMCAuMjEuMDEuNDIuMDQuNjNsMi4xMS0uOTRaIiBzdHlsZT0iZmlsbDojZWE0MzM1Ii8+PHBhdGggZD0iTTM5LjY3IDguNDhjLjE3LS4xNy4yOC0uMy4zMi0uNC4wMi0uMDkuMDMtLjI0LjAzLS40M3YtLjU2YzAtMS4xOC4wMi0yLjI1LjA0LTMuMTkuMDItMS4xMi4wNS0yLjI5LjA5LTMuNDloLS44NWwuODUtLjQxaDEuNTZxLS4yODUuMTY1LS4zNi4zYy0uMDYuMTEtLjA5LjI3LS4xLjVsLS4xIDIuNDguNzctLjI5Yy4xNCAwIC4yOCAwIC40My0uMDEuOTMuMDIgMS42MS4yOCAyLjA1Ljc4LjQzLjUuNjUgMS4xLjY1IDEuNzggMCAuNi0uMTYgMS4xNS0uNDkgMS42M3EtLjQ5NS43MzUtMS41MyAxLjExLS42MTUuMTk1LTEuMTEuMThoLTIuMjRabTEuNDYtNC4wNWMwIC44My0uMDEgMS42Ni0uMDEgMi40OCAwIC41MiAwIC44LjAyLjg0IDAgLjEyLjA0LjIyLjExLjI5LjA3LjA4LjI1LjEyLjU2LjEyLjMyIDAgLjU4LS4wMy43OS0uMDkuMjgtLjA5LjUxLS4yMS43LS4zNy4xNy0uMTUuMy0uMzMuNC0uNTIuMTEtLjIuMTgtLjQxLjIxLS42MnMuMDUtLjQuMDUtLjU5YzAtLjM3LS4wOC0uODEtLjI3LTEuMzFhMi4xIDIuMSAwIDAgMC0uNDYtLjY4Yy0uMTktLjItLjQ1LS4zNi0uNzctLjQ4LS4yNi0uMS0uNDktLjE2LS43LS4xOC0uMjItLjAyLS40Mi0uMDItLjYyIDB2MS4wOVptNy4xNCA0LjA1aC0yLjAxYy4xMy0uMTkuMjItLjM1LjI1LS40Ny4wMi0uMTIuMDMtLjI5LjAzLS41MiAwLTEuNS4wMi0yLjg2LjAzLTQuMDdoLS44OWwuNzktLjM5aDEuNDFjLS4xNS4xNS0uMjMuMzMtLjIzLjU0di4zOGMuMDktLjEuMi0uMjEuMzMtLjMyLjEyLS4xMS4yNy0uMjIuNDMtLjMyLjMzLS4yMy43Mi0uMzUgMS4xOC0uMzYuMTIgMCAuMjEgMCAuMjcuMDIuMDUuMDIuMS4wNS4xNS4wN2wtLjQ4IDEuMjMtLjMzLjE5LjEtLjU4LS4xNS0uMDljLS4wNS0uMDItLjE0LS4wMi0uMjYtLjAyLS4yMSAwLS40Mi4wNi0uNjMuMTctLjIxLjEzLS40MS4zNC0uNjEuNjNsLS4wMiAzLjAzYzAgLjIyLjA0LjM1LjExLjQxLjA3LjA3LjE5LjEuMzQuMTFsLjYxLjAyLS40My4zM1ptNS44MS0yLjU4Yy4xNy42My4zNSAxLjE5LjUzIDEuNjcuMTIuMjguMjIuNDkuMzEuNjQuMDkuMTQuMTguMjcuMjcuMzgtLjEyLjAyLS4yNC4wMy0uMzQuMDRhMS40OCAxLjQ4IDAgMCAxLTEuMTMtLjZjLS4xLS4xNC0uMTgtLjI2LS4yMy0uMzdsLS41NS41NWMtLjExLjA3LS4yOC4xNS0uNTEuMjUtLjI0LjExLS41NC4xNy0uOTEuMTgtLjQ4IDAtLjg0LS4xNC0xLjA3LS4zOS0uMjUtLjI0LS4zNy0uNTItLjM3LS44NiAwLS4zNS4xLS42Ni4zMS0uOTIuMTktLjI2LjQzLS40OS43Mi0uNjcuMjktLjE5LjU4LS4zNS44OS0uNDdxLjQyLS4xOC43Mi0uMjdsLS4xOC0uNTRxLS4yNy0uODI1LS42My0xLjAyYy0uMjUtLjEyLS42Mi0uMTctMS4xMi0uMTNsLjg1LS4zNmMuMjYgMCAuNTIgMCAuNzcuMDIuMjQuMDIuNDYuMS42NC4yMy4yLjE0LjM2LjM0LjQ3LjYycS4xNjUuNDIuMzYgMS4xN2wuMjMuODVabS0xLjE2LS4wNmMtLjA1LS4yOS0uMTQtLjQ0LS4yNy0uNDMtLjE2IDAtLjQzLjE0LS44MS40MXEtLjI3LjE5NS0uNDUuNDhjLS4xNC4xOS0uMjEuNDItLjIxLjY4IDAgLjE3LjA0LjMxLjEyLjQzLjA3LjEzLjE2LjIzLjI3LjMxLjIyLjE2LjQ3LjI0LjczLjI0LjMgMCAuNTUtLjA2LjczLS4xOS4xNy0uMTEuMjktLjIxLjM2LS4yOS0uMTEtLjMxLS4yMy0uNzEtLjM2LTEuMjN6IiBzdHlsZT0iZmlsbDojMzRhODUzIi8+PHBhdGggZD0ibTY0LjQyIDguNDgtMi4xMy02LjIxaDEuNjJsMS40OCA0LjgyaC4xMWwxLjQ4LTQuODJoMS42MmwtMi4xMyA2LjIxaC0yLjA0Wm02LjY1LTMuNTEtLjE0LTEuMzVjLjU1LS4wNy45OS0uMTcgMS4zMy0uM3MuNTktLjI5Ljc1LS40OC4yNC0uNC4yNC0uNjNjMC0uMjItLjA3LS4zOS0uMjItLjUxcy0uMzYtLjE4LS42NS0uMThjLS4zMSAwLS42Ni4wNi0xLjAzLjE5cy0uNzMuMzEtMS4wNy41NmwtLjgxLTEuMnEuNTctLjU0IDEuMjktLjc4Yy43Mi0uMjQgMS4wMy0uMjQgMS42My0uMjRxMS4xODUgMCAxLjgzLjQ4Yy42NDUuNDguNjQuNzguNjQgMS4zOCAwIC41Mi0uMTguOTgtLjU0IDEuMzZzLS44Mi42NS0xLjQuOHYuNmwtMS44OC4yOVptLjc4IDMuNjNjLS40NSAwLS44Ni0uMDMtMS4yNC0uMDhzLS43MS0uMTItMS0uMjFsLjE1LTEuNTJjLjI1LjA3LjU0LjE0Ljg1LjIxcy43MS4xMSAxLjE5LjExcS43OCAwIDEuMi0uMjdjLjQyLS4yNy40Mi0uNDMuNDItLjc2IDAtLjI0LS4wOC0uNDUtLjI1LS42MXMtLjQyLS4yOS0uNzQtLjM4LS43Mi0uMTMtMS4xOC0uMTNoLS4xOWwtLjE0LTEuMzUgMS42OS42M2MuNzIgMCAxLjMxLjE5IDEuNzYuNTRzLjY4Ljg0LjY4IDEuNDdjMCAuNzQtLjI4IDEuMzItLjg0IDEuNzNzLTEuMzUuNjItMi4zNy42MlptNy40MiAwYy0uMyAwLS41NS0uMS0uNzYtLjMxcy0uMzEtLjQ2LS4zMS0uNzUuMS0uNTUuMzEtLjc2LjQ2LS4zMS43Ni0uMzEuNTUuMS43Ni4zMS4zMS40Ni4zMS43Ni0uMS41NC0uMzEuNzUtLjQ2LjMxLS43Ni4zMW00LjI5LS4xMlY3LjExaDIuMTJ2MS4zN3ptLjEyLTYuMTRWLjg3bDEuODktLjd2MS41bC0xLjg5LjY4Wm0xLjg4IDYuMTRWLjE2aDEuNTh2OC4zMnptMS40NyAwVjcuMTFoMS45djEuMzd6bTYuMDYuMTJjLS4zIDAtLjU1LS4xLS43Ni0uMzFzLS4zMS0uNDYtLjMxLS43NS4xLS41NS4zMS0uNzYuNDYtLjMxLjc2LS4zMS41NS4xLjc2LjMxLjMxLjQ2LjMxLjc2LS4xLjU0LS4zMS43NS0uNDYuMzEtLjc2LjMxbTMuNzMtMS43OUw5Ny44NS42M2gxLjU4bC0xLjA0IDYuMThoLTEuNTZabTAgMCAuOTItMS40MWgzLjE4djEuNDF6bTMuOTggMS42N1YuMTZoMS41NHY4LjMyem0xLjQzLTEuNjdWNS40aC45MnYxLjQxeiIgc3R5bGU9ImZpbGw6I2IzYjNiMyIvPjwvZz48L3N2Zz4=);
         }
 
         /* 说明面板 */

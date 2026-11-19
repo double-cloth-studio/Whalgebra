@@ -104,13 +104,20 @@
                  * @returns {void}
                  */
                 _init() {
-                    const {callableFunctions, dependencies = []} = this._config;
+                    const {callableFunctions, dependencies = [], injectCancelSignal = false} = this._config;
                     if (!Array.isArray(dependencies)) {
                         throw new Error('[SyncWorker] dependencies must be an array.');
                     }
+                    if (typeof injectCancelSignal !== 'boolean') {
+                        throw new Error('[SyncWorker] injectCancelSignal must be a boolean.');
+                    }
 
                     // 缓存脚本，避免重启时受外部配置变更影响。
-                    const workerCode = this._workerCode ??= this._generateWorkerCode(callableFunctions, dependencies);
+                    const workerCode = this._workerCode ??= this._generateWorkerCode(
+                        callableFunctions,
+                        dependencies,
+                        injectCancelSignal
+                    );
                     // Blob URL 把动态生成的源码交给 Worker；创建失败或终止时必须撤销 URL。
                     const blob = new Blob([workerCode], {type: 'application/javascript'});
                     const workerUrl = URL.createObjectURL(blob);
@@ -228,10 +235,12 @@
                  *   `functionName`，实现会被转换为源码，不能依赖未列入 `deps` 的词法闭包。
                  * @param {Array<{name: string, value: *}>} deps - 顶层依赖声明，按数组顺序生成源码；后项可引用
                  *   已生成的前项。名称重复、非法或值不可序列化时应在创建 Worker 前失败。
+                 * @param {boolean} [injectCancelSignal=false] - 是否向可调用函数的参数末尾自动追加协作式取消信号
+                 *   `cancellationSignal`；默认关闭，避免覆盖含默认参数函数的可选形参。
                  * @returns {string} 可执行的 Worker 脚本。
                  * @private
                  */
-                _generateWorkerCode(funcs, deps) {
+                _generateWorkerCode(funcs, deps, injectCancelSignal = false) {
                     /**
                      * 将支持的值序列化为 JavaScript 源码。
                      *
@@ -324,7 +333,10 @@
                                     // 计算属性名可避免 __proto__ 被解释为原型设置器。
                                     props.push(`[${JSON.stringify(key)}]: ${serializeValue(descriptor.value, seen)}`);
                                 }
-                                return `{${props.join(',')}}`;
+                                // 保留 Object.create(null) 的无原型特性。
+                                return prototype === null
+                                       ? `Object.assign(Object.create(null),{${props.join(',')}})`
+                                       : `{${props.join(',')}}`;
                             } finally {
                                 seen.delete(value);
                             }
@@ -344,15 +356,17 @@
                      */
                     const serializeFunction = (func, allowClass = true) => {
                         const source = Function.prototype.toString.call(func).trim();
-                        if (source.includes('[native code]')) {
+                        // 合法用户 JS 函数的函数体不可能仅由 `{ [native code] }` 组成，避免误伤含该文本的注释或字符串。
+                        if (/^[^{]*\{\s*\[native code]\s*}$/.test(source)) {
                             throw new TypeError('Native or bound functions are not supported.');
                         }
                         if (/^(?:get|set)\s/.test(source)) {
                             throw new TypeError('Getter and setter functions are not supported.');
                         }
 
-                        const isFunctionExpression = /^(?:async\s+)?function(?:\s*\*)?\b/.test(source);
-                        const isArrowFunction = /^(?:async\s+)?(?:\([\s\S]*\)|[A-Za-z_$][\w$]*)\s*=>/.test(source);
+                        // `\b` 放在 function 之后，避免 `function*()` 因 `*` 与 `(` 间无词边界而误判。
+                        const isFunctionExpression = /^(?:async\s+)?function\b(?:\s*\*)?/.test(source);
+                        const isArrowFunction = /^(?:async\s+)?(?:\([\s\S]*\)|[$_\p{ID_Start}][$\u200C\u200D_\p{ID_Continue}]*)\s*=>/u.test(source);
                         const isClass = /^class\b/.test(source);
 
                         if (isClass && !allowClass) {
@@ -425,6 +439,28 @@
                             throw new Error(`[SyncWorker] Function '${key}' could not be serialized: ${e.message}.`);
                         }
                     }
+
+                    const cancelSignalSetup = injectCancelSignal ? `
+            /* Create a cancel signal object that will be passed as the last parameter to the user function. */
+            /* This imitates the pattern of AbortController/AbortSignal, which is a standard asynchronous cancellation pattern. */
+            const cancellationSignal = {
+                isCancelled: () => cancellationState.cancelled,
+                throwIfCancelled: () => {
+                    if (cancellationState.cancelled) {
+                        const error = new Error('[SyncWorker] Task was cancelled.');
+                        error.name = 'CancellationError';
+                        throw error;
+                    }
+                }
+            };
+` : '';
+
+                    const invokeLine = injectCancelSignal
+                                       ? `/* Execute the function and inject cancellationSignal. 'await' can handle both synchronous and asynchronous functions. */
+                const result = await func(...args, cancellationSignal);`
+                                       : `/* Execute the function. 'await' can handle both synchronous and asynchronous functions. */
+                const result = await func(...args);`;
+
                     code += `
     /* -- Worker internal status -- */
     /* A Map used to track running tasks and their cancellation status. */
@@ -441,7 +477,7 @@
                 name = error.name;
             }
         } catch {
-            // 忽略异常属性访问，继续使用默认错误名称。
+            /* Ignore property access errors and keep the default error name. */
         }
     
         try {
@@ -449,7 +485,7 @@
                 message = error.message;
             }
         } catch {
-            // 忽略异常属性访问，稍后使用安全的字符串回退值。
+            /* Ignore property access errors and fall back to a safe string later. */
         }
     
         if (message === undefined) {
@@ -465,7 +501,7 @@
                 stack = error.stack;
             }
         } catch {
-            // 忽略异常属性访问，继续使用空堆栈。
+            /* Ignore property access errors and keep an empty stack trace. */
         }
     
         return {name, message, stack};
@@ -499,23 +535,9 @@
             /* Create and store the cancellation status for new tasks. */
             const cancellationState = { cancelled: false };
             runningTasks.set(id, cancellationState);
-    
-            /* Create a cancel signal object that will be passed as the last parameter to the user function. */
-            /* This imitates the pattern of AbortController/AbortSignal, which is a standard asynchronous cancellation pattern. */
-            const cancellationSignal = {
-                isCancelled: () => cancellationState.cancelled,
-                throwIfCancelled: () => {
-                    if (cancellationState.cancelled) {
-                        const error = new Error('[SyncWorker] Task was cancelled.');
-                        error.name = 'CancellationError';
-                        throw error;
-                    }
-                }
-            };
-    
+            ${cancelSignalSetup}
             try {
-                /* Execute the function and inject cancellationSignal. 'await' can handle both synchronous and asynchronous functions. */
-                const result = await func(...args, cancellationSignal);
+                ${invokeLine}
     
                 /* Check if the task is marked as cancelled after completion. If so, no results will be sent to avoid race conditions. */
                 if (cancellationState.cancelled) {
@@ -774,12 +796,22 @@
                 static _WORKER_TIMEOUT = 60000;
 
                 /**
-                 * Worker 是否处于重启状态。
+                 * 当前进行中的重启 Promise，用于合并并发重启请求。
                  *
                  * @private
+                 * @type {Promise<void>|null}
+                 */
+                static _restartPromise = null;
+
+                /**
+                 * 判断 Worker 是否正在重启。
+                 *
+                 * @readonly
                  * @type {boolean}
                  */
-                static _isRestarting = false;
+                static get isRestarting() {
+                    return this._restartPromise !== null;
+                }
 
                 /**
                  * 阻止实例化静态工具类。
@@ -812,6 +844,11 @@
                  *   业务计算错误、取消和超时保持原拒绝原因，不被包装成成功值。
                  */
                 static async _dispatch(funcName, args = []) {
+                    // 若 Worker 正在重启，等待其初始化完成后再派发，避免误杀紧随 restart() 后的新请求。
+                    if (this._restartPromise) {
+                        await this._restartPromise;
+                    }
+
                     try {
                         return await this._mathWorker.exec(funcName, {
                             args,
@@ -819,26 +856,20 @@
                         });
                     } catch (e) {
                         // 主动终止或取消不触发自动恢复。
-                        if (e.name === 'TerminationError' || e.name === 'CancellationError') {
+                        if (e?.name === 'TerminationError' || e?.name === 'CancellationError') {
                             throw e;
                         }
 
-                        if (WorkerTools._isRestarting) {
-                            const err = new Error('[WorkerTools] Worker is restarting, request aborted.');
-                            err.name = 'TerminationError';
-                            throw err;
+                        // 仅在 Worker 真正崩溃/已终止或同步阻塞超时时重启；普通业务/语法错误直接抛出。
+                        const needRestart = !this._mathWorker || this._mathWorker.isTerminated || e?.name === 'TimeoutError';
+                        if (!needRestart) {
+                            throw e;
                         }
 
-                        WorkerTools._isRestarting = true;
                         try {
-                            // 意外错误会重建 Worker 并恢复配置；失败的当前请求不自动重放，防止副作用重复。
-                            if (this._mathWorker) {
-                                this._mathWorker.terminate();
-                                this._mathWorker.restart();
-                            }
-                            await WorkerTools._restoreState();
-                        } finally {
-                            WorkerTools._isRestarting = false;
+                            await this.restart();
+                        } catch (restartErr) {
+                            console.error('[WorkerTools] Auto-restart failed:', restartErr);
                         }
 
                         // 恢复 Worker 后仍向调用方报告本次失败。
@@ -853,14 +884,28 @@
                  * @returns {Promise<void>}
                  */
                 static async _restoreState() {
-                    // 直接调用 Worker，避免恢复失败再次触发重启。
-                    await this._mathWorker.exec('initEnv', {
-                        args: [{
+                    // 若 initEnv 等待期间主线程配置再次变更，补同步一次最新快照，消除重启窗口期配置丢失。
+                    while (true) {
+                        const snapshot = {
                             calcAcc: CalcConfig.globalCalcAccuracy,
                             outputAcc: CalcConfig.outputAccuracy,
                             printMode: CalcConfig.globalPrintMode
-                        }]
-                    });
+                        };
+
+                        // 为 initEnv 加上超时保护，避免极端情况下 _restartPromise 永久挂起。
+                        await this._mathWorker.exec('initEnv', {
+                            args: [snapshot],
+                            timeout: 10000
+                        });
+
+                        if (
+                            snapshot.calcAcc === CalcConfig.globalCalcAccuracy &&
+                            snapshot.outputAcc === CalcConfig.outputAccuracy &&
+                            snapshot.printMode === CalcConfig.globalPrintMode
+                        ) {
+                            break;
+                        }
+                    }
                 }
 
                 /**
@@ -869,11 +914,22 @@
                  * @returns {Promise<void>}
                  */
                 static async restart() {
-                    if (this._mathWorker) {
-                        WorkerTools.cancelWorker();
-                        this._mathWorker.restart();
-                        await WorkerTools._restoreState();
+                    if (!this._mathWorker) {
+                        return;
                     }
+
+                    if (!this._restartPromise) {
+                        this._restartPromise = (async () => {
+                            try {
+                                this._mathWorker.restart();
+                                await this._restoreState();
+                            } finally {
+                                this._restartPromise = null;
+                            }
+                        })();
+                    }
+
+                    await this._restartPromise;
                 }
 
                 /**
