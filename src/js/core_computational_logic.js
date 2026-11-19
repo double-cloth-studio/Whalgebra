@@ -1114,24 +1114,24 @@
                 let mantissaB = reB.mantissa;
                 const powerDifference = reB.power - reA.power;
 
-                /**
-                 * 返回 `bigint` 的绝对值。
-                 *
-                 * @param {bigint} num - 输入值。
-                 * @returns {bigint} 绝对值。
-                 */
-                const bigIntAbs = (num) => num < 0n ? -num : num;
-
                 const guardAcc = resultAcc + 5;
-                // 数量级差超过有效精度与保护位时，较小的加数不会影响舍入结果，可直接返回较大值。
                 if (powerDifference > guardAcc) {
-                    const diff = bigIntAbs(mantissaB) - bigIntAbs(mantissaA);
-                    if (diff > -10n) {
+                    // 快路径：即使 mA 占满 reA.acc 位也追不上，O(1) 直接返回
+                    if (powerDifference > reA.acc + guardAcc) {
+                        return new ComplexNumber(inputB, {acc: resultAcc});
+                    }
+                    const magA = reA.power + BigNumber.decimalLengthBigInt(mantissaA) - 1;
+                    const magB = reB.power + BigNumber.decimalLengthBigInt(mantissaB) - 1;
+                    if (magB - magA > guardAcc) {
                         return new ComplexNumber(inputB, {acc: resultAcc});
                     }
                 } else if (powerDifference < -guardAcc) {
-                    const diff = bigIntAbs(mantissaA) - bigIntAbs(mantissaB);
-                    if (diff > -10n) {
+                    if (-powerDifference > reB.acc + guardAcc) {
+                        return new ComplexNumber(inputA, {acc: resultAcc});
+                    }
+                    const magA = reA.power + BigNumber.decimalLengthBigInt(mantissaA) - 1;
+                    const magB = reB.power + BigNumber.decimalLengthBigInt(mantissaB) - 1;
+                    if (magA - magB > guardAcc) {
                         return new ComplexNumber(inputA, {acc: resultAcc});
                     }
                 }
@@ -4091,8 +4091,8 @@
             }
 
             // 不污染传入的原始数组
-            listA = structuredClone(listA);
-            listB = structuredClone(listB);
+            listA = [...listA];
+            listB = [...listB];
 
             for (let i = 0; i < listA.length; i++) {
                 if (typeof listA[i] === 'string') {

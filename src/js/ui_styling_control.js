@@ -3857,7 +3857,7 @@
                  */
                 const toClassList = (input) => typeof input === 'string' ? HtmlTools.textToHtmlClass(input) : input;
 
-                return this._statisticsCreateLine({
+                return InputManager._statisticsCreateLine({
                     index,
                     inputListX: toClassList(dataSource[index][0]),
                     inputListY: toClassList(dataSource[index][1])
