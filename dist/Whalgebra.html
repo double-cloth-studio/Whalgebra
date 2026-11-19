@@ -93,7 +93,6 @@
                  */
                 static _complement(arrA, arrB) {
                     const setB = new Set(arrB);
-                    /** 判断元素是否不在排除集合中。 */
                     return arrA.filter((item) => !setB.has(item));
                 }
 
@@ -109,9 +108,7 @@
                         ['*', '/', 'mod'],
                         ['+', '-']
                     ];
-                    /** 将同一优先级的词元写入映射。 */
                     levels.forEach((levelTokens, index) => {
-                        /** 记录当前词元的优先级。 */
                         levelTokens.forEach((token) => {
                             this.priorityMap.set(token, index);
                         });
@@ -126,7 +123,6 @@
                             isHtmlClassLenOne: this.htmlClassLenOneFunc.has(token)
                         };
 
-                        // 检查 token 是否为函数或运算符
                         if (this.allFunc.has(token)) {
                             info.class = 'func';
                             if (this.params_1_set.has(token)) {
@@ -249,6 +245,7 @@
                         return input;
                     }
                     const acc = input.acc;
+                    // 降低部分保护位；若数值是由浮点累积误差偏离整数的近似值，降精后将坍缩为真整数。
                     const newInput = new ComplexNumber(input, {acc: Math.max(1, Math.floor(0.9 * acc), acc - 8)});
                     if (newInput.re.power >= 0 && newInput.im.isZero()) {
                         return new ComplexNumber(newInput, {acc});
@@ -298,9 +295,7 @@
                         return Math.min(acc, numAcc);
                     };
 
-                    // 根据输入值的类型进行不同的处理。
                     switch (Public.typeOf(x)) {
-                        // 如果输入是一个数组，则递归地处理数组中的每个元素。
                         case 'array': {
                             const result = [];
                             for (let i = 0; i < x.length; i++) {
@@ -1122,13 +1117,7 @@
                     // Getter 在首次访问后由不可变值替换。
                     for (const key of Object.keys(this._rawConstants)) {
                         Object.defineProperty(target, key, {
-                            /**
-                             * 解析并缓存当前顶层常量。
-                             *
-                             * @returns {[number, bigint, number]|{acc:number, g:[number, bigint, number], p:Array<[number, bigint, number]>}}
-                             *   当前 `key` 对应的基础数值元组或 Lanczos 参数对象；首次访问后 getter 会被同一
-                             *   不可写值替换，后续访问保持对象身份。
-                             */
+                            // 必须使用箭头函数保持 this 指向 CalcConfig，首次访问后由不可变数值元组替换。
                             get: () => {
                                 const raw = this._rawConstants[key];
                                 let val;
@@ -1137,12 +1126,7 @@
                                     const lanczosObj = {acc: raw.acc};
 
                                     Object.defineProperty(lanczosObj, 'g', {
-                                        /**
-                                         * 解析并缓存 Lanczos 参数 `g`。
-                                         *
-                                         * @returns {[number, bigint, number]} Lanczos 参数 `g` 的
-                                         *   `[power, mantissa, acc]` 元组；首次读取时解析并固定在当前参数对象上。
-                                         */
+                                        // 使用箭头函数保持词法闭包，首次访问后由不可变数值元组替换。
                                         get: () => {
                                             const gVal = parseTuple(raw.g);
 
@@ -1159,12 +1143,7 @@
                                     });
 
                                     Object.defineProperty(lanczosObj, 'p', {
-                                        /**
-                                         * 解析并缓存 Lanczos 系数数组 `p`。
-                                         *
-                                         * @returns {Array<[number, bigint, number]>} 按近似公式求和顺序排列的系数
-                                         *   `p₀, p₁, …`；每项均为 `[power, mantissa, acc]`，整个数组只解析一次。
-                                         */
+                                        // 使用箭头函数保持词法闭包，首次访问后由不可变数值元组替换。
                                         get: () => {
                                             const pArray = raw.p.map(parseTuple);
 
@@ -1657,6 +1636,11 @@
 
                     // 超过常驻上限时，把临时平方结果放进局部变量，函数返回后立即释放。
                     let extraPows = null;
+                    /**
+                     * 获取 10^(2^k) 的 BigInt 实例，优先读取常驻缓存，超出部分查阅局部临时缓存。
+                     * @param {number} k - 阶数索引。
+                     * @returns {bigint} 对应的 10^(2^k) 幂次。
+                     */
                     const getPow = (k) => {
                         if (k < cache.length) {
                             return cache[k];
@@ -2048,7 +2032,7 @@
 
                                 const finalAcc = Math.min(r.acc, i.acc);
 
-                                // 如果某个组件的精度更高，则将其降下来
+                                // 复数的实部和虚部对齐到较低精度，防止低精度分量被误当更高有效位数参与后续运算。
                                 if (r.acc > finalAcc) {
                                     r = new BigNumber(r, {acc: finalAcc});
                                 }
@@ -2952,7 +2936,7 @@
                         let result = MathPlus.pow(MathPlus._oppositeNumber(inputA), absB);
                         // 负底数小数幂按 (-a)^b = |a|^b(cos(bπ)+i·sin(bπ)) 选择实根或主值。
                         if (absB.power === -1 && absB.mantissa === 5n) {
-                            // 如果 b=0.5 (开平方根), 结果为 i * sqrt(|a|)
+                            // 负实数的 0.5 次幂走纯虚数分支，保持与主值方根解析连续并规避通用复数幂误差。
                             const zero = new BigNumber([0, 0n, resultAcc]);
                             result = new ComplexNumber([zero, result.re]);
                         } else {
@@ -4581,6 +4565,11 @@
                     const openAfter2 = [];
                     const markerMap = new Map(); // key: '#0#' / ':1@' 等, value: 索引数组(升序)
 
+                    /**
+                     * 记录括号或运算符插入标记的位置索引。
+                     * @param {string} key - 标记类别键名。
+                     * @param {number} idx - 字符或词元索引。
+                     */
                     const addMarker = (key, idx) => {
                         let arr = markerMap.get(key);
                         if (!arr) {
@@ -4589,10 +4578,22 @@
                         }
                         arr.push(idx);
                     };
+
+                    /**
+                     * 检查指定类别下是否还有未消费的标记索引。
+                     * @param {string} key - 标记类别键名。
+                     * @returns {boolean} 是否存在标记。
+                     */
                     const hasMarker = (key) => {
                         const arr = markerMap.get(key);
                         return arr !== undefined && arr.length > 0;
                     };
+
+                    /**
+                     * 提取并清空指定类别的所有插入位置索引。
+                     * @param {string} key - 标记类别键名。
+                     * @returns {number[]} 索引数组。
+                     */
                     const takeMarker = (key) => {
                         const arr = markerMap.get(key);
                         if (!arr || arr.length === 0) {
@@ -4601,13 +4602,23 @@
                         markerMap.delete(key);
                         return arr;
                     };
+
+                    /**
+                     * 将源类别的标记位置转移至目标类别，用于闭括号转移未闭合的隐式括号。
+                     * @param {string} fromKey - 源标记类别。
+                     * @param {string} toKey - 目标标记类别。
+                     */
                     const moveMarker = (fromKey, toKey) => {
                         const arr = takeMarker(fromKey);
                         for (let i = 0; i < arr.length; i++) {
                             addMarker(toKey, arr[i]);
                         }
                     };
-                    // 弹出同层级最新的 ':' 标记（对应去掉最后一个 '^' 的标记）
+
+                    /**
+                     * 弹出同层级最新的幂运算符标记，确保右结合幂次在遇到新运算符时正确闭合。
+                     * @param {number} level - 当前括号嵌套层级。
+                     */
                     const popLastPowMarker = (level) => {
                         const arr1 = markerMap.get(`:${level}#`);
                         const arr2 = markerMap.get(`:${level}@`);
@@ -4725,6 +4736,7 @@
                             remaining.push({idx: indices[i], isPow, isSure});
                         }
                     }
+                    // 按索引降序排序剩余标记，从右向左插入以避免前面的插入破坏后续索引偏移。
                     remaining.sort((a, b) => b.idx - a.idx);
 
                     let theLast = true;
@@ -5256,12 +5268,10 @@
                     const coefficientsList = [new ComplexNumber(n)];
                     const coefficients = [];
                     for (let i = 1; i < power + 1; i++) {
-                        /** 将自变量转换为当前次数的幂。 */
                         const changedListA = StatisticsTools._changeInner(listA, (x) => MathPlus.pow(x, i));
                         constants.push(StatisticsTools._dotProduct(changedListA, listB));
                     }
                     for (let i = 1; i < 2 * power + 1; i++) {
-                        /** 将自变量转换为当前次数的幂。 */
                         const changedListA = StatisticsTools._changeInner(listA, (x) => MathPlus.pow(x, i));
                         coefficientsList.push(StatisticsTools._averageAndSum(changedListA).sum);
                     }
@@ -5338,7 +5348,6 @@
                     statisticsResult.average = Public.idealizationToString(averageAndSum.average);
                     statisticsResult.sum = Public.idealizationToString(averageAndSum.sum);
 
-                    /** 计算列表元素的平方。 */
                     const list2 = StatisticsTools._changeInner(list, (x) => MathPlus.times(x, x));
 
                     statisticsResult.sum2 = Public.idealizationToString(StatisticsTools._averageAndSum(list2).sum);
@@ -5510,12 +5519,10 @@
                     const absListB = this._getAbsList(listB);
                     let lnListA;
                     if (!statesA.zero && !statesA.negative) {
-                        /** 对自变量取自然对数。 */
                         lnListA = this._changeInner(listA, (x) => MathPlus.ln(x));
                     }
                     let lnListB;
                     if (!statesB.zero && !(statesB.positive && statesB.negative)) {
-                        /** 对因变量绝对值取自然对数。 */
                         lnListB = this._changeInner(absListB, (x) => MathPlus.ln(x));
                     }
                     const errorWith2parameter = {
@@ -5526,7 +5533,6 @@
 
                     const twoParamModels = ['linear', 'ln', 'axb', 'exp', 'abx', 'reciprocal'];
                     if ((!statesA.positive && !statesA.negative && statesA.zero) || listA.length === 1) {
-                        /** 将当前双参数模型标记为不可计算。 */
                         twoParamModels.forEach((key) => {
                             result[key] = {
                                 parameter: ['error', 'error'],
@@ -5666,7 +5672,6 @@
                     if (statesA.zero) {
                         result.reciprocal = structuredClone(errorWith2parameter);
                     } else {
-                        /** 将自变量转换为倒数。 */
                         const reciprocalListA = this._changeInner(listA, (x) => MathPlus.divide(1, x));
                         result.reciprocal = this._getRegressionInfo(reciprocalListA, listB, 1, listB,
                             (x, coefficient) => MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0]),
@@ -5734,13 +5739,6 @@
                  *   重排，实部相等的项由 JavaScript 稳定排序保留原相对次序。
                  */
                 static _sort(list) {
-                    /**
-                     * 按实部比较两个数值。
-                     *
-                     * @param {*} a - 当前比较的左值；必须能由 `ComplexNumber` 构造。
-                     * @param {*} b - 当前比较的右值；只比较与 `a` 的实部差，虚部差异视为相等。
-                     * @returns {-1|0|1} 排序结果。
-                     */
                     list.sort((a, b) => {
                         const diff = MathPlus.minus(a, b).re.mantissa;
                         if (diff > 0n) {
@@ -7038,7 +7036,6 @@
                  * @private
                  */
                 _rejectAllTasks(error) {
-                    /** 拒绝当前待处理任务并清除其超时计时器。 */
                     this._taskQueue.forEach(({reject, timeoutId}) => {
                         if (timeoutId !== null) {
                             clearTimeout(timeoutId);
@@ -7286,7 +7283,11 @@
     /* A Map used to track running tasks and their cancellation status. */
     const runningTasks = new Map();
     
-    /* Normalize any thrown JavaScript value into a serializable error object. */
+    /**
+     * Normalize any thrown JavaScript value into a serializable error object.
+     * @param {*} error - Caught error or thrown value.
+     * @returns {{name: string, message: string, stack: string}} Serializable error structure.
+     */
     const normalizeError = (error) => {
         let name = 'Error';
         let message;
@@ -7328,7 +7329,10 @@
     };
     
     /* -- Worker message processor -- */
-    /* This is the core logic of Worker, used to listen for and respond to messages from the main thread. */
+    /**
+     * Primary message processor for incoming execution requests and cancellation signals.
+     * @param {MessageEvent} event - Message event from the main thread.
+     */
     self.onmessage = async (event) => {
         const { type, id, functionName, args } = event.data;
     
@@ -7472,12 +7476,10 @@
                     }
 
                     const id = this._nextTaskId++;
-                    /** 创建并登记一次 Worker 调用。 */
                     return new Promise((resolve, reject) => {
                         let timeoutId = null;
 
                         if (timeout > 0) {
-                            /** 在截止时间到达时取消任务。 */
                             timeoutId = setTimeout(() => {
                                 this._cancelTaskById(id, 'TimeoutError', `Task '${functionName}' timed out after ${timeout}ms.`);
                             }, timeout);
@@ -7508,7 +7510,6 @@
                     const cancellationError = new Error('[SyncWorker] All pending tasks were cancelled by a global cancel call.');
                     cancellationError.name = 'CancellationError';
 
-                    /** 取消当前待处理任务。 */
                     this._taskQueue.forEach((task, id) => {
                         if (task.timeoutId !== null) {
                             clearTimeout(task.timeoutId);
@@ -7556,33 +7557,21 @@
                  */
                 static _mathWorker = new SyncWorker({
                     callableFunctions: {
-                        /** 设置 Worker 的计算精度。 */
                         setCalcAccuracy: (acc) => CalcConfig.globalCalcAccuracy = acc,
-                        /** 获取 Worker 的计算精度。 */
                         getCalcAccuracy: () => CalcConfig.globalCalcAccuracy,
-                        /** 设置 Worker 的输出精度。 */
                         setOutputAccuracy: (acc) => CalcConfig.outputAccuracy = acc,
-                        /** 获取 Worker 的输出精度。 */
                         getOutputAccuracy: () => CalcConfig.outputAccuracy,
-                        /** 设置 Worker 的输出模式。 */
                         setPrintMode: (mode) => CalcConfig.globalPrintMode = mode,
-                        /** 获取 Worker 的输出模式。 */
                         getPrintMode: () => CalcConfig.globalPrintMode,
-                        /** 初始化 Worker 计算环境。 */
                         initEnv: ({calcAcc, outputAcc, printMode}) => {
                             CalcConfig.globalCalcAccuracy = calcAcc;
                             CalcConfig.outputAccuracy = outputAcc;
                             CalcConfig.globalPrintMode = printMode;
                         },
-                        /** 分析多项式函数。 */
                         powerFunctionAnalysis: (list) => PowerFunctionTools.powerFunctionAnalysis(list),
-                        /** 计算统计结果。 */
                         statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
-                        /** 分析复数根式。 */
                         radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
-                        /** 生成函数值列表。 */
                         valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
-                        /** 执行表达式计算。 */
                         exec: (expr, {calcAcc, outputAcc, calcMode, outputMode, f, g} = {}) => CalcTools.exec(expr, {
                             calcAcc: calcAcc,
                             outputAcc: outputAcc,
@@ -7739,6 +7728,7 @@
                     }
 
                     if (!this._restartPromise) {
+                        // 异步执行 Worker 重启并恢复环境状态，单例 Promise 锁防止重复重启。
                         this._restartPromise = (async () => {
                             try {
                                 this._mathWorker.restart();
@@ -8083,6 +8073,7 @@
                                     PageConfig._gridHighlightRaf = null;
                                 }
 
+                                // 嵌套 double RAF：第一帧等待 VirtualScroll 的 DOM 节点挂载与重绘，第二帧安全获取实际单元格并应用高亮，防止样式作用在已回收节点上。
                                 PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
                                     PageConfig._gridHighlightRaf = requestAnimationFrame(() => {
                                         PageConfig._gridHighlightRaf = null;
@@ -8574,6 +8565,11 @@
                  * @const {RegExp} _tokenizerRegex
                  */
                 static _tokenizerRegex = (() => {
+                    /**
+                     * 转义正则表达式特殊字符，规避语法元字符干扰。
+                     * @param {string} s - 输入子串。
+                     * @returns {string} 正则转义串。
+                     */
                     const escape = (s) => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 
                     // 配置符号作为首选分支，后续才回退到 `[token]` 和单字符，避免数学词元被拆散。
@@ -9247,6 +9243,9 @@
                      */
                     static MAX_ELEMENT_HEIGHT = 12_000_000;
 
+                    /**
+                     * 初始化高度映射器并重置所有内部状态。
+                     */
                     constructor() {
                         this.reset();
                     }
@@ -10129,6 +10128,11 @@
                     this.container.replaceChildren();
 
                     // spacer 只贡献滚动高度，不应产生可见内容、边距或字体排版。
+                    /**
+                     * 统一应用上下占位垫片的无内边距/盒模型样式。
+                     * @param {HTMLElement} el - 占位元素。
+                     * @returns {CSSStyleDeclaration} 样式对象。
+                     */
                     const applySpacerStyle = (el) => Object.assign(el.style, {
                         display: 'block',
                         width: '100%',
@@ -10189,6 +10193,9 @@
                         return;
                     }
 
+                    /**
+                     * 监听用户手势或滚轮中断，平滑滚动中途接管控制权。
+                     */
                     this._handleUserInterrupt = () => {
                         if (this._isSmoothScrolling) {
                             this._cancelSmoothScroll();
@@ -10216,6 +10223,9 @@
                         return;
                     }
 
+                    /**
+                     * 响应滚动事件并调度下一次虚拟列表帧渲染。
+                     */
                     this._handleScroll = () => {
                         if (this._isSmoothScrolling) {
                             return;
@@ -10250,6 +10260,9 @@
                  * @returns {void}
                  */
                 _bindResize() {
+                    /**
+                     * 响应容器尺寸变化并在运行中防抖触发重测。
+                     */
                     const handleResize = () => {
                         if (!this._sm.is(VirtualScroll.State.RUNNING)) {
                             return;
@@ -10411,6 +10424,9 @@
                     let attempts = 0;
                     const MAX_STABILIZE_FRAMES = 6;
 
+                    /**
+                     * 调度并执行虚拟滚动列表的单行高度重测。
+                     */
                     const runRemeasure = () => {
                         this._remeasureRAF = null;
 
@@ -10482,12 +10498,18 @@
 
                     if (this.container.clientWidth <= 0 || this.container.clientHeight <= 0) {
                         // 容器恢复非零后，等待最多 6 帧确认布局尺寸稳定，再执行重测。
+                        /**
+                         * 当容器初始尺寸为零时，轮询等待其布局尺寸稳定后再执行重测。
+                         */
                         const waitUntilStable = () => {
                             let lastWidth = -1;
                             let lastHeight = -1;
                             let attempts = 0;
                             const MAX_STABILIZE_FRAMES = 6;
 
+                            /**
+                             * 帧循环步进检查容器尺寸是否连续多帧保持不变。
+                             */
                             const step = () => {
                                 this._resumeRAF = null;
 
@@ -10546,6 +10568,9 @@
                             let retries = 0;
                             const MAX_RETRIES = 50;
 
+                            /**
+                             * 在不支持 ResizeObserver 的环境下轮询等待容器尺寸恢复。
+                             */
                             const poll = () => {
                                 this._resumeFallbackTimer = null;
 
@@ -11094,10 +11119,19 @@
                     const dur = Math.min(800, Math.max(300, screens * 100));
 
                     let t0 = null;
+                    /**
+                     * 二次缓动函数，实现平滑滚动的平滑起步与制动。
+                     * @param {number} t - 归一化时间进度 [0, 1]。
+                     * @returns {number} 缓动插值。
+                     */
                     const easeInOut = (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 
                     this._isSmoothScrolling = true;
 
+                    /**
+                     * 执行平滑滚动动画的单帧位移插值更新。
+                     * @param {number} ts - 高精度时间戳。
+                     */
                     const step = (ts) => {
                         if (this._sm.is(VirtualScroll.State.DESTROYED) || !this.container) {
                             this._smoothRAF = null;
@@ -11712,7 +11746,7 @@
                      *   `dataSource[index][0]`、`[1]` 分别是 X、Y 的内部字符串或既有类名数组。
                      * @returns {HTMLElement} 尚未挂载的完整行 `<div>`，含序号、X 单元格和 Y 单元格三个子区。
                      */
-                    renderItem: (index, dataSource) => {
+                    renderItem(index, dataSource) {
                         /**
                          * 将字符串转换为 HTML 类名列表。
                          *
@@ -12330,6 +12364,11 @@
                                     case 'down':
                                         len = PageConfig.screenData['1'].length - 1;
                                         nextNum = currentSubModes[0] + (direction === 'up' ? -1 : 1);
+                                        /**
+                                         * 生成统计表格模式下新行坐标的更新值。
+                                         * @param {number} nextNum - 下一行索引。
+                                         * @returns {[number, number]} 更新后的 [行, 列] 坐标。
+                                         */
                                         makeValue = (nextNum) => [nextNum, currentSubModes[1]];
                                         break;
                                 }
@@ -12341,6 +12380,11 @@
                                 len = 4;
                                 if (['left', 'right'].includes(direction)) {
                                     nextNum = Number(PageConfig.subModes[currentMode]) + (direction === 'left' ? -1 : 1);
+                                    /**
+                                     * 生成横向移动后的子模式索引字符串。
+                                     * @param {number} nextNum - 新索引数值。
+                                     * @returns {string} 字符串形式的子模式标识。
+                                     */
                                     makeValue = (nextNum) => nextNum.toString();
                                     break;
                                 }
@@ -12364,6 +12408,11 @@
                                     addNum = -1;
                                 }
                                 nextNum = Number(PageConfig.subModes[currentMode]) + addNum;
+                                /**
+                                 * 生成纵向移动后的子模式索引字符串。
+                                 * @param {number} nextNum - 新索引数值。
+                                 * @returns {string} 字符串形式的子模式标识。
+                                 */
                                 makeValue = (nextNum) => nextNum.toString();
                                 break;
                             }
@@ -13159,6 +13208,7 @@
 
                         HtmlTools.getHtml('#print_content_2_error').classList.add('NoDisplay');
                     } catch (error) {
+                        // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
                         if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                             return;
                         }
@@ -13361,6 +13411,7 @@
                             }
                         }
                     } catch (error) {
+                        // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
                         if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                             return;
                         }
@@ -13465,6 +13516,7 @@
 
                         HtmlTools.getHtml('#print_omit').classList[result.overflow ? 'remove' : 'add']('NoDisplay');
                     } catch (error) {
+                        // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
                         if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                             return;
                         }
@@ -14431,17 +14483,16 @@
     </script>
     <!-- 初始化 -->
     <script id="init" type="text/javascript">
-        /**
-         * 按点击目标的 ID、类名和父容器分发页面操作。
-         *
-         * @param {MouseEvent} event - 冒泡到 `document` 的点击事件；分发器读取 `event.target`，若命中按钮内
-         *   的 `<p>` 会提升到父按钮，再依据 ID、类名和容器决定操作。事件坐标仅在选择波纹效果中使用，
-         *   主输入区内的 `<p>` 保留为光标定位目标。
-         */
+        // 监听全局点击事件，按点击目标的 ID、类名和父容器分发页面操作。
         document.addEventListener('click', (event) => {
             "use strict";
 
-            // 统一读取 HTML / SVG 元素的类名字符串，避免 SVGAnimatedString 引发 TypeError。
+            // 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
+            /**
+             * 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
+             * @param {Element|null} el - DOM 元素。
+             * @returns {string} 类名字符串。
+             */
             const getClassName = (el) => {
                 if (!el) {
                     return '';
@@ -14514,6 +14565,9 @@
                     return;
             }
 
+            /**
+             * 切换至更多功能扩展副键盘。
+             */
             const showMoreFunc = () => PageControlTools.changeSubKeyboard('SortSvg');
 
             // 第二层按父容器分组，同一控件内部的图标和文字共享处理逻辑。
@@ -14576,6 +14630,7 @@
                 const mode = targetID.slice(-1);
                 PageConfig.currentMode = (mode === '2') ? '2_0' : mode;
 
+                // 延迟 340ms 关闭模态遮罩，预留 CSS drawer 收起动画过渡时长。
                 setTimeout(() => PageControlTools.clickMainCover(), 340);
                 return;
             }
@@ -14665,13 +14720,7 @@
             }
         });
 
-        /**
-         * 将物理键盘输入分发到计算器操作。
-         *
-         * @param {KeyboardEvent} event - 冒泡到 `document` 的按键事件；使用标准化的 `event.key` 区分
-         *   Backspace、方向键、Enter、Escape、数字和运算符。处理过的计算器快捷键会阻止浏览器默认行为，
-         *   未映射按键继续交给页面或系统处理；组合键修饰状态由各分支按需读取。
-         */
+        // 监听全局物理键盘按键事件，将按键输入分发至对应的计算器操作。
         document.addEventListener('keydown', (event) => {
             "use strict";
 
@@ -14755,10 +14804,15 @@
             }
         });
 
-        /** 页面加载后按依赖顺序恢复持久化状态。 */
+        // 监听窗口加载事件，按依赖顺序恢复持久化状态。
         window.addEventListener('load', () => {
             "use strict";
 
+            /**
+             * 安全读取 LocalStorage 中的键值，规避隐私模式或禁用存储时的异常。
+             * @param {string} key - 存储键名。
+             * @returns {string|null} 存储值或 null。
+             */
             const getStore = (key) => {
                 try {
                     return localStorage.getItem(key);
