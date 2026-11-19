@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import {createServer} from "../../tools/server/run_server.js";
+import {createServer, parseArguments} from "../../tools/server/run_server.js";
 import {PROJECT_ROOT, temporaryDirectory} from "./helpers/temp_directory.js";
 
 async function projectTemporaryDirectory(t, prefix) {
@@ -127,4 +127,12 @@ test("Web 逆向构建允许输出到 tmp 目录", async (t) => {
     assert.equal(body.result.cssCount, 1);
     assert.equal(body.result.jsCount, 1);
     assert.match(await readFile(path.join(outputDir, "index.html"), "utf8"), /href="\.\/css\/extracted_/u);
+});
+
+test("服务器 CLI 参数解析默认不打开浏览器，并支持 --open 与 --no-open", () => {
+    assert.equal(parseArguments([]).open, false);
+    assert.equal(parseArguments(["--open"]).open, true);
+    assert.equal(parseArguments(["--no-open"]).open, false);
+    assert.equal(parseArguments(["--open", "--no-open"]).open, false);
+    assert.equal(parseArguments(["--no-open", "--open"]).open, true);
 });

@@ -13,7 +13,8 @@ import {PROJECT_ROOT, resolveProjectPath} from "../shared/filesystem.js";
 export const SERVER_CONFIG = Object.freeze({
     DEFAULT_PORT: 8000,
     MAX_PORT_RETRIES: 1000,
-    DEFAULT_DIR: PROJECT_ROOT
+    DEFAULT_DIR: PROJECT_ROOT,
+    DEFAULT_OPEN: false
 });
 
 const MIME_TYPES = new Map([
@@ -319,12 +320,18 @@ function printHelp() {
   --port <PORT>  指定起始端口（默认：8000）
   --lan          监听 0.0.0.0，允许局域网访问静态页面
   --local        仅监听 127.0.0.1（默认）
-  --no-open      启动后不自动打开浏览器
+  --open         启动后自动打开浏览器
+  --no-open      启动后不自动打开浏览器（默认）
   -h, --help     显示帮助`);
 }
 
-function parseArguments(argv) {
-    const options = {directory: SERVER_CONFIG.DEFAULT_DIR, port: SERVER_CONFIG.DEFAULT_PORT, lan: false, open: true};
+export function parseArguments(argv) {
+    const options = {
+        directory: SERVER_CONFIG.DEFAULT_DIR,
+        port: SERVER_CONFIG.DEFAULT_PORT,
+        lan: false,
+        open: SERVER_CONFIG.DEFAULT_OPEN
+    };
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === "-h" || argument === "--help") {
@@ -333,6 +340,8 @@ function parseArguments(argv) {
             options.lan = true;
         } else if (argument === "--local") {
             options.lan = false;
+        } else if (argument === "--open") {
+            options.open = true;
         } else if (argument === "--no-open") {
             options.open = false;
         } else if (argument === "--dir" || argument === "--port") {
