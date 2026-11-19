@@ -24,6 +24,7 @@
 
         static _baseNumbers = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.'];
         static _codeNumbers = ['[pi]', '[e]', '[i]', '[x]'];
+
         static _other = ['|', ',', '(', ')'];
         static allFunc = new Set([...this._func_01_2, ...this._func_11_2, ...this._func_01_1, ...this._func_10_1]);
         static htmlClassLenOneFunc = new Set(this._htmlClass_len_one_func);
@@ -32,16 +33,19 @@
         static privateFunc = new Set(this._private_func);
         static rightAssocFunc = new Set([...this._func_01_1, '^']);
         static needParensFunc = new Set(['^', ...this._complement(this._func_01_1, ['A', 'N'])]);
+
         static baseNumbers = new Set(this._baseNumbers);
         static codeNumbers = new Set(this._codeNumbers);
+
         static other = new Set(this._other);
         static allSigns = new Set([...this.allFunc, ...this._baseNumbers, ...this._codeNumbers, ...this._other]);
+
         static params_1_set = new Set([...this._func_01_1, ...this._func_10_1]);
         static params_2_set = new Set([...this._func_01_2, ...this._func_11_2]);
-
         static PlaceFrontSet = new Set([...this._func_01_2, ...this._func_01_1]);
         static PlaceMiddleSet = new Set(this._func_11_2);
         static PlaceBackSet = new Set(this._func_10_1);
+
         static priorityMap = new Map();
 
         /**

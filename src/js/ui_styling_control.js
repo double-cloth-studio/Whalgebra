@@ -17,7 +17,6 @@
             globalCalcAccuracy: 36,
             outputAccuracy: 12
         };
-
         /**
          * 定义了“高精度”模式下的计算和输出精度配置。
          * - `globalCalcAccuracy`: 220位的内部计算精度，用于需要高准确性的科学计算。
@@ -3824,7 +3823,6 @@
          * @type {number}
          */
         static _MAX_INPUT_LEN = 1234;
-
         /**
          * 统计模式最大统计数据行数。
          *
