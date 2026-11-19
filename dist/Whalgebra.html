@@ -5276,13 +5276,21 @@
                     const constants = [StatisticsTools._averageAndSum(listB).sum];
                     const coefficientsList = [new ComplexNumber(n)];
                     const coefficients = [];
-                    for (let i = 1; i < power + 1; i++) {
-                        const changedListA = StatisticsTools._changeInner(listA, (x) => MathPlus.pow(x, i));
-                        constants.push(StatisticsTools._dotProduct(changedListA, listB));
-                    }
-                    for (let i = 1; i < 2 * power + 1; i++) {
-                        const changedListA = StatisticsTools._changeInner(listA, (x) => MathPlus.pow(x, i));
-                        coefficientsList.push(StatisticsTools._averageAndSum(changedListA).sum);
+
+                    // 使用递推累乘代替重复计算 pow(x, i)，合并遍历以优化性能。
+                    const baseListA = listA.map((x) => new ComplexNumber(x));
+                    const curPow = baseListA.map((x) => new ComplexNumber(x));
+
+                    for (let p = 1; p <= 2 * power; p++) {
+                        if (p > 1) {
+                            for (let k = 0; k < n; k++) {
+                                curPow[k] = MathPlus.times(curPow[k], baseListA[k]);
+                            }
+                        }
+                        coefficientsList.push(StatisticsTools._averageAndSum(curPow).sum);
+                        if (p <= power) {
+                            constants.push(StatisticsTools._dotProduct(curPow, listB));
+                        }
                     }
                     for (let i = 0; i < power + 1; i++) {
                         const rowList = [];
