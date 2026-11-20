@@ -30,7 +30,6 @@ pnpm-debug.log*
 *.log
 
 # --- Environment Variables ---
-# WARNING: Never commit .env files containing API keys or secrets
 .venv/
 .env
 .env.local
