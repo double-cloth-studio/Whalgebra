@@ -3305,9 +3305,9 @@
 
                         // 十进制指数归约：|x| = scaled * 10^(3k)，使 scaled ∈ [1, 1000)
                         const mantissaLen = BigNumber.decimalLengthBigInt(absInput.mantissa);
-                        const sciExp = absInput.power + mantissaLen - 1;
-                        const k = Math.floor(sciExp / 3);
-                        const r = sciExp - 3 * k; // r ∈ {0, 1, 2}
+                        const sciExpBig = BigInt(absInput.power) + BigInt(mantissaLen - 1);
+                        const r = Number(((sciExpBig % 3n) + 3n) % 3n); // r ∈ {0, 1, 2}
+                        const k = Number((sciExpBig - BigInt(r)) / 3n);
                         const scaledPower = r - mantissaLen + 1;
 
                         const workAcc = acc + 6;
