@@ -3077,7 +3077,7 @@
                             result = new ComplexNumber(Math.sqrt(numberRe), {acc: acc});
 
                             let i = 0;
-                            const max = CalcConfig.globalCalcAccuracy + 5;
+                            const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                             const minPower = -2 * acc - 1;
                             const const_2 = new ComplexNumber([0, 2n, acc]);
                             let difference, mid;
@@ -3150,7 +3150,7 @@
 
                             // 立方根的牛顿迭代：x_(n+1) = (2x_n + N/x_n²)/3。
                             let i = 0;
-                            const max = CalcConfig.globalCalcAccuracy + 5;
+                            const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                             const minPower = -2 * acc - 1;
                             const const_2 = new ComplexNumber([0, 2n, acc]);
                             const const_3 = new ComplexNumber([0, 3n, acc]);
@@ -3244,7 +3244,7 @@
                         // 先计算更小参数的泰勒级数 e^t = Σ(t^n/n!)，随后取十次幂还原小数部分。
                         const iteration = new ComplexNumber([re.power - 1, iterationMantissa, acc]);
 
-                        const max = CalcConfig.globalCalcAccuracy + 5;
+                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                         const minPower = -2 * acc - 1;
 
                         let mid = new ComplexNumber([0, 1n, acc]);
@@ -3334,7 +3334,7 @@
                         );
 
                         const squareOfMid = MathPlus.times(mid, mid);
-                        const max = CalcConfig.globalCalcAccuracy + 5;
+                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) * 2 + 5;
                         const minPower = -2 * acc - 1;
 
                         let result = new ComplexNumber([0, 0n, acc]);
@@ -3424,7 +3424,7 @@
                         }
 
                         const squareOfRe = MathPlus.times(re, re);
-                        const max = CalcConfig.globalCalcAccuracy + 5;
+                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                         const minPower = -2 * acc - 1;
                         let mid = new ComplexNumber(re);
                         let result = mid;
@@ -3561,7 +3561,7 @@
                         }
 
                         const squareOfRe = MathPlus.times(re, re);
-                        const max = CalcConfig.globalCalcAccuracy + 5;
+                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                         const minPower = -2 * acc - 1;
                         let mid = new ComplexNumber([0, 1n, acc]);
                         let result = new ComplexNumber([0, 0n, acc]);
@@ -3685,7 +3685,7 @@
 
                         let [mid, mid_pow] = [re, re];
                         const squareOfRe = MathPlus.times(re, re);
-                        const max = CalcConfig.globalCalcAccuracy + 5;
+                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                         const minPower = -2 * acc - 1;
                         let result = new ComplexNumber([0, 0n, acc]);
                         let i = 0;
