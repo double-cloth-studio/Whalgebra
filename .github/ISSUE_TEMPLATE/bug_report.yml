@@ -1,0 +1,112 @@
+name: Bug 报告 (Bug Report)
+description: 提交计算错误、UI 异常、运行失败或工具链问题
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您提交 Bug 报告！为帮助维护者快速复现与定位问题，请尽可能完整填写以下信息。
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前自查 / Checklist
+      options:
+        - label: 我已经搜索过现有的 [Issues](https://github.com/double-cloth-studio/Whalgebra/issues)，确认该问题未被提出或未得到解决。
+          required: true
+        - label: 我确认使用的是最新版本代码或 [在线部署版本](https://double-cloth-studio.github.io/Whalgebra/)。
+          required: true
+
+  - type: dropdown
+    id: environment_type
+    attributes:
+      label: 运行环境 / Environment Type
+      description: 请选择您遇到问题时的使用方式
+      options:
+        - 在线版 (Online GitHub Pages)
+        - 本地单文件运行 (dist/Whalgebra.html)
+        - 本地开发服务 (npm start / http://localhost:8080)
+        - 命令行构建与辅助工具 (tools/cli/...)
+        - 自动化测试套件 (npm test / test runner)
+        - 其他 (Other)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: 涉及模块 / Affected Module
+      description: 请选择出现异常的功能模块
+      options:
+        - 核心计算与高精度表达式 (Core Computation & Arbitrary Precision)
+        - 复数与超越函数运算 (Complex Numbers & Transcendental Functions)
+        - 统计计算与回归分析 (Statistics & Regression)
+        - 自定义函数与函数数表 (Custom Functions & Table)
+        - 多项式分析与根式求根 (Polynomial Analysis & Roots)
+        - UI 界面显示与移动端响应式 (UI & Responsive Layout)
+        - 逆向构建与 SVG 压缩工具 (Reverse Build & SVG Compressor)
+        - 本地服务器与测试控制台 (Server & Test Console)
+        - 其他 / 未分类 (Other)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 / Description
+      description: 请清晰、简要地描述您所遇到的异常现象。
+      placeholder: 例如：在复数模式下计算特定三角函数时得到非预期的 NaN，或者在移动端窄屏下数表按钮溢出...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤与测试用例 / Reproduction Steps & Test Case
+      description: 请提供具体的复现步骤、输入的数学表达式及相关的计算配置。
+      placeholder: |
+        1. 设置计算器参数：精度 = [如 20 位]，角度模式 = [弧度/角度]，复数模式 = [开启/关闭]
+        2. 输入测试表达式: `...`
+        3. 点击计算或触发对应操作
+        4. 观察到异常现象
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果 / Expected Behavior
+      description: 按照数学理论定义或设计，您期望的正确输出是什么？
+      placeholder: 例如：期望输出为 1.414213562373095...（可提供 WolframAlpha / 权威数学依据作为对比）
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果与控制台报错 / Actual Behavior & Console Logs
+      description: 实际输出的结果是什么？如果有浏览器控制台（F12 Console）或终端报错，请完整粘贴。
+      placeholder: 实际输出为：... 报错信息如下：...
+    validations:
+      required: true
+
+  - type: textarea
+    id: system_info
+    attributes:
+      label: 系统与软件环境 / System Information
+      description: 请提供您的操作系统、浏览器或运行环境信息。
+      value: |
+        - 操作系统 (OS): [如 Windows 11 / macOS 14 / Ubuntu 22.04 / Android 14 / iOS 17]
+        - 浏览器 (Browser): [如 Chrome 125, Firefox 126, Safari 17, Edge 125]
+        - Node.js 版本 (若涉及本地开发/测试): [如 Node.js v20.x]
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: 补充说明与截图 / Additional Context & Screenshots
+      description: 如有相关截图、录屏、控制台截图或额外的参考资料，请在此粘贴或上传。
+    validations:
+      required: false

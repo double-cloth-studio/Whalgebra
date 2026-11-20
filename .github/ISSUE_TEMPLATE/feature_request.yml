@@ -1,0 +1,65 @@
+name: 功能建议 (Feature Request)
+description: 建议新增数学函数、运算功能、界面交互或开发工具链改进
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您为 Whalgebra 提供宝贵的改进建议！请详细阐述您的需求与设想，这有助于我们更好地评估和规划。
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 建议分类 / Feature Category
+      description: 请选择您所建议功能的所属类别
+      options:
+        - 新数学函数或常数支持 (New Math Functions / Constants)
+        - 高精度与算法性能优化 (Precision & Algorithm Optimization)
+        - 复数域支持与分析工具 (Complex Numbers & Analysis Tools)
+        - 扩展功能（统计分析、微积分、函数数表、多项式分析等）
+        - UI 界面、交互与快捷键 (UI & User Experience)
+        - 移动端适配与触摸体验 (Mobile & Touch Adaptation)
+        - 开发工具链、CI 与自动化测试 (Tooling, CI & Tests)
+        - 文档、教程与用例示例 (Documentation & Examples)
+        - 其他 (Other)
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 需求背景与痛点 / Motivation & Problem
+      description: 当前遇到了什么问题或不便？为什么您希望添加该功能？
+      placeholder: 例如：在处理高阶多项式时，目前缺少...，导致需要手动转到其他软件计算...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 建议方案与设计设想 / Proposed Solution
+      description: 请详细描述您期望该功能如何工作（包括输入格式、输出规范、UI 交互方式等；若是数学函数，请提供数学定义、定义域/值域及典型用例）。
+      placeholder: |
+        - 函数名与调用方式:
+        - 数学定义与输入范围:
+        - 预期交互与输出结果:
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案与参考实现 / Alternatives & References
+      description: 您是否考虑过其他替代实现方式？是否有其他数学软件或库（如 Python numpy/scipy、Wolfram Mathematica、GeoGebra 等）的实现可供参考？
+      placeholder: 例如：参考了 Python cmath 库的实现机制，或者其他计算器的交互布局...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: 补充说明 / Additional Context
+      description: 任何其他有助于阐述此功能的说明、草图或数学参考链接。
+    validations:
+      required: false

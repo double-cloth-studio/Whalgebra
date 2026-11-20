@@ -1,0 +1,57 @@
+name: 交流与反馈 (Question & Feedback)
+description: 使用咨询、数学算法探讨，或其他不属于 Bug 或 Feature 的内容
+title: "[Feedback]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提出关于 Whalgebra 的使用疑问、数学算法讨论或常规反馈！
+
+  - type: dropdown
+    id: feedback_type
+    attributes:
+      label: 反馈类型 / Type
+      description: 请选择您本次反馈的类型
+      options:
+        - 使用方法与计算技巧咨询 (Usage & Tips)
+        - 数学原理与算法实现探讨 (Math Principles & Algorithms)
+        - 界面体验与文档反馈 (UI & Documentation Feedback)
+        - 其他事务 / 杂项 (General / Miscellaneous)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 详细描述 / Description
+      description: 请清晰描述您的问题、疑问或反馈内容。
+      placeholder: 请在此详细阐述您的想法或疑问...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 背景与应用场景 / Context
+      description: 请简要说明您在何种场景下遇到了此问题或产生了此想法。
+      placeholder: 例如：在学习/科研/计算特定模型时...
+    validations:
+      required: false
+
+  - type: textarea
+    id: what_tried
+    attributes:
+      label: 已尝试的途径 / What have you tried?
+      description: 您是否查阅过项目 README、已有的 Issues 或尝试过其他方法？
+      placeholder: 例如：已尝试查阅了文档第 X 节，尝试了如下表达式...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_info
+    attributes:
+      label: 补充信息 / Additional Information
+      description: 任何相关的环境信息、链接、参考资料或截图。
+    validations:
+      required: false

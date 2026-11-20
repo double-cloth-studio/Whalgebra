@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Whalgebra 项目文档
+    url: https://github.com/double-cloth-studio/Whalgebra#readme
+    about: 查阅 Whalgebra 架构特性、使用教程、数学函数支持与本地开发说明。
+  - name: Whalgebra 在线体验
+    url: https://double-cloth-studio.github.io/Whalgebra/
+    about: 无需安装与环境配置，直接在现代浏览器中体验完整代数计算功能。
