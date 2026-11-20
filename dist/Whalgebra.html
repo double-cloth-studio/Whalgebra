@@ -3237,7 +3237,10 @@
                         } else {
                             const realPower = 10n ** BigInt(-re.power);
                             const intPart = re.mantissa / realPower;
-                            resultMid = MathPlus.pow(new BigNumber(CalcConfig.constants.e), intPart);
+                            resultMid = MathPlus.pow(
+                                new BigNumber(CalcConfig.constants.e, {acc: acc}),
+                                [0, intPart, acc]
+                            );
                             iterationMantissa = re.mantissa - intPart * realPower;
                         }
 
@@ -3255,7 +3258,7 @@
                             result = MathPlus.plus(result, mid);
                             mid = MathPlus.divide(
                                 MathPlus.times(iteration, mid),
-                                i
+                                [0, BigInt(i), acc]
                             );
                         }
 
@@ -3344,7 +3347,7 @@
                             result = MathPlus.plus(result, mid);
                             mid = MathPlus.times(
                                 MathPlus.times(squareOfMid, mid),
-                                MathPlus.divide(i, i + 2)
+                                MathPlus.divide([0, BigInt(i), acc], [0, BigInt(i + 2), acc])
                             );
                         }
 
@@ -3354,8 +3357,14 @@
 
                         // 组合所有部分得到最终结果
                         result = MathPlus.times([0, 2n, acc], result);
-                        result = MathPlus.plus(result, MathPlus.times(CalcConfig.constants.ln_10, mantissaChangedBy10));
-                        result = MathPlus.plus(result, MathPlus.times(CalcConfig.constants.ln_1_2, mantissaChangedBy1_2));
+                        result = MathPlus.plus(result, MathPlus.times(
+                            new ComplexNumber(CalcConfig.constants.ln_10, {acc: acc}),
+                            [0, BigInt(mantissaChangedBy10), acc]
+                        ));
+                        result = MathPlus.plus(result, MathPlus.times(
+                            new ComplexNumber(CalcConfig.constants.ln_1_2, {acc: acc}),
+                            [0, BigInt(mantissaChangedBy1_2), acc]
+                        ));
 
                         return result;
                     }
@@ -3434,7 +3443,7 @@
                         for (; mid.re.power > minPower && !mid.isZero() && i < max; i++) {
                             mid = MathPlus.divide(
                                 MathPlus.times(mid, squareOfRe),
-                                2 * i * (2 * i + 1)
+                                [0, BigInt(2 * i) * BigInt(2 * i + 1), acc]
                             );
                             result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
                         }
@@ -3572,7 +3581,7 @@
                             result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
                             mid = MathPlus.divide(
                                 MathPlus.times(mid, squareOfRe),
-                                (2 * i + 1) * (2 * i + 2)
+                                [0, BigInt(2 * i + 1) * BigInt(2 * i + 2), acc]
                             );
                         }
 
@@ -3697,7 +3706,7 @@
                             mid_pow = MathPlus.times(mid_pow, squareOfRe);
                             mid = MathPlus.divide(
                                 mid_pow,
-                                2 * i + 3
+                                [0, BigInt(2 * i + 3), acc]
                             ).re;
                         }
                         if (i >= max) {
