@@ -3199,43 +3199,63 @@
                             absInput = MathPlus._oppositeNumber(re);
                         }
 
-                        // 牛顿迭代 x_(n+1) = (x_n + N/x_n)/2；收敛过慢时回退到 exp(ln(N)/2)。
-                        // 原生 Math.sqrt 只生成牛顿法初值；后续高精度迭代决定最终有效数字。
-                        const lowAccuracyRe = new BigNumber(absInput, {acc: 15});
-                        const numberRe = Number(lowAccuracyRe.mantissa) * (10 ** lowAccuracyRe.power);
+                        // 十进制指数归约：|x| = scaled * 10^(2k)，使 scaled ∈ [1, 100)
+                        const mantissaLen = BigNumber.decimalLengthBigInt(absInput.mantissa);
+                        const sciExp = absInput.power + mantissaLen - 1;
+                        const k = Math.floor(sciExp / 2);
+                        const r = sciExp - 2 * k; // r ∈ {0, 1}
+                        const scaledPower = r - mantissaLen + 1;
 
-                        if (!Number.isFinite(numberRe) || numberRe === 0) {
+                        const workAcc = acc + 6;
+                        const scaledNoiseMag = absInput.noiseMag === -Infinity ? -Infinity : absInput.noiseMag - 2 * k;
+                        const scaledBig = new BigNumber([scaledPower, absInput.mantissa], {
+                            acc: workAcc,
+                            noiseMag: scaledNoiseMag
+                        });
+                        const scaledInput = new ComplexNumber(scaledBig, {acc: workAcc});
+
+                        // 原生 Math.sqrt 在 [1, 100) 范围内永远安全且不溢出，提供约 15 位精度的初值
+                        const lowAccuracyScaled = new BigNumber(scaledBig, {acc: 15});
+                        const numberRe = Number(lowAccuracyScaled.mantissa) * (10 ** lowAccuracyScaled.power);
+
+                        if (!Number.isFinite(numberRe) || numberRe <= 0) {
                             useAlternative = true;
                         }
 
                         if (!useAlternative) {
-                            result = new ComplexNumber(Math.sqrt(numberRe), {acc: acc});
+                            result = new ComplexNumber(Math.sqrt(numberRe), {acc: workAcc});
 
                             let i = 0;
-                            const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
-                            const minPower = -2 * acc - 1;
-                            const const_2 = new ComplexNumber([0, 2n, acc]);
+                            const max = Math.max(20, Math.ceil(Math.log2(workAcc)) + 10);
+                            const const_2 = new ComplexNumber([0, 2n, workAcc]);
                             let difference, mid;
+                            let diffMag = Infinity;
 
-                            // 进行迭代
+                            // 进行牛顿迭代：x_(n+1) = (x_n + scaled/x_n) / 2
                             do {
+                                const prevDiffMag = diffMag;
                                 mid = result;
                                 result = MathPlus.divide(
-                                    MathPlus.plus(mid, MathPlus.divide(absInput, mid)),
+                                    MathPlus.plus(mid, MathPlus.divide(scaledInput, mid)),
                                     const_2
                                 );
 
                                 difference = MathPlus.minus(mid, result).re;
+                                diffMag = BigNumber.getMag(difference);
                                 i++;
-                            } while (difference.power > minPower && !difference.isZero() && i < max);
 
-                            if (i >= max) {
+                                if (diffMag <= -(acc + 2) || (diffMag <= -acc && diffMag >= prevDiffMag)) {
+                                    break;
+                                }
+                            } while (i < max);
+
+                            if (i >= max && diffMag > -acc) {
                                 console.warn(`[MathPlus] Square root (${x.toString()}) calculation takes too long.`);
                                 useAlternative = true;
                             }
                         }
 
-                        // 如果牛顿法收敛过慢，则使用 ln/exp 方法作为备用。
+                        // 如果牛顿法收敛异常，则使用 ln/exp 方法作为备用
                         // 公式: √x = x^0.5 = e^(0.5 * ln(x))
                         if (useAlternative) {
                             result = MathPlus.exp(
@@ -3243,10 +3263,14 @@
                             );
                         }
 
+                        const finalReal = useAlternative
+                                          ? result.re
+                                          : new BigNumber(result.re, {acc: acc, pow: k});
+
                         if (isBaseNegative) {
-                            return new ComplexNumber([[0, 0n, acc], result.re]);
+                            return new ComplexNumber([[0, 0n, acc], finalReal]);
                         }
-                        return result;
+                        return new ComplexNumber(finalReal, {acc: acc});
                     }
 
                     return MathPlus.pow(input, [-1, 5n, acc]);
@@ -3272,52 +3296,86 @@
                             return new ComplexNumber([0, 0n, acc]);
                         }
 
-                        // 原生 Math.cbrt 只生成牛顿法初值；后续运算仍全部使用高精度类型。
-                        const lowAccuracyRe = new BigNumber(re, {acc: 15});
-                        const numberRe = Number(lowAccuracyRe.mantissa) * (10 ** lowAccuracyRe.power);
+                        let isBaseNegative = false;
+                        let absInput = re;
+                        if (re.isNegative()) {
+                            isBaseNegative = true;
+                            absInput = MathPlus._oppositeNumber(re);
+                        }
 
-                        if (!Number.isFinite(numberRe) || numberRe === 0) {
+                        // 十进制指数归约：|x| = scaled * 10^(3k)，使 scaled ∈ [1, 1000)
+                        const mantissaLen = BigNumber.decimalLengthBigInt(absInput.mantissa);
+                        const sciExp = absInput.power + mantissaLen - 1;
+                        const k = Math.floor(sciExp / 3);
+                        const r = sciExp - 3 * k; // r ∈ {0, 1, 2}
+                        const scaledPower = r - mantissaLen + 1;
+
+                        const workAcc = acc + 6;
+                        const scaledNoiseMag = absInput.noiseMag === -Infinity ? -Infinity : absInput.noiseMag - 3 * k;
+                        const scaledBig = new BigNumber([scaledPower, absInput.mantissa], {
+                            acc: workAcc,
+                            noiseMag: scaledNoiseMag
+                        });
+                        const scaledInput = new ComplexNumber(scaledBig, {acc: workAcc});
+
+                        // 原生 Math.cbrt 在 [1, 1000) 范围内永远安全且不溢出，提供约 15 位精度的初值
+                        const lowAccuracyScaled = new BigNumber(scaledBig, {acc: 15});
+                        const numberRe = Number(lowAccuracyScaled.mantissa) * (10 ** lowAccuracyScaled.power);
+
+                        if (!Number.isFinite(numberRe) || numberRe <= 0) {
                             useAlternative = true;
                         }
 
                         if (!useAlternative) {
-                            result = new ComplexNumber(Math.cbrt(numberRe), {acc: acc});
+                            result = new ComplexNumber(Math.cbrt(numberRe), {acc: workAcc});
 
-                            // 立方根的牛顿迭代：x_(n+1) = (2x_n + N/x_n²)/3。
+                            // 立方根的牛顿迭代：x_(n+1) = (2 * x_n + scaled / x_n²) / 3
                             let i = 0;
-                            const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
-                            const minPower = -2 * acc - 1;
-                            const const_2 = new ComplexNumber([0, 2n, acc]);
-                            const const_3 = new ComplexNumber([0, 3n, acc]);
+                            const max = Math.max(20, Math.ceil(Math.log2(workAcc)) + 10);
+                            const const_2 = new ComplexNumber([0, 2n, workAcc]);
+                            const const_3 = new ComplexNumber([0, 3n, workAcc]);
                             let difference, mid;
+                            let diffMag = Infinity;
 
                             do {
+                                const prevDiffMag = diffMag;
                                 mid = result;
                                 const squareOfMid = MathPlus.times(mid, mid);
                                 result = MathPlus.divide(
                                     MathPlus.plus(
                                         MathPlus.times(mid, const_2),
-                                        MathPlus.divide(re, squareOfMid)
+                                        MathPlus.divide(scaledInput, squareOfMid)
                                     ),
                                     const_3
                                 );
 
                                 difference = MathPlus.minus(mid, result).re;
+                                diffMag = BigNumber.getMag(difference);
                                 i++;
-                            } while (difference.power > minPower && !difference.isZero() && i < max);
 
-                            if (i >= max) {
+                                if (diffMag <= -(acc + 2) || (diffMag <= -acc && diffMag >= prevDiffMag)) {
+                                    break;
+                                }
+                            } while (i < max);
+
+                            if (i >= max && diffMag > -acc) {
                                 console.warn(`[MathPlus] Cube root (${x.toString()}) calculation takes too long.`);
                                 useAlternative = true;
                             }
                         }
 
-                        // 如果迭代法收敛过慢，则使用 pow(x, 1/3) 作为备用方法。
+                        // 如果迭代法收敛异常，回退到 pow 备用方法
                         if (useAlternative) {
-                            return MathPlus.pow(re, MathPlus.divide([0, 1n, acc], [0, 3n, acc]));
+                            const alt = MathPlus.pow(absInput, MathPlus.divide([0, 1n, acc], [0, 3n, acc]));
+                            return isBaseNegative ? MathPlus._oppositeNumber(alt) : alt;
                         }
 
-                        return result;
+                        const finalReal = new BigNumber(result.re, {acc: acc, pow: k});
+
+                        if (isBaseNegative) {
+                            return new ComplexNumber(MathPlus._oppositeNumber(finalReal));
+                        }
+                        return new ComplexNumber(finalReal, {acc: acc});
                     }
 
                     return MathPlus.pow(input, MathPlus.divide([0, 1n, acc], [0, 3n, acc]));
