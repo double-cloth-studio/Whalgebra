@@ -126,6 +126,17 @@ console.log(res3.toString());
 // 输出结果: "9.33262...E+157" (示例值)
 ```
 
+### 3.3. 技术文档与接口开发指南
+
+项目在 [`docs/`](./docs/README.md) 目录中提供了系统详尽的代码级架构与 API 开发参考文档：
+
+- [**数学核心构造器与 MathPlus 计算引擎详解**](./docs/math_engine_and_constructors.md)：深入剖析 `BigNumber`、`ComplexNumber` 构造器与 `MathPlus` 静态函数库（40+ 函数、调度场算法、自定义函数 `[f]` 与 `[g]`、极坐标与精度控制）。
+- [**高阶数学分析工具指南**](./docs/advanced_analysis_tools.md)：多项式求根与微积分性质分析 (`PowerFunctionTools`)、复数根式展开 (`RadicalFunctionTools`)、函数数表生成 (`FuncValueListTools`)、双变量统计与 7 种回归模型拟合 (`StatisticsTools`)。
+- [**异步计算架构与 Worker 系统**](./docs/architecture_and_worker.md)：`SyncWorker` 无外部文件动态打包机理与 `WorkerTools` 崩溃自愈异步门面。
+- [**全局配置、常数表与词法解析系统**](./docs/configuration_and_utilities.md)：`CalcConfig` 精度与超高精度常数表、`TokenConfig` 词元字典与 `Public` 公共基础工具。
+- [**UI 交互、虚拟滚动与渲染层**](./docs/ui_and_interaction.md)：`VirtualScroll` 状态机驱动的节点池虚拟滚动引擎、`InputManager` 键盘系统与 `PrintManager` 屏幕排版。
+- [**工程工具链、本地服务与测试体系**](./docs/toolchain_and_testing.md)：逆向构建 CLI、SVG 优化、本地安全开发服务器与 9 大测试用例集。
+
 ## 4. 项目架构与体系
 
 ### 4.1. 技术说明
@@ -142,6 +153,7 @@ Whalgebra/
 ├── package.json                  # Node.js 脚本、项目版本与运行环境声明
 ├── README.md                     # 项目说明与本地开发指引
 ├── LICENSE                       # MIT License
+├── docs/                         # 项目技术文档库（MathPlus、构造器、架构、分析工具与测试）
 ├── dist/                         # 可直接分发的构建产物；通常只作为发布结果，不作为日常开发入口
 │   ├── Whalgebra.html            # 单文件 Web 应用发行版，核心离线入口
 │   ├── *.apk                     # Android 安装包
