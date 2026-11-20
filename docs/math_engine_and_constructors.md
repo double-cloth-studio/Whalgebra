@@ -52,6 +52,7 @@ $$\text{Value} = \text{mantissa} \times 10^{\text{power}}$$
 - **`mantissa` (`bigint`)**：带符号的整数尾数。去除了所有尾随零（规范化）。例如，数字 `12.34` 的尾数为 `1234n`，`-0.05` 的尾数为 `-5n`。
 - **`power` (`number`)**：十进制指数，必须为 JavaScript 安全整数（`Number.MIN_SAFE_INTEGER` 到 `Number.MAX_SAFE_INTEGER`）。例如 `12.34` 的指数为 `-2`（$1234 \times 10^{-2}$）。
 - **`acc` (`number`)**：当前实例的有效位数（Accuracy），控制舍入精度。
+- **`noiseMag` (`number`)**：当前数值累积的十进制截断噪声量级上限。字面量或精确输入的默认值为 `-Infinity`；当发生有效位舍入截断或参与四则运算时，系统会自动动态追踪并传播其最大误差量级。
 
 ```mermaid
 classDiagram
@@ -59,14 +60,17 @@ classDiagram
         +number power
         +bigint mantissa
         +number acc
+        +number noiseMag
         +isZero() boolean
         +isPositive() boolean
         +isNegative() boolean
         +valueOf() number
+        +getMag() number
         +toString(options) string
+        +static getMag(bn) number
         +static decimalLengthBigInt(n) number
         -_pow10(exp) bigint
-        -_roundAndNormalize(mantissa, power, acc) object
+        -_roundAndNormalize(mantissa, power, acc, prevNoiseMag) object
         -_parseNumericString(numStr) array
     }
 ```
@@ -74,7 +78,7 @@ classDiagram
 ### 1.2 构造函数与类型支持
 
 ```javascript
-new BigNumber(x, { acc, pow = 0 } = {})
+new BigNumber(x, { acc, pow = 0, noiseMag } = {})
 ```
 
 #### 参数说明：
@@ -85,10 +89,11 @@ new BigNumber(x, { acc, pow = 0 } = {})
      - 若为非整数浮点数，先自动转为科学记数法字符串（`x.toExponential()`）再进行精准十进制解析。
      - **禁止传入 `NaN` 或 `Infinity`**，否则抛出类型异常。
    - **`bigint`**：保持完全整数精度，根据当前精度进行规范化。
-   - **`BigNumber` / 对象**：克隆对象；若提供了新的 `acc` 或 `pow`，会在复制的同时重新舍入或平移指数。
+   - **`BigNumber` / 对象**：克隆对象；若提供了新的 `acc`、`pow` 或 `noiseMag`，会在复制的同时重新舍入或平移指数与噪声量级。
    - **`array`**：内部元组 `[power, mantissa]` 或 `[power, mantissa, acc]`，直接构建实例。
 2. **`options.acc`** *(可选)*：正整数，结果保留的有效数字位数。若缺省则默认读取全局配置 `CalcConfig.globalCalcAccuracy`（预设值为 220 位）。
 3. **`options.pow`** *(可选)*：指数安全偏移量，等价于将该数整体乘以 $10^{\text{pow}}$，常用于科学记数法中间运算。
+4. **`options.noiseMag`** *(可选)*：预设的十进制噪声量级上限（默认为 `-Infinity` 或继承自输入）。
 
 ### 1.3 实例属性与状态查询
 
@@ -97,9 +102,11 @@ new BigNumber(x, { acc, pow = 0 } = {})
 | **`power`** | `number` | 十进制指数。当数值为 0 时固定为 0。 |
 | **`mantissa`** | `bigint` | 规范化后的整数尾数（末尾不含无效 0）。零值对应 `0n`。 |
 | **`acc`** | `number` | 当前实例的有效数字位数。 |
+| **`noiseMag`** | `number` | 实例累积的截断噪声上限量级（精确输入为 `-Infinity`）。 |
 | **`isZero()`** | `boolean` | 判断是否为绝对零（`mantissa === 0n`）。 |
 | **`isPositive()`** | `boolean` | 判断是否严格大于零（`mantissa > 0n`）。 |
 | **`isNegative()`** | `boolean` | 判断是否严格小于零（`mantissa < 0n`）。 |
+| **`getMag()`** | `number` | 返回当前数值的十进制数量级 $\lfloor \log_{10} |x| \rfloor$；零值返回 `-Infinity`。 |
 | **`valueOf()`** | `number` | 将高精度数转为原生 JavaScript `Number` 浮点数。若指数超出安全表示范围会抛错。 |
 
 ### 1.4 格式化输出与模式切换
@@ -116,6 +123,8 @@ bigNum.toString({ acc = this.acc, mode = 'auto' } = {})
 
 ### 1.5 核心静态工具方法
 
+- **`BigNumber.getMag(bn)`**：
+  计算 `BigNumber` 的十进制数量级（$\lfloor \log_{10} |x| \rfloor$）。空值或绝对零返回 `-Infinity`，非零值返回 `power + decimalLengthBigInt(mantissa) - 1`。
 - **`BigNumber.decimalLengthBigInt(n)`**：
   采用二进制快速倍增与查找算法，以 $O(\log_{10} n)$ 的极高效率测定一个 `bigint` 的十进制位数。对于数千位的超大整数，无需执行高耗时的字符串转换（`.toString().length`）。
 - **`BigNumber._pow10(exp)`**：
@@ -405,11 +414,26 @@ try {
 
 ### 3.3 精度控制与内部误差消除机制
 
-高精度数值计算极易受到微小的累积浮点噪声干扰（例如 $\sin(\pi)$ 理论上为 $0$，但级数近似中常残存形如 $10^{-210}$ 的伪微小量）。Whalgebra 设计了双重保护机制：
+高精度数值计算中，抵消误差（Catastrophic Cancellation）与累积截断噪声常导致本应为 $0$ 的结果残存形如 $10^{-210}$ 的微小扰动，而传统的固定阈值归零又极易误杀真实的极小物理量（如普朗克常数 $6.626 \times 10^{-34}$ 或量子概率幅 $10^{-40}$）。为此，Whalgebra 构建了全链路的自适应误差消除体系：
 
-1. **零修正 (`Public.zeroCorrect`)**：
-   在关键计算节点（如三角函数输出、根式求值、统计协方差），引擎会检查数值的指数与有效位数。若某个分量的数量级低于当前有效精度的截断阈值，自动归零（消除例如 `0.00000000000000000000000000001[i]` 带来的干扰）。
-2. **整数修正 (`Public.integerCorrect`)**：
+1. **截断噪声上界追踪 (`noiseMag`)**：
+   - 每一个 `BigNumber` 实例均维护其绝对噪声上界数量级 `noiseMag`。精确数字或字面量的初始值为 $-\infty$。
+   - 真正发生有效数字截断舍入时，记录截断位的十进制量级：$\text{power} + \text{shift} - 1$。
+   - 四则运算自动传播噪声上界：
+     - **加减法**：$\text{noise}_{\text{res}} = \max(\text{noise}_a, \text{noise}_b)$
+     - **乘法**：$\text{noise}_{\text{res}} = \max(\text{noise}_a + \text{mag}_b, \text{noise}_b + \text{mag}_a)$
+     - **除法**：$\text{noise}_{\text{res}} = \max(\text{noise}_a - \text{mag}_b, \text{noise}_b + \text{mag}_a - 2\text{mag}_b, \text{mag}_{\text{res}} - \text{acc})$
+   - 在最终输出格式化阶段（`Public.idealizationToString`），若数值全部落入噪声区间（$\text{mag} \le \text{noiseMag} + 4$），直接安全输出 `"0"`（如链式抵消 $1/3 \times 3 - 1 \equiv 0$、$\sqrt{2}^2 - 2 \equiv 0$），而未经大数相消的真实小量则不受任何影响。
+
+2. **双模式相对零修正 (`Public.zeroCorrect`)**：
+   - **无参调用**：仅比对复数的实部与虚部相对尺度。若分量相对另一分量小超过容差 $\text{tol} = \max(\lfloor 0.9 \cdot acc \rfloor, acc - 8)$，则将微弱分量归零，不再设置固定绝对阈值，彻底杜绝误杀纯实数小量。
+   - **带参考尺度调用 (`Public.zeroCorrect(x, ...refs)`)**：以输入项的最大量级 $\text{refMag}$ 为基准。在方程求根判别式计算（如二次、三次、四次多项式中判别式项相减）、正切/双曲函数等关键算法处，均将相减两项作为尺度传入，确保大系数或极小系数下的判别式符号与零点判断严谨无误。
+
+3. **超越函数零点与极点规范化**：
+   - 周期与区间归约（如 `MathPlus._toLessThanHalfPi`）中，仅在发生周期减法归约时，以原始角度作为尺度参考执行 `Public.zeroCorrect`，既保证 $\sin(k\pi) \equiv 0$、$\cos(\pi/2) \equiv 0$，又完整保留未做归约的超小角度（如 $\sin(10^{-40}) \approx 10^{-40}$）。
+   - 正切函数 `MathPlus.tan` 先求正弦再以 $|\sin|$ 为尺度校验余弦零点，精确触发极点未定义异常。
+
+4. **整数修正 (`Public.integerCorrect`)**：
    对于根指数 $n$、阶数等离散整数参量，自动识别与消除无限循环小数尾数，保证如 `2.99999999999999999999` 准确还原为整数 `3`。
 
 ---
