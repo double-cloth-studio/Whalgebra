@@ -12472,11 +12472,6 @@
                         addIndex = getUnlimitedAddIndex(classList);
                     }
 
-                    const originalDisplay = target.style.display;
-
-                    // 批量移除和插入空格时暂时隐藏容器，减少逐节点变更引发的中间重排。
-                    target.style.display = 'none';
-
                     // 删除空格循环
                     const safeStart = Math.max(0, totalRangeStart);
                     const safeEnd = Math.min(children.length, totalRangeEnd);
@@ -12490,8 +12485,6 @@
                     for (let i = addIndex.length - 1; i >= 0; i--) {
                         HtmlTools.appendDOMs(target, [space], {index: addIndex[i]});
                     }
-
-                    target.style.display = originalDisplay;
 
                     HtmlTools.scrollToView();
                 }
