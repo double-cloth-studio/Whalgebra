@@ -364,6 +364,49 @@
                 }
 
                 /**
+                 * 仅拼装已经格式化的系数字符串，避免各模型重复解析和修正系数。
+                 *
+                 * @private
+                 * @param {string[]} strList - 按常数项到最高次项排列的系数字符串。
+                 * @param {string} asX - 自变量词元或子表达式。
+                 * @returns {string} 多项式表达式。
+                 */
+                static _formatPowerFunc(strList, asX) {
+                    let result = '';
+                    let firstNoneZero = false;
+                    for (let i = strList.length - 1; i >= 0; i--) {
+                        const currentCoefficient = strList[i];
+                        if (currentCoefficient !== '0') {
+                            if (firstNoneZero && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
+                                result += '+';
+                            }
+                            firstNoneZero = true;
+
+                            if (i !== 0) {
+                                if (currentCoefficient === '1') {
+                                    result += asX;
+                                } else if (currentCoefficient === '-1') {
+                                    result += `-${asX}`;
+                                } else if (currentCoefficient.includes('E')) {
+                                    result += `(${currentCoefficient})${asX}`;
+                                } else {
+                                    result += `${currentCoefficient}${asX}`;
+                                }
+                            } else if (!currentCoefficient.includes('E')) {
+                                result += currentCoefficient;
+                            } else {
+                                result += strList.length === 1 ? currentCoefficient : `(${currentCoefficient})`;
+                            }
+
+                            if (![0, 1].includes(i)) {
+                                result += `^${i}`;
+                            }
+                        }
+                    }
+                    return firstNoneZero ? result : '0';
+                }
+
+                /**
                  * 将模型系数格式化为数学表达式。
                  *
                  * @param {Array<*>} list - 可由 `idealizationToString` 格式化的系数列表；元素顺序和长度由
@@ -377,7 +420,7 @@
                  *   - 'abxFunc': 指数函数, f(x) = a * b^x
                  *   - 'axbFunc': 幂函数, f(x) = a * x^b
                  *   - 'reciprocalFunc': 反比例函数, f(x) = a + b/x
-                 * @param {string} [asX='[x]'] - 插入表达式的变量词元或子表达式；递归格式化 `lnFunc`、
+                 * @param {string} [asX='[x]'] - 插入表达式的变量词元或子表达式；格式化 `lnFunc`、
                  *   `expFunc` 等模型时也用它替换自变量，因此调用方需自行提供必要的括号或内部词元。
                  * @returns {string} 数学表达式；输入错误时返回 `error`。
                  */
@@ -393,46 +436,12 @@
 
                     switch (mode) {
                         // 多项式：aₙxⁿ + ... + a₁x + a₀。
-                        case 'powerFunc': {
-                            let firstNoneZero = false;
-                            for (let i = list.length - 1; i >= 0; i--) {
-                                const currentCoefficient = list[i];
-                                if (currentCoefficient !== '0') {
-                                    if (firstNoneZero && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
-                                        result += '+';
-                                    }
-                                    firstNoneZero = true;
-
-                                    if (i !== 0) {
-                                        if (currentCoefficient === '1') {
-                                            result += asX;
-                                        } else if (currentCoefficient === '-1') {
-                                            result += `-${asX}`;
-                                        } else if (currentCoefficient.includes('E')) {
-                                            result += `(${currentCoefficient})${asX}`;
-                                        } else {
-                                            result += `${currentCoefficient}${asX}`;
-                                        }
-                                    } else if (!currentCoefficient.includes('E')) {
-                                        result += currentCoefficient;
-                                    } else {
-                                        result += list.length === 1 ? currentCoefficient : `(${currentCoefficient})`;
-                                    }
-
-                                    if (![0, 1].includes(i)) {
-                                        result += `^${i}`;
-                                    }
-                                }
-                            }
-                            if (!firstNoneZero) {
-                                return '0';
-                            }
-                            return result;
-                        }
+                        case 'powerFunc':
+                            return Public._formatPowerFunc(list, asX);
 
                         // 对数多项式：以 ln(x) 代替变量。
                         case 'lnFunc':
-                            return Public.funcToString(list, 'powerFunc', `ln(${asX})`);
+                            return Public._formatPowerFunc(list, `ln(${asX})`);
 
                         // 指数模型：a·exp(bx)。
                         case 'expFunc':
@@ -442,7 +451,7 @@
                             if (b === '0') {
                                 return a;
                             }
-                            return Public.funcToString([0, a], 'powerFunc', `exp(${Public.funcToString([0, b], 'powerFunc', asX)})`);
+                            return Public._formatPowerFunc(['0', a], `exp(${Public._formatPowerFunc(['0', b], asX)})`);
 
                         // 指数模型：a·b^x。
                         case 'abxFunc':
@@ -476,7 +485,7 @@
                             } else {
                                 result += `${asX}^(${b})`;
                             }
-                            return Public.funcToString([0, a], 'powerFunc', result);
+                            return Public._formatPowerFunc(['0', a], result);
 
                         // 反比例模型：a + b/x。
                         case 'reciprocalFunc':
@@ -1288,6 +1297,29 @@
                  * @throws {Error} 精度无效时抛出。
                  */
                 static set globalCalcAccuracy(acc) {
+                    const numericAcc = CalcConfig._normalizeCalcAccuracy(acc);
+                    CalcConfig._globalCalcAccuracy = numericAcc;
+
+                    // 绝对输出精度不能超过计算精度。
+                    let outputClamped = false;
+                    if (CalcConfig._outputAccuracy > 1 && CalcConfig._outputAccuracy > numericAcc) {
+                        CalcConfig._outputAccuracy = numericAcc;
+                        outputClamped = true;
+                    }
+
+                    this._syncToWorker('setCalcAccuracy', numericAcc);
+                    if (outputClamped) {
+                        this._syncToWorker('setOutputAccuracy', CalcConfig._outputAccuracy);
+                    }
+                }
+
+                /**
+                 * 校验并规范化计算精度，不修改配置。
+                 * @private
+                 * @param {number|undefined} acc - 计算精度；省略时采用上限。
+                 * @returns {number} 校验后的精度。
+                 */
+                static _normalizeCalcAccuracy(acc) {
                     let numericAcc;
 
                     if (acc === undefined) {
@@ -1308,19 +1340,7 @@
                         }
                     }
 
-                    CalcConfig._globalCalcAccuracy = numericAcc;
-
-                    // 绝对输出精度不能超过计算精度。
-                    let outputClamped = false;
-                    if (CalcConfig._outputAccuracy > 1 && CalcConfig._outputAccuracy > numericAcc) {
-                        CalcConfig._outputAccuracy = numericAcc;
-                        outputClamped = true;
-                    }
-
-                    this._syncToWorker('setCalcAccuracy', numericAcc);
-                    if (outputClamped) {
-                        this._syncToWorker('setOutputAccuracy', CalcConfig._outputAccuracy);
-                    }
+                    return numericAcc;
                 }
 
                 /**
@@ -1353,10 +1373,22 @@
                  * @throws {Error} 输出精度无效时抛出。
                  */
                 static set outputAccuracy(acc) {
+                    CalcConfig._outputAccuracy = CalcConfig._normalizeOutputAccuracy(acc, CalcConfig.globalCalcAccuracy);
+                    this._syncToWorker('setOutputAccuracy', this._outputAccuracy);
+                }
+
+                /**
+                 * 按目标计算精度校验输出精度，不修改配置。
+                 * @private
+                 * @param {number|undefined} acc - 输出精度策略；省略时采用计算精度。
+                 * @param {number} calcAcc - 目标计算精度。
+                 * @returns {number} 校验后的输出精度。
+                 */
+                static _normalizeOutputAccuracy(acc, calcAcc) {
                     let numericAcc;
 
                     if (acc === undefined) {
-                        numericAcc = CalcConfig.globalCalcAccuracy;
+                        numericAcc = calcAcc;
                     } else {
                         numericAcc = Number(acc);
 
@@ -1372,22 +1404,40 @@
                             throw new Error('[CalcConfig] Input error: Accuracy must be an integer when greater than 1.');
                         }
 
-                        if (numericAcc > CalcConfig.globalCalcAccuracy) {
-                            throw new Error(`[CalcConfig] Range error: Accuracy must be at most ${CalcConfig.globalCalcAccuracy}.`);
+                        if (numericAcc > calcAcc) {
+                            throw new Error(`[CalcConfig] Range error: Accuracy must be at most ${calcAcc}.`);
                         }
                     }
 
-                    CalcConfig._outputAccuracy = numericAcc;
-                    this._syncToWorker('setOutputAccuracy', this._outputAccuracy);
+                    return numericAcc;
+                }
+
+                /**
+                 * 同时设置计算和输出精度，完整校验后仅同步一次 Worker 环境。
+                 * @param {number|undefined} calcAcc - 计算精度，规则同 `globalCalcAccuracy`。
+                 * @param {number|undefined} outputAcc - 输出精度，按目标计算精度校验。
+                 * @returns {void}
+                 * @throws {Error} 任一精度无效时抛出，保留原配置。
+                 */
+                static setAccuracy(calcAcc, outputAcc) {
+                    const numericCalcAcc = CalcConfig._normalizeCalcAccuracy(calcAcc);
+                    const numericOutputAcc = CalcConfig._normalizeOutputAccuracy(outputAcc, numericCalcAcc);
+                    CalcConfig._globalCalcAccuracy = numericCalcAcc;
+                    CalcConfig._outputAccuracy = numericOutputAcc;
+                    this._syncToWorker('initEnv', {
+                        calcAcc: numericCalcAcc,
+                        outputAcc: numericOutputAcc,
+                        printMode: CalcConfig.globalPrintMode
+                    });
                 }
 
                 /**
                  * 将主线程配置同步到已就绪的 Worker。
                  *
                  * @private
-                 * @param {string} methodName - `WorkerTools` 已注册的配置方法名，例如 `setAccuracy`、
+                 * @param {string} methodName - `WorkerTools` 已注册的配置方法名，例如 `initEnv`、
                  *   `setOutputAccuracy` 或 `setPrintMode`；网页模式下会按该名称分发异步调用。
-                 * @param {number|string} value - 与目标方法契约一致的新配置值；该值通过 Worker 消息复制，
+                 * @param {number|string|Object} value - 与目标方法契约一致的新配置值；该值通过 Worker 消息复制，
                  *   同步失败仅记录错误，不回滚主线程已经生效的配置。
                  * @returns {void}
                  */
@@ -6681,10 +6731,10 @@
                                 point3 = Public.idealizationToString(diff1Roots[2]);
                             result[a.isPositive() ? 'increasingInterval' : 'decreasingInterval'] = [[point1, point2], [point3, '+inf']];
                             result[a.isPositive() ? 'decreasingInterval' : 'increasingInterval'] = [['-inf', point1], [point2, point3]];
-                            result[a.isPositive() ? 'maximumPoint' : 'minimumPoint'] = [[point2, Public.idealizationToString(PowerFunctionTools._getPowerFunctionValue(list, diff1Roots[1]))]];
+                            result[a.isPositive() ? 'maximumPoint' : 'minimumPoint'] = [[point2, Public.idealizationToString(minMax2)]];
                             result[a.isPositive() ? 'minimumPoint' : 'maximumPoint'] = [
-                                [point1, Public.idealizationToString(PowerFunctionTools._getPowerFunctionValue(list, diff1Roots[0]))],
-                                [point3, Public.idealizationToString(PowerFunctionTools._getPowerFunctionValue(list, diff1Roots[2]))]
+                                [point1, Public.idealizationToString(minMax1)],
+                                [point3, Public.idealizationToString(minMax3)]
                             ];
                         }
 
@@ -8143,6 +8193,15 @@
                 }
 
                 /**
+                 * 一次同步 Worker 的计算精度、输出精度和输出模式。
+                 * @param {{calcAcc: number, outputAcc: number, printMode: string}} config - 已校验的环境快照。
+                 * @returns {Promise<void>} 环境同步完成后兑现。
+                 */
+                static initEnv(config) {
+                    return this._dispatch('initEnv', [config]);
+                }
+
+                /**
                  * 设置 Worker 的默认计算精度。
                  *
                  * @param {number} [acc] - 1 到 Worker 支持上限之间的正整数有效位数；省略时由 Worker 端恢复
@@ -8556,8 +8615,26 @@
                  * @throws {Error} 如果提供的模式不受支持，则抛出错误。
                  */
                 static set currentMode(mode) {
+                    PageConfig.setCurrentMode(mode);
+                }
+
+                /**
+                 * 切换主模式；仅显式初始化时允许重放当前模式的界面更新。
+                 * @param {'0'|'1'|'2_0'|'2_1'|'3'|'4'} mode - 目标主模式。
+                 * @param {Object} [options={}] - 切换选项。
+                 * @param {boolean} [options.initialize=false] - 是否强制初始化界面。
+                 * @returns {void}
+                 */
+                static setCurrentMode(mode, {initialize = false} = {}) {
                     if (!['0', '1', '2_0', '2_1', '3', '4'].includes(mode)) {
                         throw new Error('[PageConfig] Unsupported mode');
+                    }
+
+                    if (mode === PageConfig._currentMode && !initialize) {
+                        return;
+                    }
+                    if (PageConfig._currentMode === '0' && mode !== '0') {
+                        PrintManager.mode0ShowOnScreen.cancel();
                     }
 
                     // 标题和屏幕切换仍需读取旧模式，因此必须在覆写 _currentMode 前执行。
@@ -8765,8 +8842,7 @@
                     }
 
                     const accMode = mode === 0 ? this.ACC_MODE_0 : this.ACC_MODE_1;
-                    CalcConfig.globalCalcAccuracy = accMode.globalCalcAccuracy;
-                    CalcConfig.outputAccuracy = accMode.outputAccuracy;
+                    CalcConfig.setAccuracy(accMode.globalCalcAccuracy, accMode.outputAccuracy);
 
                     if (mode !== PageConfig._calcAccMode) {
                         HtmlTools.getHtml('#switch_container').classList.toggle('Active');
@@ -14898,10 +14974,6 @@
 
             let target = event.target;
 
-            if (!(target instanceof Element)) {
-                return;
-            }
-
             // 键帽文字由内部 p 元素承载；除主输入区外统一提升到按钮容器，保证点击图标和空白处行为一致。
             if (target.tagName.toLowerCase() === 'p' && target.parentNode?.id !== 'input') {
                 target = target.parentNode;
@@ -15268,7 +15340,7 @@
 
             // 恢复顺序不可交换：模式先建立页面上下文，输入数据随后决定子模式的合法范围，最后恢复显示选项。
             recoverData('currentMode', (data) => {
-                PageConfig.currentMode = data;
+                PageConfig.setCurrentMode(data, {initialize: true});
             });
 
             recoverData('screenData', (data) => {
