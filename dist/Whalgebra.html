@@ -2520,8 +2520,16 @@
                     }
 
                     if (reduced) {
-                        // 必须用输入原始精度 acc 判零，而非内部 220/440 位精度
-                        angle = Public.zeroCorrect(new BigNumber(angle, {acc: acc}), originalAngle).re;
+                        angle = new BigNumber(angle, {acc: acc});
+                        // 只清理相位误差内的残差，精确大角度的量级不能作为相对判零基准。
+                        const noiseMag = Math.max(
+                            originalAngle.noiseMag,
+                            angle.noiseMag,
+                            BigNumber.getMag(originalAngle) - highPrecisionAcc
+                        );
+                        if (!angle.isZero() && BigNumber.getMag(angle) <= noiseMag + 4) {
+                            angle = new BigNumber([0, 0n, acc]);
+                        }
                     }
 
                     return [angle, changeSign];
@@ -4587,9 +4595,16 @@
                                 return '_customFunc';
 
                             case '[pi]':
-                                return new ComplexNumber(CalcConfig.constants.pi, {acc: acc});
+                                // 常量本身也是近似值，须让整数倍角度继承其相位误差。
+                                return new ComplexNumber(CalcConfig.constants.pi, {
+                                    acc: acc,
+                                    noiseMag: CalcConfig.constants.pi[0] - 1
+                                });
                             case '[e]':
-                                return new ComplexNumber(CalcConfig.constants.e, {acc: acc});
+                                return new ComplexNumber(CalcConfig.constants.e, {
+                                    acc: acc,
+                                    noiseMag: CalcConfig.constants.e[0] - 1
+                                });
                             case '[i]':
                                 return new ComplexNumber([[0, 0n, acc], [0, 1n, acc]]);
                             case '[x]':
