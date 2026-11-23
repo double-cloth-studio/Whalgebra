@@ -1,170 +1,100 @@
-# 工具目录说明
+# 本地工具手册
 
-本目录包含 Whalgebra 项目辅助工具。工具只服务于本地开发、资源处理和源码拆分，不参与计算器运行时。
-
-## 目录结构
+工具用于开发、源码拆分和 SVG 资源处理，不参与计算器运行时。需要 Node.js 20+，无需安装 npm 依赖。以下命令在项目根目录运行。
 
 ```text
 tools/
-├── cli/       # 可直接通过 Node.js 运行的命令行工具
-├── server/    # 本地静态服务器和受限 Web 工具 API
-├── shared/    # 工具链共享路径与文件系统逻辑
+├── cli/       # 命令行工具，可导入其导出函数
+├── server/    # 静态服务与受限 Web API
+├── shared/    # 路径检查和换行处理
 └── web/       # 浏览器工具页面
 ```
 
 ## 本地服务器
 
-启动项目入口和 Web 工具页面：
-
 ```powershell
 npm start
-```
-
-等同于：
-
-```powershell
-node tools/server/run_server.js --dir .
-```
-
-常用参数：
-
-- `--dir <PATH>`：指定服务目录，默认是项目根目录。
-- `--port <PORT>`：指定起始端口，默认从 `8000` 开始寻找可用端口。
-- `--lan`：监听 `0.0.0.0`，允许局域网访问静态页面。
-- `--local`：仅监听 `127.0.0.1`，这是默认行为。
-- `--open`：启动后自动打开浏览器。
-- `--no-open`：启动后不自动打开浏览器，这是默认行为。
-- `-h, --help`：显示帮助。
-
-默认仅本机监听。需要局域网预览时再显式使用：
-
-```powershell
+npm start -- --port 8080 --open
 npm start -- --lan
 ```
 
-服务器会禁用缓存，并添加 `X-Content-Type-Options: nosniff` 和 `Referrer-Policy: same-origin` 等基础响应头。目录没有 `index.html` 时不会列目录，会返回 `403`。
+入口为 `tools/server/run_server.js`，默认仅本机监听、从 8000 查找空闲端口、不自动打开浏览器。实际地址以终端输出为准，按 `Ctrl+C` 停止。
 
-## Web 工具 API
+| 参数 | 含义 |
+| --- | --- |
+| `--dir <PATH>` | 静态服务目录，默认项目根目录 |
+| `--port <PORT>` | 起始端口，占用时继续查找 |
+| `--local` / `--lan` | 监听 `127.0.0.1`（默认）/ `0.0.0.0` |
+| `--open` / `--no-open` | 自动打开 / 不打开浏览器（默认） |
+| `-h, --help` | 帮助 |
 
-`tools/server/run_server.js` 提供两个受限 API，供 `tools/web/` 下的页面调用：
+服务器禁用缓存，添加 `nosniff`、`Referrer-Policy: same-origin` 响应头；没有 `index.html` 的目录返回 403，不列目录。`--lan` 也会开放工具页面及其 API，应仅在需要局域网预览时启用。
 
-- `POST /api/tools/reverse-build`
-- `POST /api/tools/svg-compressor`
+### Web 工具 API
 
-API 限制：
+工作台提供以下工具页面，对应 API 只在本地 Node 服务中可用，直接打开 HTML 或通过普通静态托管无法执行这些工具。
 
-- 只接受同源页面调用。
-- 只接受 `application/json` 请求。
-- 请求体最大 `1 MB`。
-- 所有路径必须位于项目目录内。
-- Web 逆向构建只能输出到 `src` 或 `tmp`。
-- Web SVG 工具的输入、输出和临时目录都必须位于 `tmp`。
+| 页面 | API |
+| --- | --- |
+| `tools/web/reverse_build.html` | `POST /api/tools/reverse-build` |
+| `tools/web/svg_compressor.html` | `POST /api/tools/svg-compressor` |
 
-浏览器工具入口在项目首页中提供，也可以直接访问：
+请求须同源，使用 `application/json`，请求体最多 1 MB。路径须位于项目内，Web 逆向构建仅允许输出到 `src` 或 `tmp`；Web SVG 工具的输入、输出和临时目录均限制在 `tmp`。更改静态服务目录不等于放宽这些路径限制。
 
-- `tools/web/reverse_build.html`
-- `tools/web/svg_compressor.html`
+## 逆向构建
 
-## 逆向构建工具
-
-逆向构建工具会读取单文件 HTML，将有效的内联 `<style>` 和 `<script>` 拆成独立文件，并更新 HTML 引用。
-
-默认命令：
+从 `dist/Whalgebra.html` 提取有效的内联 style/script，改写引用，默认输出到 `src`。这不是从源码生成发行版的打包命令。
 
 ```powershell
+# 先输出到临时目录，便于检查
+npm run reverse-build -- --out tmp/reverse-preview --force
+
+# 确认 dist 已包含需保留的源码修改后，同步 src
 npm run reverse-build -- --force
 ```
 
-等同于处理：
+CLI 用法：`node tools/cli/reverse_build.js [input_file] [选项]`。
 
-- 输入文件：`dist/Whalgebra.html`
-- 输出目录：`src`
+| 参数 | 含义 |
+| --- | --- |
+| `input_file` | 输入单文件，默认 `dist/Whalgebra.html` |
+| `-o, --out <PATH>` | 输出目录，默认 `src` |
+| `--no-dedent` | 保留内联代码缩进 |
+| `-f, --force` | 清空已有输出目录并继续 |
+| `-h, --help` | 帮助 |
 
-直接运行：
+输出包含 `index.html`、`.nojekyll`、`css/`、`js/`。目标目录已存在且未传 `--force` 时，CLI 要求确认。输出目录不能是磁盘根目录、项目根目录或包含输入文件的目录；**允许的输出目录仍会整体清空**，不要将手工维护文件混入其中。
 
-```powershell
-node tools/cli/reverse_build.js [input_file] [选项]
-```
-
-参数：
-
-- `-o, --out <PATH>`：指定输出目录。
-- `--no-dedent`：禁用智能去缩进。
-- `-f, --force`：目标目录存在时直接清空并继续。
-- `-h, --help`：显示帮助。
-
-示例：
-
-```powershell
-node tools/cli/reverse_build.js dist/Whalgebra.html --out src --force
-node tools/cli/reverse_build.js tmp/single.html --out tmp/reverse-output --no-dedent --force
-```
-
-注意：
-
-- 输出目录不能是磁盘根目录或项目根目录。
-- 输出目录不能包含输入文件。
-- 未使用 `--force` 且输出目录已存在时，CLI 会要求确认。
-- 会在输出目录生成 `.nojekyll`、`index.html`、`css/` 和 `js/`。
-
-## SVG 压缩工具
-
-SVG 工具会优化输入目录中的 `.svg` 文件，输出优化后的 SVG，并生成包含 Base64 `content: url(...)` 的 CSS。
-
-默认命令：
+## SVG 压缩
 
 ```powershell
 npm run compress-svg
+# 自定义路径
+npm run compress-svg -- --input tmp/input --output tmp/output-css --temp tmp/output-svg
 ```
 
-默认路径：
+工具使用内置 SVGO，处理输入目录直属的 `.svg` 文件，不递归遍历子目录。
 
-- 输入目录：`tmp/input`
-- CSS 输出目录：`tmp/output-css`
-- 优化后 SVG 输出目录：`tmp/output-svg`
-- CSS 文件名：`icons.css`
-- 默认高度：`5dvmin`
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `-i, --input <PATH>` | `tmp/input` | SVG 输入 |
+| `--output <PATH>` | `tmp/output-css` | CSS 输出 |
+| `--temp <PATH>` | `tmp/output-svg` | 优化后的 SVG 输出，供检查 |
+| `-h, --help` | — | 帮助 |
 
-直接运行：
+默认生成 `icons.css`，高度为 `5dvmin`。例如 `sin.svg` 对应：
 
-```powershell
-node tools/cli/svg_compressor.js [选项]
+```css
+._sin_ {
+    height: 5dvmin;
+    content: url(data:image/svg+xml;base64,...);
+}
 ```
 
-参数：
+输入目录不存在时，工具创建目录并退出，放入 SVG 后重跑。**输出与临时目录会在处理前清空**，不得包含输入目录、项目根目录或彼此嵌套。含 `text`、`tspan`、`textPath`、`flowRoot` 时会提示先转曲；工具不会替你转换字形，输出应人工核对。
 
-- `-i, --input <PATH>`：指定 SVG 输入目录。
-- `--output <PATH>`：指定 CSS 输出目录。
-- `--temp <PATH>`：指定优化后 SVG 输出目录。
-- `-h, --help`：显示帮助。
+## 维护工具
 
-示例：
+共享逻辑位于 `tools/shared/filesystem.js`：`PROJECT_ROOT`、`nativeNewlines()`、`resolveProjectPath()`、`assertSafeOutputPaths()`。新增写文件或清空目录的操作应复用现有路径检查。
 
-```powershell
-node tools/cli/svg_compressor.js --input tmp/input --output tmp/output-css --temp tmp/output-svg
-```
-
-注意：
-
-- 输入目录不存在时会自动创建目录并退出，放入 SVG 后再重新运行。
-- 输出目录和临时目录会在运行前清空。
-- 输出目录不能包含输入目录、项目根目录或彼此嵌套。
-- 如果 SVG 中包含 `<text>`、`<tspan>`、`<textPath>` 或 `flowRoot`，工具会提示先转曲。
-
-## 共享文件系统逻辑
-
-`tools/shared/filesystem.js` 提供工具共用的路径安全检查：
-
-- `PROJECT_ROOT`：项目根目录。
-- `nativeNewlines()`：按当前系统换行符输出文件。
-- `resolveProjectPath()`：把输入路径限制在项目目录内。
-- `assertSafeOutputPaths()`：阻止输出到磁盘根目录、项目根目录、输入目录父级或互相嵌套目录。
-
-新增工具时应复用这些方法，不要绕过路径检查直接删除或覆盖目录。
-
-## 新增或修改工具的检查项
-
-1. 命令行入口放在 `tools/cli/`，浏览器入口放在 `tools/web/`。
-2. 会写文件或删除目录的工具必须使用 `tools/shared/filesystem.js` 的路径检查。
-3. 工具页面复用 `assets/ui/` 下的共享样式和脚本，不写内联样式或内联事件。
-4. 修改工具后运行 `npm test`，确保服务器、安全路径和工具链回归测试通过。
+命令行入口放在 `cli/`，页面放在 `web/`；页面复用 `assets/ui/` 的样式和脚本。修改后运行 `npm test`。计算器同步和部署流程见[开发流程](../docs/toolchain_and_testing.md)，测试维护见[测试手册](../test/README.md)。
