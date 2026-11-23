@@ -14100,6 +14100,13 @@
                 }
 
                 /**
+                 * 模式选择后延迟关闭主遮罩，重复选择只保留最后一次关闭任务。
+                 * 面板显隐变化时调用 cancel()，避免旧任务关闭重新打开的面板。
+                 * @type {Function & {cancel:function():void}}
+                 */
+                static delayCloseMainCover = HtmlTools.debounce(() => PageControlTools.clickMainCover(), 340);
+
+                /**
                  * 切换或设置头部设置图标的显示方向（水平或垂直）。
                  *
                  * @param {string|undefined} [mode] - (可选) 控制类切换的行为。
@@ -14108,6 +14115,7 @@
                  * @returns {void}
                  */
                 static headChangeModes(mode) {
+                    PageControlTools.delayCloseMainCover.cancel();
                     const setting = HtmlTools.getHtml('#setting');
                     HtmlTools.getHtml('._head_setting_').classList[mode === undefined ? 'toggle' : mode]('Horizontal');
                     setting.classList[mode === undefined ? 'toggle' : mode]('SettingNotShow');
@@ -14128,6 +14136,7 @@
                  * @returns {void}
                  */
                 static headChangeExplain(mode) {
+                    PageControlTools.delayCloseMainCover.cancel();
                     const showOrNot = mode === undefined ? 'toggle' : mode;
                     HtmlTools.getHtml('#explain').classList[showOrNot]('ExplainNotShow');
                     HtmlTools.getHtml('#head_explain').classList[showOrNot]('ExplainNotShow');
@@ -14975,7 +14984,7 @@
                 PageConfig.currentMode = (mode === '2') ? '2_0' : mode;
 
                 // 延迟 340ms 关闭模态遮罩，预留 CSS drawer 收起动画过渡时长。
-                setTimeout(() => PageControlTools.clickMainCover(), 340);
+                PageControlTools.delayCloseMainCover();
                 return;
             }
 
@@ -15225,18 +15234,20 @@
                         const place = HtmlTools.getHtml(`#screen_input_inner_${key}`);
                         HtmlTools.appendDOMs(place, HtmlTools.textToHtmlClass(inner), {mode: 'replace'});
                     } else {
-                        const lastItem = inner.at(-1);
-                        // 统计表始终保留一个空白末行供继续输入，同时限制恢复数据的最大行数。
-                        if (lastItem[0].length !== 0 || lastItem[1].length !== 0) {
-                            inner.push(['', '']);
-                        }
-
+                        // 先限制总行数；满表保留全部数据，仅在有余量时补空白末行。
                         if (inner.length > InputManager.MAX_STATISTICS_ROW) {
                             inner.length = InputManager.MAX_STATISTICS_ROW;
                         }
+
+                        const lastItem = inner.at(-1);
+                        if (inner.length < InputManager.MAX_STATISTICS_ROW &&
+                            (!lastItem || lastItem[0].length !== 0 || lastItem[1].length !== 0)) {
+                            inner.push(['', '']);
+                        }
                     }
-                    PageConfig.screenData = {[key]: inner};
                 }
+                // 所有字段恢复完成后统一更新，避免逐字段重复序列化和写入存储。
+                PageConfig.screenData = data;
             });
 
             recoverData('subModes', (data) => {
