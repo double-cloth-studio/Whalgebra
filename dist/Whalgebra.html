@@ -9168,7 +9168,7 @@
 
                     // replace 模式先清空目标，随后仍通过 fragment 一次性挂载新节点。
                     if (mode === 'replace') {
-                        InputManager.ac({acArea: parentElement});
+                        targetParent.replaceChildren();
                     }
 
                     if (nameList.length === 0) {
