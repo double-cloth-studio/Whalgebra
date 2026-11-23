@@ -2029,6 +2029,9 @@
                             }
                             return resultString;
                         }
+
+                        default:
+                            throw new Error(`[BigNumber] Input error: Invalid argument}`);
                     }
                 }
             }
@@ -2289,6 +2292,9 @@
                             }
                             return `${modulus}[toPolar]${argument}`;
                         }
+
+                        default:
+                            throw new Error(`[ComplexNumber] Input error: Invalid argument}`);
                     }
                 }
             }
