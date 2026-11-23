@@ -35,7 +35,8 @@
 
                 /**
                  * 用于重启 Worker 的原始配置。
-                 * @type {object|null}
+                 * @type {{callableFunctions: Object<string, Function>,
+                 *   dependencies?: Array<{name: string, value: *}>, injectCancelSignal?: boolean}|null}
                  * @private
                  */
                 _config = null;
@@ -638,7 +639,7 @@
                  * @returns {Promise<T>} 以目标函数的可结构化克隆返回值兑现；`undefined`、数组、普通对象和
                  *   可克隆平台对象保持自身结构。Worker 抛出的错误会重建
                  *   `name`、`message`、`stack` 后拒绝，主动取消和超时分别使用可区分的错误名称。
-                 * @throws {Error} Worker 不可用或选项无效时抛出。
+                 * @throws {Error} Worker 不可用、函数名未注册或选项无效时同步抛出。
                  */
                 exec(functionName, {args = [], transfer = [], timeout = 0} = {}) {
                     if (!this._worker) {
@@ -646,6 +647,12 @@
                     }
                     if (typeof functionName !== 'string' || functionName.length === 0) {
                         throw new Error('[SyncWorker] functionName must be a non-empty string.');
+                    }
+
+                    if (!Object.hasOwn(this._config.callableFunctions, functionName)) {
+                        const error = new Error(`The function '${functionName}' is not defined in the Worker.`);
+                        error.name = 'FunctionNotFoundError';
+                        throw error;
                     }
                     if (!Array.isArray(args)) {
                         throw new Error('[SyncWorker] options.args must be an array.');
@@ -755,6 +762,28 @@
                 static _restartPromise = null;
 
                 /**
+                 * 当前 Worker 的环境同步 Promise；失败时保持拒绝，阻止继续派发。
+                 *
+                 * @private
+                 * @type {Promise<void>|null}
+                 */
+                static _initPromise = null;
+                /**
+                 * 当前环境同步的标识，防止旧同步流程干扰重启后的 Worker。
+                 *
+                 * @private
+                 * @type {symbol|null}
+                 */
+                static _stateId = null;
+
+                /** 已完成环境同步的标识；取消任务时不得中断 initEnv。 */
+                static _readyStateId = null;
+                /** 取消批次标识，使等待初始化的过期任务不再派发。 */
+                static _cancelId = Symbol();
+                /** 软取消后等待 Worker 响应的最长时间（毫秒）。 */
+                static _CANCEL_GRACE_TIME = 150;
+
+                /**
                  * 阻止实例化静态工具类。
                  *
                  * @throws {Error} 始终抛出。
@@ -792,6 +821,7 @@
                 static _ensureWorker() {
                     if (!this._mathWorker) {
                         this._mathWorker = new SyncWorker({
+                            injectCancelSignal: true,
                             callableFunctions: {
                                 setCalcAccuracy: (acc) => CalcConfig.globalCalcAccuracy = acc,
                                 getCalcAccuracy: () => CalcConfig.globalCalcAccuracy,
@@ -808,21 +838,30 @@
                                 statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
                                 radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
                                 valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
-                                exec: (expr, {
+                                exec: async (expr, {
                                     calcAcc,
                                     outputAcc,
                                     calcMode,
                                     outputMode,
+                                    printMode,
                                     f,
                                     g
-                                } = {}) => CalcTools.exec(expr, {
-                                    calcAcc: calcAcc,
-                                    outputAcc: outputAcc,
-                                    calcMode: calcMode,
-                                    outputMode: outputMode,
-                                    f: f,
-                                    g: g
-                                })
+                                } = {}, cancellationSignal) => {
+                                    // 先让出事件循环，使已排队的取消消息能在同步计算前生效。
+                                    await new Promise(resolve => setTimeout(resolve, 0));
+                                    cancellationSignal.throwIfCancelled();
+                                    const result = CalcTools.exec(expr, {
+                                        calcAcc: calcAcc,
+                                        outputAcc: outputAcc,
+                                        calcMode: calcMode,
+                                        outputMode: outputMode,
+                                        printMode: printMode,
+                                        f: f,
+                                        g: g
+                                    });
+                                    cancellationSignal.throwIfCancelled();
+                                    return result;
+                                }
                             },
                             dependencies: [
                                 {name: 'TokenConfig', value: TokenConfig},
@@ -838,12 +877,8 @@
                                 {name: 'CalcTools', value: CalcTools}
                             ]
                         });
-                        // 初始创建时，通过 _restartPromise 恢复主线程当前最新环境配置，避免并发调用发生竞态。
-                        this._restartPromise = this._restoreState().catch((err) => {
-                            console.warn('[WorkerTools] Initial state sync failed:', err);
-                        }).finally(() => {
-                            this._restartPromise = null;
-                        });
+                        // 初始化独立于重启锁，首次同步期间仍允许强制重启。
+                        this._initPromise = this._restoreState();
                     }
                     return this._mathWorker;
                 }
@@ -853,18 +888,30 @@
                  *
                  * @private
                  * @template T
-                 * @param {string} funcName - 数学 Worker 已注册的公开函数名；意外崩溃重启后会以同一名称重试。
+                 * @param {string} funcName - 数学 Worker 已注册的公开函数名；故障重启后不会自动重试本次调用。
                  * @param {Array} args - 可结构化克隆的位置参数；本方法会整体传给 `SyncWorker.exec`，不会改动
                  *   数组内容。每次分发统一使用 `_WORKER_TIMEOUT` 作为最长执行时间。
-                 * @returns {Promise<T>} 目标 Worker 方法的原始结果；仅 Worker 意外终止类故障会触发重启，
-                 *   业务计算错误、取消和超时保持原拒绝原因，不被包装成成功值。
+                 * @returns {Promise<T>} 目标 Worker 方法的原始结果；Worker 意外终止或任务超时会触发重启，
+                 *   恢复后仍以本次错误拒绝；业务计算错误和主动终止、取消直接以原错误拒绝。
                  */
                 static async _dispatch(funcName, args = []) {
+                    const cancelId = this._cancelId;
                     this._ensureWorker();
 
-                    // 若 Worker 正在重启，等待其初始化完成后再派发，避免误杀紧随 restart() 后的新请求。
-                    if (this._restartPromise) {
-                        await this._restartPromise;
+                    // 等待当前环境同步；等待期间若发生重启，继续等待新一轮同步。
+                    let initPromise;
+                    do {
+                        if (this._restartPromise) {
+                            await this._restartPromise;
+                        }
+                        initPromise = this._initPromise;
+                        await initPromise;
+                    } while (this._restartPromise || initPromise !== this._initPromise);
+
+                    if (cancelId !== this._cancelId) {
+                        const error = new Error('[WorkerTools] Task was cancelled before dispatch.');
+                        error.name = 'CancellationError';
+                        throw error;
                     }
 
                     try {
@@ -902,6 +949,8 @@
                  * @returns {Promise<void>}
                  */
                 static async _restoreState() {
+                    const stateId = this._stateId = Symbol();
+                    this._readyStateId = null;
                     // 若 initEnv 等待期间主线程配置再次变更，补同步一次最新快照，消除重启窗口期配置丢失。
                     while (true) {
                         const snapshot = {
@@ -910,11 +959,25 @@
                             printMode: CalcConfig.globalPrintMode
                         };
 
-                        // 为 initEnv 加上超时保护，避免极端情况下 _restartPromise 永久挂起。
-                        await this._mathWorker.exec('initEnv', {
-                            args: [snapshot],
-                            timeout: 10000
-                        });
+                        try {
+                            // 为 initEnv 加上超时保护，避免环境同步永久挂起。
+                            await this._mathWorker.exec('initEnv', {
+                                args: [snapshot],
+                                timeout: 10000
+                            });
+                        } catch (error) {
+                            // 旧初始化被重启中断时，不得终止已接替它的新 Worker。
+                            if (stateId === this._stateId) {
+                                this._mathWorker.terminate();
+                            }
+                            throw error;
+                        }
+
+                        if (stateId !== this._stateId) {
+                            const error = new Error('[WorkerTools] State sync was superseded by a restart.');
+                            error.name = 'TerminationError';
+                            throw error;
+                        }
 
                         if (
                             snapshot.calcAcc === CalcConfig.globalCalcAccuracy &&
@@ -924,6 +987,7 @@
                             break;
                         }
                     }
+                    this._readyStateId = stateId;
                 }
 
                 /**
@@ -938,30 +1002,60 @@
 
                     if (!this._restartPromise) {
                         // 异步执行 Worker 重启并恢复环境状态，单例 Promise 锁防止重复重启。
-                        this._restartPromise = (async () => {
-                            try {
-                                this._mathWorker.restart();
-                                await this._restoreState();
-                            } finally {
-                                this._restartPromise = null;
-                            }
-                        })();
+                        this._restartPromise = Promise.resolve().then(() => {
+                            this._mathWorker.restart();
+                            this._initPromise = this._restoreState();
+                            return this._initPromise;
+                        }).finally(() => {
+                            this._restartPromise = null;
+                        });
                     }
 
                     await this._restartPromise;
                 }
 
                 /**
-                 * 取消所有正在执行或排队的任务。
+                 * 软取消所有正在执行或等待派发的业务任务，保留环境初始化。
+                 * 若 Worker 在宽限期内仍无法响应轻量查询，再重启以中断同步长计算。
                  *
-                 * @returns {void}
+                 * @returns {Promise<void>} Worker 恢复响应或完成重启后解析。
                  */
-                static cancelWorker() {
+                static async cancelWorker() {
+                    this._cancelId = Symbol();
                     if (!this._mathWorker || this._mathWorker.isTerminated) {
                         return;
                     }
 
-                    this._mathWorker.cancel();
+                    if (this._restartPromise || this._readyStateId !== this._stateId) {
+                        return;
+                    }
+
+                    const worker = this._mathWorker;
+                    const stateId = this._stateId;
+                    worker.cancel();
+                    try {
+                        // 使用底层查询，避免探测超时进入 _dispatch 的通用故障恢复流程。
+                        await worker.exec('getCalcAccuracy', {timeout: this._CANCEL_GRACE_TIME});
+                    } catch (error) {
+                        if (worker !== this._mathWorker || stateId !== this._stateId ||
+                            error.name === 'CancellationError' || error.name === 'TerminationError') {
+                            return;
+                        }
+                        if (error.name === 'TimeoutError' || worker.isTerminated) {
+                            await this.restart();
+                        } else {
+                            throw error;
+                        }
+                    }
+                }
+
+                /**
+                 * 一次同步 Worker 的计算精度、输出精度和输出模式。
+                 * @param {{calcAcc: number, outputAcc: number, printMode: string}} config - 已校验的环境快照。
+                 * @returns {Promise<void>} 环境同步完成后兑现。
+                 */
+                static initEnv(config) {
+                    return this._dispatch('initEnv', [config]);
                 }
 
                 /**
@@ -1088,13 +1182,14 @@
                  * @param {'calc'|'syntaxCheck'} [options.calcMode='calc'] - 计算或语法检查模式。
                  * @param {'output'|'mid'} [options.outputMode='output'] - `output` 返回显示字符串，`mid` 保留可继续
                  *   计算的内部表示；后者的结果类型不能按普通字符串消费。
+                 * @param {'algebra'|'polar'} [options.printMode] - 本任务的复数输出形式，不修改默认配置。
                  * @param {string} [options.f] - 本任务中 `[f]` 对应的函数体，可引用 `[x]`、`[g]`。
                  * @param {string} [options.g] - 本任务中 `[g]` 对应的函数体，可引用 `[x]`、`[f]`。
                  * @returns {Promise<{result:string|[[number,bigint,number],[number,bigint,number]],expr:string}>}
                  *   `result` 的形态由 `outputMode` 决定：显示字符串或复数内部二元组；`expr` 始终为规范化表达式。
                  */
-                static exec(expr, {calcAcc, outputAcc, calcMode, outputMode, f, g} = {}) {
-                    return this._dispatch('exec', [expr, {calcAcc, outputAcc, calcMode, outputMode, f, g}]);
+                static exec(expr, {calcAcc, outputAcc, calcMode, outputMode, printMode, f, g} = {}) {
+                    return this._dispatch('exec', [expr, {calcAcc, outputAcc, calcMode, outputMode, printMode, f, g}]);
                 }
             }
 

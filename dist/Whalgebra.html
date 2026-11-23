@@ -1314,36 +1314,6 @@
                 }
 
                 /**
-                 * 校验并规范化计算精度，不修改配置。
-                 * @private
-                 * @param {number|undefined} acc - 计算精度；省略时采用上限。
-                 * @returns {number} 校验后的精度。
-                 */
-                static _normalizeCalcAccuracy(acc) {
-                    let numericAcc;
-
-                    if (acc === undefined) {
-                        numericAcc = CalcConfig.MAX_GLOBAL_CALC_ACCURACY;
-                    } else {
-                        numericAcc = Number(acc);
-
-                        if (Number.isNaN(numericAcc)) {
-                            throw new Error('[CalcConfig] Input error: Accuracy must be a number');
-                        }
-
-                        if (!Number.isInteger(numericAcc)) {
-                            throw new Error('[CalcConfig] Input error: Accuracy must be an integer.');
-                        }
-
-                        if (numericAcc > CalcConfig.MAX_GLOBAL_CALC_ACCURACY || numericAcc <= 0) {
-                            throw new Error(`[CalcConfig] Range error: Accuracy must be between 1 and ${CalcConfig.MAX_GLOBAL_CALC_ACCURACY}.`);
-                        }
-                    }
-
-                    return numericAcc;
-                }
-
-                /**
                  * 默认输出精度或精度比例。
                  *
                  * @private
@@ -1375,6 +1345,36 @@
                 static set outputAccuracy(acc) {
                     CalcConfig._outputAccuracy = CalcConfig._normalizeOutputAccuracy(acc, CalcConfig.globalCalcAccuracy);
                     this._syncToWorker('setOutputAccuracy', this._outputAccuracy);
+                }
+
+                /**
+                 * 校验并规范化计算精度，不修改配置。
+                 * @private
+                 * @param {number|undefined} acc - 计算精度；省略时采用上限。
+                 * @returns {number} 校验后的精度。
+                 */
+                static _normalizeCalcAccuracy(acc) {
+                    let numericAcc;
+
+                    if (acc === undefined) {
+                        numericAcc = CalcConfig.MAX_GLOBAL_CALC_ACCURACY;
+                    } else {
+                        numericAcc = Number(acc);
+
+                        if (Number.isNaN(numericAcc)) {
+                            throw new Error('[CalcConfig] Input error: Accuracy must be a number');
+                        }
+
+                        if (!Number.isInteger(numericAcc)) {
+                            throw new Error('[CalcConfig] Input error: Accuracy must be an integer.');
+                        }
+
+                        if (numericAcc > CalcConfig.MAX_GLOBAL_CALC_ACCURACY || numericAcc <= 0) {
+                            throw new Error(`[CalcConfig] Range error: Accuracy must be between 1 and ${CalcConfig.MAX_GLOBAL_CALC_ACCURACY}.`);
+                        }
+                    }
+
+                    return numericAcc;
                 }
 
                 /**
@@ -1699,15 +1699,6 @@
                 }
 
                 /**
-                 * 获取当前 BigNumber 实例的十进制数量级。
-                 *
-                 * @returns {number}
-                 */
-                getMag() {
-                    return BigNumber.getMag(this);
-                }
-
-                /**
                  * 计算一个 BigInt 的十进制位数。
                  * 利用 `10^(2^k)` 倍增定位上界，再按二进制位从高到低整除缩减，
                  * 无需构造任何中间的 `10^mid`，内存占用严格有界。
@@ -1946,6 +1937,15 @@
                     }
 
                     return [power, mantissa];
+                }
+
+                /**
+                 * 获取当前 BigNumber 实例的十进制数量级。
+                 *
+                 * @returns {number}
+                 */
+                getMag() {
+                    return BigNumber.getMag(this);
                 }
 
                 /**
@@ -6207,8 +6207,9 @@
                  * @private
                  * @param {Array<ComplexNumber|string|number>} list - 严格按降幂 `[a, b, c, d]` 传入的系数；
                  *   首项 `a` 应非零。重根会按内部近零判定合并，输入数组不被改写。
-                 * @returns {Array<ComplexNumber|null>} 按精度判定去重后的根：全实根按实部排序；一实根加一对
-                 *   共轭复根时返回三个根并追加 `null` 哨兵。上层只取次数范围内的真实根项。
+                 * @returns {Array<ComplexNumber|null>} 按精度判定去重后的根：三个互异实根按实部排序；
+                 *   一个单根与一个二重根时按 `[单根, 二重根]` 返回；一实根加一对共轭复根时返回三个根
+                 *   并追加 `null` 哨兵。上层只取次数范围内的真实根项。
                  */
                 static _solveCubic(list) {
                     const
@@ -6273,16 +6274,12 @@
                     }
 
                     if (delta.isZero()) {
-                        // Δ=0：至少两个实根重合；函数值符号用于维持“重根在前”的返回约定。
+                        // Δ=0 且 A、B 不同时为零：root1 为单根、root2 为二重根；上层依赖单根位于索引 0。
                         const k = MathPlus.divide(B, A);
                         const root1 = MathPlus.minus(k, MathPlus.divide(b, a));
                         const root2 = MathPlus.divide(k, -2);
 
-                        const step = MathPlus.divide(MathPlus.minus(root2, root1), 2);
-                        const func1 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.plus(root1, step));
-                        const func2 = PowerFunctionTools._getPowerFunctionValue(list, MathPlus.minus(root1, step));
-                        const sign = MathPlus.times(func1, func2).re.mantissa;
-                        return sign > 0n ? [root2, root1] : [root1, root2];
+                        return [root1, root2];
                     }
 
                     const absA = MathPlus.abs(A);
@@ -7185,7 +7182,8 @@
 
                 /**
                  * 用于重启 Worker 的原始配置。
-                 * @type {object|null}
+                 * @type {{callableFunctions: Object<string, Function>,
+                 *   dependencies?: Array<{name: string, value: *}>, injectCancelSignal?: boolean}|null}
                  * @private
                  */
                 _config = null;
@@ -7788,7 +7786,7 @@
                  * @returns {Promise<T>} 以目标函数的可结构化克隆返回值兑现；`undefined`、数组、普通对象和
                  *   可克隆平台对象保持自身结构。Worker 抛出的错误会重建
                  *   `name`、`message`、`stack` 后拒绝，主动取消和超时分别使用可区分的错误名称。
-                 * @throws {Error} Worker 不可用或选项无效时抛出。
+                 * @throws {Error} Worker 不可用、函数名未注册或选项无效时同步抛出。
                  */
                 exec(functionName, {args = [], transfer = [], timeout = 0} = {}) {
                     if (!this._worker) {
@@ -7796,6 +7794,12 @@
                     }
                     if (typeof functionName !== 'string' || functionName.length === 0) {
                         throw new Error('[SyncWorker] functionName must be a non-empty string.');
+                    }
+
+                    if (!Object.hasOwn(this._config.callableFunctions, functionName)) {
+                        const error = new Error(`The function '${functionName}' is not defined in the Worker.`);
+                        error.name = 'FunctionNotFoundError';
+                        throw error;
                     }
                     if (!Array.isArray(args)) {
                         throw new Error('[SyncWorker] options.args must be an array.');
@@ -8031,11 +8035,11 @@
                  *
                  * @private
                  * @template T
-                 * @param {string} funcName - 数学 Worker 已注册的公开函数名；意外崩溃重启后会以同一名称重试。
+                 * @param {string} funcName - 数学 Worker 已注册的公开函数名；故障重启后不会自动重试本次调用。
                  * @param {Array} args - 可结构化克隆的位置参数；本方法会整体传给 `SyncWorker.exec`，不会改动
                  *   数组内容。每次分发统一使用 `_WORKER_TIMEOUT` 作为最长执行时间。
-                 * @returns {Promise<T>} 目标 Worker 方法的原始结果；仅 Worker 意外终止类故障会触发重启，
-                 *   业务计算错误、取消和超时保持原拒绝原因，不被包装成成功值。
+                 * @returns {Promise<T>} 目标 Worker 方法的原始结果；Worker 意外终止或任务超时会触发重启，
+                 *   恢复后仍以本次错误拒绝；业务计算错误和主动终止、取消直接以原错误拒绝。
                  */
                 static async _dispatch(funcName, args = []) {
                     const cancelId = this._cancelId;
@@ -8350,8 +8354,8 @@
             class PageConfig {
                 /**
                  * 定义了“普通精度”模式下的计算和输出精度配置。
-                 * - `globalCalcAccuracy`: 30位的内部计算精度，适用于快速计算。
-                 * - `outputAccuracy`: 10位的输出显示精度。
+                 * - `globalCalcAccuracy`: 36位的内部计算精度，适用于快速计算。
+                 * - `outputAccuracy`: 12位的输出显示精度。
                  * 此配置通过 `calcAccMode` setter 应用。
                  *
                  * @readonly
@@ -8616,67 +8620,6 @@
                  */
                 static set currentMode(mode) {
                     PageConfig.setCurrentMode(mode);
-                }
-
-                /**
-                 * 切换主模式；仅显式初始化时允许重放当前模式的界面更新。
-                 * @param {'0'|'1'|'2_0'|'2_1'|'3'|'4'} mode - 目标主模式。
-                 * @param {Object} [options={}] - 切换选项。
-                 * @param {boolean} [options.initialize=false] - 是否强制初始化界面。
-                 * @returns {void}
-                 */
-                static setCurrentMode(mode, {initialize = false} = {}) {
-                    if (!['0', '1', '2_0', '2_1', '3', '4'].includes(mode)) {
-                        throw new Error('[PageConfig] Unsupported mode');
-                    }
-
-                    if (mode === PageConfig._currentMode && !initialize) {
-                        return;
-                    }
-                    if (PageConfig._currentMode === '0' && mode !== '0') {
-                        PrintManager.mode0ShowOnScreen.cancel();
-                    }
-
-                    // 标题和屏幕切换仍需读取旧模式，因此必须在覆写 _currentMode 前执行。
-                    PageControlTools.changeTitle(mode);
-                    PageControlTools.changeScreen(mode);
-
-                    // 模式切换同时维护输入区、结果区、虚拟列表、键盘提示和持久化状态。
-                    HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.remove('SelectionOn');
-                    HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.add('NoDisplay');
-                    PageConfig._currentMode = mode;
-                    // 虚拟统计表只在统计模式保持运行，离开时暂停以免隐藏容器参与测量。
-                    if (mode === '1') {
-                        HtmlTools.getHtml('#keyboard_top').classList.add('ForMode1');
-                        const data = PageConfig.screenData['1'];
-                        InputManager.statisticsRenderer.load(data, data.length, {resetScroll: false});
-
-                        HtmlTools.scrollToView();
-                    } else {
-                        if (InputManager.statisticsRenderer.isRunning()) {
-                            InputManager.statisticsRenderer.pause();
-                        }
-                        HtmlTools.getHtml('#keyboard_top').classList.remove('ForMode1');
-                    }
-
-                    // 离开函数值列表模式时清理结果虚拟列表，避免隐藏后仍响应 ResizeObserver。
-                    if (mode !== '2_1' && PrintManager.printListRenderer.isRunning()) {
-                        PrintManager.printListRenderer.clear();
-                    }
-
-                    HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.add('SelectionOn');
-                    HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.remove('NoDisplay');
-                    PageControlTools.keyboardFuncBecomeX();
-                    PageControlTools.changeInputTip();
-                    PageControlTools.changeSubKeyboard('allNotShow');
-                    if (!HtmlTools.getHtml('.InputTip')) {
-                        InputManager.ac();
-                    }
-                    try {
-                        localStorage.setItem('currentMode', mode);
-                    } catch {
-                        console.warn('[PageConfig] "currentMode" storage failed');
-                    }
                 }
 
                 /**
@@ -8971,6 +8914,67 @@
                         localStorage.setItem('screenData', JSON.stringify(PageConfig._screenData));
                     } catch {
                         console.warn('[PageConfig] "screenData" storage failed');
+                    }
+                }
+
+                /**
+                 * 切换主模式；仅显式初始化时允许重放当前模式的界面更新。
+                 * @param {'0'|'1'|'2_0'|'2_1'|'3'|'4'} mode - 目标主模式。
+                 * @param {Object} [options={}] - 切换选项。
+                 * @param {boolean} [options.initialize=false] - 是否强制初始化界面。
+                 * @returns {void}
+                 */
+                static setCurrentMode(mode, {initialize = false} = {}) {
+                    if (!['0', '1', '2_0', '2_1', '3', '4'].includes(mode)) {
+                        throw new Error('[PageConfig] Unsupported mode');
+                    }
+
+                    if (mode === PageConfig._currentMode && !initialize) {
+                        return;
+                    }
+                    if (PageConfig._currentMode === '0' && mode !== '0') {
+                        PrintManager.mode0ShowOnScreen.cancel();
+                    }
+
+                    // 标题和屏幕切换仍需读取旧模式，因此必须在覆写 _currentMode 前执行。
+                    PageControlTools.changeTitle(mode);
+                    PageControlTools.changeScreen(mode);
+
+                    // 模式切换同时维护输入区、结果区、虚拟列表、键盘提示和持久化状态。
+                    HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.remove('SelectionOn');
+                    HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.add('NoDisplay');
+                    PageConfig._currentMode = mode;
+                    // 虚拟统计表只在统计模式保持运行，离开时暂停以免隐藏容器参与测量。
+                    if (mode === '1') {
+                        HtmlTools.getHtml('#keyboard_top').classList.add('ForMode1');
+                        const data = PageConfig.screenData['1'];
+                        InputManager.statisticsRenderer.load(data, data.length, {resetScroll: false});
+
+                        HtmlTools.scrollToView();
+                    } else {
+                        if (InputManager.statisticsRenderer.isRunning()) {
+                            InputManager.statisticsRenderer.pause();
+                        }
+                        HtmlTools.getHtml('#keyboard_top').classList.remove('ForMode1');
+                    }
+
+                    // 离开函数值列表模式时清理结果虚拟列表，避免隐藏后仍响应 ResizeObserver。
+                    if (mode !== '2_1' && PrintManager.printListRenderer.isRunning()) {
+                        PrintManager.printListRenderer.clear();
+                    }
+
+                    HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.add('SelectionOn');
+                    HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.remove('NoDisplay');
+                    PageControlTools.keyboardFuncBecomeX();
+                    PageControlTools.changeInputTip();
+                    PageControlTools.changeSubKeyboard('allNotShow');
+                    if (!HtmlTools.getHtml('.InputTip')) {
+                        InputManager.ac();
+                    }
+                    try {
+                        localStorage.setItem('currentMode', mode);
+                    } catch {
+                        console.warn('[PageConfig] "currentMode" storage failed');
                     }
                 }
 
@@ -14057,6 +14061,12 @@
                  * @type {string}
                  */
                 static _currentRaModel = 'choose_ra_0';
+                /**
+                 * 模式选择后延迟关闭主遮罩，重复选择只保留最后一次关闭任务。
+                 * 面板显隐变化时调用 cancel()，避免旧任务关闭重新打开的面板。
+                 * @type {Function & {cancel:function():void}}
+                 */
+                static delayCloseMainCover = HtmlTools.debounce(() => PageControlTools.clickMainCover(), 340);
 
                 /**
                  * 阻止实例化静态页面控制器。
@@ -14216,13 +14226,6 @@
                     PageControlTools.headChangeExplain('add');
                     HtmlTools.getHtml('#main_cover').classList.add('NoDisplay');
                 }
-
-                /**
-                 * 模式选择后延迟关闭主遮罩，重复选择只保留最后一次关闭任务。
-                 * 面板显隐变化时调用 cancel()，避免旧任务关闭重新打开的面板。
-                 * @type {Function & {cancel:function():void}}
-                 */
-                static delayCloseMainCover = HtmlTools.debounce(() => PageControlTools.clickMainCover(), 340);
 
                 /**
                  * 切换或设置头部设置图标的显示方向（水平或垂直）。

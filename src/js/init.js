@@ -2,7 +2,6 @@
 document.addEventListener('click', (event) => {
     "use strict";
 
-    // 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
     /**
      * 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
      * @param {Element|null} el - DOM 元素。
@@ -146,7 +145,7 @@ document.addEventListener('click', (event) => {
         PageConfig.currentMode = (mode === '2') ? '2_0' : mode;
 
         // 延迟 340ms 关闭模态遮罩，预留 CSS drawer 收起动画过渡时长。
-        setTimeout(() => PageControlTools.clickMainCover(), 340);
+        PageControlTools.delayCloseMainCover();
         return;
     }
 
@@ -240,10 +239,42 @@ document.addEventListener('keydown', (event) => {
     "use strict";
 
     const key = event.key;
+    const isCodeNumber = TokenConfig.codeNumbers.has(`[${key}]`);
+
+    // 除配置中的数学符号输入外，Alt 组合键交由浏览器处理。
+    if (event.ctrlKey || event.metaKey || (event.altKey && !isCodeNumber)) {
+        return;
+    }
 
     PageControlTools.hideExplain();
 
-    if (event.ctrlKey || event.metaKey) {
+    const coverShown = !HtmlTools.getHtml('#main_cover').classList.contains('NoDisplay');
+    const inputMode = HtmlTools.getHtml('#main').classList.contains('Input');
+
+    // 按 UI 层级关闭模态遮罩或退出/取消结果页；Escape 在输入态不执行计算。
+    if (key === 'Enter' || key === 'Escape') {
+        if (coverShown) {
+            event.preventDefault();
+            return PageControlTools.clickMainCover();
+        }
+
+        if (!inputMode) {
+            event.preventDefault();
+            if (!HtmlTools.getHtml('#load_cover').classList.contains('NoDisplay')) {
+                return PageControlTools.cancelPrint();
+            }
+            return PageControlTools.closePrint();
+        }
+
+        if (key === 'Enter') {
+            event.preventDefault();
+            return PrintManager.exe();
+        }
+        return;
+    }
+
+    // 非输入态保留按键默认行为，禁止修改隐藏的输入内容或光标。
+    if (coverShown || !inputMode) {
         return;
     }
 
@@ -271,30 +302,13 @@ document.addEventListener('keydown', (event) => {
             event.preventDefault();
 
             return InputManager.moveCursor(key.slice(5).toLowerCase(), event.shiftKey);
-
-        case 'Enter':
-            event.preventDefault();
-
-            // Enter 按 UI 层级处理：先关闭模态遮罩，再退出/取消结果页，最后才提交当前表达式。
-            if (!HtmlTools.getHtml('#main_cover').classList.contains('NoDisplay')) {
-                return PageControlTools.clickMainCover();
-            }
-
-            if (!HtmlTools.getHtml('#main').classList.contains('Input')) {
-                if (!HtmlTools.getHtml('#load_cover').classList.contains('NoDisplay')) {
-                    return PageControlTools.cancelPrint();
-                }
-                return PageControlTools.closePrint();
-            }
-
-            return PrintManager.exe();
     }
 
     if (/^([a-z0-9E])$/.test(key)) {
         event.preventDefault();
 
-        if (event.altKey && ['e', 'i', 'x'].includes(key)) {
-            // Alt+e/i/x 输入数学变量样式，普通按键仍保留字母词元，避免两种含义混淆。
+        if (event.altKey && isCodeNumber) {
+            // 配置中的数学符号使用数学变量样式，普通按键仍保留字母词元。
             const input = [`_${key}_mathit_`];
             InputManager.input(input);
             PageControlTools.showExplain(input);
@@ -370,7 +384,7 @@ window.addEventListener('load', () => {
 
     // 恢复顺序不可交换：模式先建立页面上下文，输入数据随后决定子模式的合法范围，最后恢复显示选项。
     recoverData('currentMode', (data) => {
-        PageConfig.currentMode = data;
+        PageConfig.setCurrentMode(data, {initialize: true});
     });
 
     recoverData('screenData', (data) => {
@@ -381,18 +395,20 @@ window.addEventListener('load', () => {
                 const place = HtmlTools.getHtml(`#screen_input_inner_${key}`);
                 HtmlTools.appendDOMs(place, HtmlTools.textToHtmlClass(inner), {mode: 'replace'});
             } else {
-                const lastItem = inner.at(-1);
-                // 统计表始终保留一个空白末行供继续输入，同时限制恢复数据的最大行数。
-                if (lastItem[0].length !== 0 || lastItem[1].length !== 0) {
-                    inner.push(['', '']);
-                }
-
+                // 先限制总行数；满表保留全部数据，仅在有余量时补空白末行。
                 if (inner.length > InputManager.MAX_STATISTICS_ROW) {
                     inner.length = InputManager.MAX_STATISTICS_ROW;
                 }
+
+                const lastItem = inner.at(-1);
+                if (inner.length < InputManager.MAX_STATISTICS_ROW &&
+                    (!lastItem || lastItem[0].length !== 0 || lastItem[1].length !== 0)) {
+                    inner.push(['', '']);
+                }
             }
-            PageConfig.screenData = {[key]: inner};
         }
+        // 所有字段恢复完成后统一更新，避免逐字段重复序列化和写入存储。
+        PageConfig.screenData = data;
     });
 
     recoverData('subModes', (data) => {

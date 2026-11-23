@@ -192,37 +192,50 @@
         static typeOf = (value) => Object.prototype.toString.call(value).slice(8, -1).toLowerCase();
 
         /**
-         * 将精度范围内接近零的实部和虚部归零。
+         * 将精度范围内可忽略的分量归零。
+         * - 不传 refs 时：仅清理复数中相对另一分量可忽略的噪声，保留纯实数/纯虚数小量。
+         * - 传入 refs 时：以参考值中的最大量级为基准，对实部和虚部执行相对判零。
          *
-         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 待修正的数值，格式必须能被
-         *   `ComplexNumber` 构造器接受；数组既可表示 `[real, imag]`，也可表示底层高精度数值元组。
-         *   该方法会创建新实例，不会修改传入的 `BigNumber`、`ComplexNumber` 或数组。
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 待修正的数值。
+         * @param {...(string|number|bigint|BigNumber|ComplexNumber|Array|null|undefined)} refs - 可选参考尺度。
          * @returns {ComplexNumber} 修正后的复数。
          */
-        static zeroCorrect(x) {
-            /**
-             * 将精度阈值内的 `BigNumber` 归零。
-             *
-             * @param {BigNumber} input - 待修正的实部或虚部；其 `acc` 同时决定判零阈值和返回零值的精度。
-             * @returns {BigNumber} 零值或原值。
-             * @private
-             */
-            function _bigNumberZeroCorrect(input) {
-                const acc = input.acc;
-                // 阈值同时保留至少 90% 的有效数字和最多 8 位保护位；取更严格者
-                // 只消除由中间运算产生的尾部噪声，避免把低精度下仍有意义的小量误判为零。
-                const smallNum = new ComplexNumber([-Math.max(Math.floor(0.9 * acc), acc - 8), 1n, acc]);
-                if (MathPlus.minus(smallNum, MathPlus.abs(input)).re.isPositive()) {
-                    return new BigNumber([0, 0n, acc]);
+        static zeroCorrect(x, ...refs) {
+            const input = x instanceof ComplexNumber ? x : new ComplexNumber(x);
+            const acc = input.acc;
+            const tol = Math.max(Math.floor(0.9 * acc), acc - 8);
+
+            const reMag = BigNumber.getMag(input.re);
+            const imMag = BigNumber.getMag(input.im);
+
+            let refMag = -Infinity;
+            for (const ref of refs) {
+                if (ref === null || ref === undefined) {
+                    continue;
                 }
-                return input;
+                if (ref instanceof BigNumber) {
+                    refMag = Math.max(refMag, BigNumber.getMag(ref));
+                } else {
+                    const refNum = ref instanceof ComplexNumber ? ref : new ComplexNumber(ref);
+                    refMag = Math.max(refMag, BigNumber.getMag(refNum.re), BigNumber.getMag(refNum.im));
+                }
             }
 
-            x = new ComplexNumber(x);
-            return new ComplexNumber([
-                _bigNumberZeroCorrect(x.re),
-                _bigNumberZeroCorrect(x.im)
-            ]);
+            // 每个分量同时以“外部参考尺度”和“另一分量尺度”的较大者为基准。
+            const reRef = Math.max(refMag, imMag);
+            const imRef = Math.max(refMag, reMag);
+
+            const re = (!input.re.isZero() && reRef !== -Infinity && reRef - reMag > tol)
+                       ? new BigNumber([0, 0n, input.re.acc])
+                       : input.re;
+            const im = (!input.im.isZero() && imRef !== -Infinity && imRef - imMag > tol)
+                       ? new BigNumber([0, 0n, input.im.acc])
+                       : input.im;
+
+            if (re === input.re && im === input.im) {
+                return input;
+            }
+            return new ComplexNumber([re, im]);
         }
 
         /**
@@ -288,6 +301,19 @@
                 return Math.min(acc, numAcc);
             };
 
+            /**
+             * 清理已完全落入噪声底噪的分量。
+             *
+             * @param {BigNumber} bn
+             * @returns {BigNumber}
+             */
+            const cleanNoise = (bn) => {
+                if (!bn.isZero() && bn.noiseMag !== -Infinity && BigNumber.getMag(bn) <= bn.noiseMag + 4) {
+                    return new BigNumber([0, 0n, bn.acc]);
+                }
+                return bn;
+            };
+
             switch (Public.typeOf(x)) {
                 case 'array': {
                     const result = [];
@@ -296,8 +322,13 @@
                             result.push('error');
                         } else {
                             const num = new ComplexNumber(x[i]);
-                            const realAcc = Math.max(1, getRealAcc(num.acc));
-                            result.push(Public.zeroCorrect(num).toString({
+                            const cleanedRe = cleanNoise(num.re);
+                            const cleanedIm = cleanNoise(num.im);
+                            const cleanNum = (cleanedRe === num.re && cleanedIm === num.im)
+                                             ? num
+                                             : new ComplexNumber([cleanedRe, cleanedIm]);
+                            const realAcc = Math.max(1, getRealAcc(cleanNum.acc));
+                            result.push(Public.zeroCorrect(cleanNum).toString({
                                 acc: realAcc,
                                 printMode: printMode
                             }));
@@ -305,14 +336,63 @@
                     }
                     return result;
                 }
-                default:
+                default: {
                     const num = new ComplexNumber(x);
-                    const realAcc = Math.max(1, getRealAcc(num.acc));
-                    return Public.zeroCorrect(num).toString({
+                    const cleanedRe = cleanNoise(num.re);
+                    const cleanedIm = cleanNoise(num.im);
+                    const cleanNum = (cleanedRe === num.re && cleanedIm === num.im)
+                                     ? num
+                                     : new ComplexNumber([cleanedRe, cleanedIm]);
+                    const realAcc = Math.max(1, getRealAcc(cleanNum.acc));
+                    return Public.zeroCorrect(cleanNum).toString({
                         acc: realAcc,
                         printMode: printMode
                     });
+                }
             }
+        }
+
+        /**
+         * 仅拼装已经格式化的系数字符串，避免各模型重复解析和修正系数。
+         *
+         * @private
+         * @param {string[]} strList - 按常数项到最高次项排列的系数字符串。
+         * @param {string} asX - 自变量词元或子表达式。
+         * @returns {string} 多项式表达式。
+         */
+        static _formatPowerFunc(strList, asX) {
+            let result = '';
+            let firstNoneZero = false;
+            for (let i = strList.length - 1; i >= 0; i--) {
+                const currentCoefficient = strList[i];
+                if (currentCoefficient !== '0') {
+                    if (firstNoneZero && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
+                        result += '+';
+                    }
+                    firstNoneZero = true;
+
+                    if (i !== 0) {
+                        if (currentCoefficient === '1') {
+                            result += asX;
+                        } else if (currentCoefficient === '-1') {
+                            result += `-${asX}`;
+                        } else if (currentCoefficient.includes('E')) {
+                            result += `(${currentCoefficient})${asX}`;
+                        } else {
+                            result += `${currentCoefficient}${asX}`;
+                        }
+                    } else if (!currentCoefficient.includes('E')) {
+                        result += currentCoefficient;
+                    } else {
+                        result += strList.length === 1 ? currentCoefficient : `(${currentCoefficient})`;
+                    }
+
+                    if (![0, 1].includes(i)) {
+                        result += `^${i}`;
+                    }
+                }
+            }
+            return firstNoneZero ? result : '0';
         }
 
         /**
@@ -329,7 +409,7 @@
          *   - 'abxFunc': 指数函数, f(x) = a * b^x
          *   - 'axbFunc': 幂函数, f(x) = a * x^b
          *   - 'reciprocalFunc': 反比例函数, f(x) = a + b/x
-         * @param {string} [asX='[x]'] - 插入表达式的变量词元或子表达式；递归格式化 `lnFunc`、
+         * @param {string} [asX='[x]'] - 插入表达式的变量词元或子表达式；格式化 `lnFunc`、
          *   `expFunc` 等模型时也用它替换自变量，因此调用方需自行提供必要的括号或内部词元。
          * @returns {string} 数学表达式；输入错误时返回 `error`。
          */
@@ -345,46 +425,12 @@
 
             switch (mode) {
                 // 多项式：aₙxⁿ + ... + a₁x + a₀。
-                case 'powerFunc': {
-                    let firstNoneZero = false;
-                    for (let i = list.length - 1; i >= 0; i--) {
-                        const currentCoefficient = list[i];
-                        if (currentCoefficient !== '0') {
-                            if (firstNoneZero && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
-                                result += '+';
-                            }
-                            firstNoneZero = true;
-
-                            if (i !== 0) {
-                                if (currentCoefficient === '1') {
-                                    result += asX;
-                                } else if (currentCoefficient === '-1') {
-                                    result += `-${asX}`;
-                                } else if (currentCoefficient.includes('E')) {
-                                    result += `(${currentCoefficient})${asX}`;
-                                } else {
-                                    result += `${currentCoefficient}${asX}`;
-                                }
-                            } else if (!currentCoefficient.includes('E')) {
-                                result += currentCoefficient;
-                            } else {
-                                result += list.length === 1 ? currentCoefficient : `(${currentCoefficient})`;
-                            }
-
-                            if (![0, 1].includes(i)) {
-                                result += `^${i}`;
-                            }
-                        }
-                    }
-                    if (!firstNoneZero) {
-                        return '0';
-                    }
-                    return result;
-                }
+                case 'powerFunc':
+                    return Public._formatPowerFunc(list, asX);
 
                 // 对数多项式：以 ln(x) 代替变量。
                 case 'lnFunc':
-                    return Public.funcToString(list, 'powerFunc', `ln(${asX})`);
+                    return Public._formatPowerFunc(list, `ln(${asX})`);
 
                 // 指数模型：a·exp(bx)。
                 case 'expFunc':
@@ -394,7 +440,7 @@
                     if (b === '0') {
                         return a;
                     }
-                    return Public.funcToString([0, a], 'powerFunc', `exp(${Public.funcToString([0, b], 'powerFunc', asX)})`);
+                    return Public._formatPowerFunc(['0', a], `exp(${Public._formatPowerFunc(['0', b], asX)})`);
 
                 // 指数模型：a·b^x。
                 case 'abxFunc':
@@ -428,7 +474,7 @@
                     } else {
                         result += `${asX}^(${b})`;
                     }
-                    return Public.funcToString([0, a], 'powerFunc', result);
+                    return Public._formatPowerFunc(['0', a], result);
 
                 // 反比例模型：a + b/x。
                 case 'reciprocalFunc':
@@ -1240,26 +1286,7 @@
          * @throws {Error} 精度无效时抛出。
          */
         static set globalCalcAccuracy(acc) {
-            let numericAcc;
-
-            if (acc === undefined) {
-                numericAcc = CalcConfig.MAX_GLOBAL_CALC_ACCURACY;
-            } else {
-                numericAcc = Number(acc);
-
-                if (Number.isNaN(numericAcc)) {
-                    throw new Error('[CalcConfig] Input error: Accuracy must be a number');
-                }
-
-                if (!Number.isInteger(numericAcc)) {
-                    throw new Error('[CalcConfig] Input error: Accuracy must be an integer.');
-                }
-
-                if (numericAcc > CalcConfig.MAX_GLOBAL_CALC_ACCURACY || numericAcc <= 0) {
-                    throw new Error(`[CalcConfig] Range error: Accuracy must be between 1 and ${CalcConfig.MAX_GLOBAL_CALC_ACCURACY}.`);
-                }
-            }
-
+            const numericAcc = CalcConfig._normalizeCalcAccuracy(acc);
             CalcConfig._globalCalcAccuracy = numericAcc;
 
             // 绝对输出精度不能超过计算精度。
@@ -1305,10 +1332,52 @@
          * @throws {Error} 输出精度无效时抛出。
          */
         static set outputAccuracy(acc) {
+            CalcConfig._outputAccuracy = CalcConfig._normalizeOutputAccuracy(acc, CalcConfig.globalCalcAccuracy);
+            this._syncToWorker('setOutputAccuracy', this._outputAccuracy);
+        }
+
+        /**
+         * 校验并规范化计算精度，不修改配置。
+         * @private
+         * @param {number|undefined} acc - 计算精度；省略时采用上限。
+         * @returns {number} 校验后的精度。
+         */
+        static _normalizeCalcAccuracy(acc) {
             let numericAcc;
 
             if (acc === undefined) {
-                numericAcc = CalcConfig.globalCalcAccuracy;
+                numericAcc = CalcConfig.MAX_GLOBAL_CALC_ACCURACY;
+            } else {
+                numericAcc = Number(acc);
+
+                if (Number.isNaN(numericAcc)) {
+                    throw new Error('[CalcConfig] Input error: Accuracy must be a number');
+                }
+
+                if (!Number.isInteger(numericAcc)) {
+                    throw new Error('[CalcConfig] Input error: Accuracy must be an integer.');
+                }
+
+                if (numericAcc > CalcConfig.MAX_GLOBAL_CALC_ACCURACY || numericAcc <= 0) {
+                    throw new Error(`[CalcConfig] Range error: Accuracy must be between 1 and ${CalcConfig.MAX_GLOBAL_CALC_ACCURACY}.`);
+                }
+            }
+
+            return numericAcc;
+        }
+
+        /**
+         * 按目标计算精度校验输出精度，不修改配置。
+         * @private
+         * @param {number|undefined} acc - 输出精度策略；省略时采用计算精度。
+         * @param {number} calcAcc - 目标计算精度。
+         * @returns {number} 校验后的输出精度。
+         */
+        static _normalizeOutputAccuracy(acc, calcAcc) {
+            let numericAcc;
+
+            if (acc === undefined) {
+                numericAcc = calcAcc;
             } else {
                 numericAcc = Number(acc);
 
@@ -1324,22 +1393,40 @@
                     throw new Error('[CalcConfig] Input error: Accuracy must be an integer when greater than 1.');
                 }
 
-                if (numericAcc > CalcConfig.globalCalcAccuracy) {
-                    throw new Error(`[CalcConfig] Range error: Accuracy must be at most ${CalcConfig.globalCalcAccuracy}.`);
+                if (numericAcc > calcAcc) {
+                    throw new Error(`[CalcConfig] Range error: Accuracy must be at most ${calcAcc}.`);
                 }
             }
 
-            CalcConfig._outputAccuracy = numericAcc;
-            this._syncToWorker('setOutputAccuracy', this._outputAccuracy);
+            return numericAcc;
+        }
+
+        /**
+         * 同时设置计算和输出精度，完整校验后仅同步一次 Worker 环境。
+         * @param {number|undefined} calcAcc - 计算精度，规则同 `globalCalcAccuracy`。
+         * @param {number|undefined} outputAcc - 输出精度，按目标计算精度校验。
+         * @returns {void}
+         * @throws {Error} 任一精度无效时抛出，保留原配置。
+         */
+        static setAccuracy(calcAcc, outputAcc) {
+            const numericCalcAcc = CalcConfig._normalizeCalcAccuracy(calcAcc);
+            const numericOutputAcc = CalcConfig._normalizeOutputAccuracy(outputAcc, numericCalcAcc);
+            CalcConfig._globalCalcAccuracy = numericCalcAcc;
+            CalcConfig._outputAccuracy = numericOutputAcc;
+            this._syncToWorker('initEnv', {
+                calcAcc: numericCalcAcc,
+                outputAcc: numericOutputAcc,
+                printMode: CalcConfig.globalPrintMode
+            });
         }
 
         /**
          * 将主线程配置同步到已就绪的 Worker。
          *
          * @private
-         * @param {string} methodName - `WorkerTools` 已注册的配置方法名，例如 `setAccuracy`、
+         * @param {string} methodName - `WorkerTools` 已注册的配置方法名，例如 `initEnv`、
          *   `setOutputAccuracy` 或 `setPrintMode`；网页模式下会按该名称分发异步调用。
-         * @param {number|string} value - 与目标方法契约一致的新配置值；该值通过 Worker 消息复制，
+         * @param {number|string|Object} value - 与目标方法契约一致的新配置值；该值通过 Worker 消息复制，
          *   同步失败仅记录错误，不回滚主线程已经生效的配置。
          * @returns {void}
          */

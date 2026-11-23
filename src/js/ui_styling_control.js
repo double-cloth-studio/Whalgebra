@@ -6,8 +6,8 @@
     class PageConfig {
         /**
          * 定义了“普通精度”模式下的计算和输出精度配置。
-         * - `globalCalcAccuracy`: 30位的内部计算精度，适用于快速计算。
-         * - `outputAccuracy`: 10位的输出显示精度。
+         * - `globalCalcAccuracy`: 36位的内部计算精度，适用于快速计算。
+         * - `outputAccuracy`: 12位的输出显示精度。
          * 此配置通过 `calcAccMode` setter 应用。
          *
          * @readonly
@@ -271,50 +271,7 @@
          * @throws {Error} 如果提供的模式不受支持，则抛出错误。
          */
         static set currentMode(mode) {
-            if (!['0', '1', '2_0', '2_1', '3', '4'].includes(mode)) {
-                throw new Error('[PageConfig] Unsupported mode');
-            }
-
-            // 标题和屏幕切换仍需读取旧模式，因此必须在覆写 _currentMode 前执行。
-            PageControlTools.changeTitle(mode);
-            PageControlTools.changeScreen(mode);
-
-            // 模式切换同时维护输入区、结果区、虚拟列表、键盘提示和持久化状态。
-            HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.remove('SelectionOn');
-            HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.add('NoDisplay');
-            PageConfig._currentMode = mode;
-            // 虚拟统计表只在统计模式保持运行，离开时暂停以免隐藏容器参与测量。
-            if (mode === '1') {
-                HtmlTools.getHtml('#keyboard_top').classList.add('ForMode1');
-                const data = PageConfig.screenData['1'];
-                InputManager.statisticsRenderer.load(data, data.length, {resetScroll: false});
-
-                HtmlTools.scrollToView();
-            } else {
-                if (InputManager.statisticsRenderer.isRunning()) {
-                    InputManager.statisticsRenderer.pause();
-                }
-                HtmlTools.getHtml('#keyboard_top').classList.remove('ForMode1');
-            }
-
-            // 离开函数值列表模式时清理结果虚拟列表，避免隐藏后仍响应 ResizeObserver。
-            if (mode !== '2_1' && PrintManager.printListRenderer.isRunning()) {
-                PrintManager.printListRenderer.clear();
-            }
-
-            HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.add('SelectionOn');
-            HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.remove('NoDisplay');
-            PageControlTools.keyboardFuncBecomeX();
-            PageControlTools.changeInputTip();
-            PageControlTools.changeSubKeyboard('allNotShow');
-            if (!HtmlTools.getHtml('.InputTip')) {
-                InputManager.ac();
-            }
-            try {
-                localStorage.setItem('currentMode', mode);
-            } catch {
-                console.warn('[PageConfig] "currentMode" storage failed');
-            }
+            PageConfig.setCurrentMode(mode);
         }
 
         /**
@@ -480,8 +437,7 @@
             }
 
             const accMode = mode === 0 ? this.ACC_MODE_0 : this.ACC_MODE_1;
-            CalcConfig.globalCalcAccuracy = accMode.globalCalcAccuracy;
-            CalcConfig.outputAccuracy = accMode.outputAccuracy;
+            CalcConfig.setAccuracy(accMode.globalCalcAccuracy, accMode.outputAccuracy);
 
             if (mode !== PageConfig._calcAccMode) {
                 HtmlTools.getHtml('#switch_container').classList.toggle('Active');
@@ -610,6 +566,67 @@
                 localStorage.setItem('screenData', JSON.stringify(PageConfig._screenData));
             } catch {
                 console.warn('[PageConfig] "screenData" storage failed');
+            }
+        }
+
+        /**
+         * 切换主模式；仅显式初始化时允许重放当前模式的界面更新。
+         * @param {'0'|'1'|'2_0'|'2_1'|'3'|'4'} mode - 目标主模式。
+         * @param {Object} [options={}] - 切换选项。
+         * @param {boolean} [options.initialize=false] - 是否强制初始化界面。
+         * @returns {void}
+         */
+        static setCurrentMode(mode, {initialize = false} = {}) {
+            if (!['0', '1', '2_0', '2_1', '3', '4'].includes(mode)) {
+                throw new Error('[PageConfig] Unsupported mode');
+            }
+
+            if (mode === PageConfig._currentMode && !initialize) {
+                return;
+            }
+            if (PageConfig._currentMode === '0' && mode !== '0') {
+                PrintManager.mode0ShowOnScreen.cancel();
+            }
+
+            // 标题和屏幕切换仍需读取旧模式，因此必须在覆写 _currentMode 前执行。
+            PageControlTools.changeTitle(mode);
+            PageControlTools.changeScreen(mode);
+
+            // 模式切换同时维护输入区、结果区、虚拟列表、键盘提示和持久化状态。
+            HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.remove('SelectionOn');
+            HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.add('NoDisplay');
+            PageConfig._currentMode = mode;
+            // 虚拟统计表只在统计模式保持运行，离开时暂停以免隐藏容器参与测量。
+            if (mode === '1') {
+                HtmlTools.getHtml('#keyboard_top').classList.add('ForMode1');
+                const data = PageConfig.screenData['1'];
+                InputManager.statisticsRenderer.load(data, data.length, {resetScroll: false});
+
+                HtmlTools.scrollToView();
+            } else {
+                if (InputManager.statisticsRenderer.isRunning()) {
+                    InputManager.statisticsRenderer.pause();
+                }
+                HtmlTools.getHtml('#keyboard_top').classList.remove('ForMode1');
+            }
+
+            // 离开函数值列表模式时清理结果虚拟列表，避免隐藏后仍响应 ResizeObserver。
+            if (mode !== '2_1' && PrintManager.printListRenderer.isRunning()) {
+                PrintManager.printListRenderer.clear();
+            }
+
+            HtmlTools.getHtml(`#mode_${PageConfig._currentMode[0]}`).classList.add('SelectionOn');
+            HtmlTools.getHtml(`#print_content_${PageConfig._currentMode[0].slice(0, 1)}`).classList.remove('NoDisplay');
+            PageControlTools.keyboardFuncBecomeX();
+            PageControlTools.changeInputTip();
+            PageControlTools.changeSubKeyboard('allNotShow');
+            if (!HtmlTools.getHtml('.InputTip')) {
+                InputManager.ac();
+            }
+            try {
+                localStorage.setItem('currentMode', mode);
+            } catch {
+                console.warn('[PageConfig] "currentMode" storage failed');
             }
         }
 
@@ -883,7 +900,7 @@
 
             // replace 模式先清空目标，随后仍通过 fragment 一次性挂载新节点。
             if (mode === 'replace') {
-                InputManager.ac({acArea: parentElement});
+                targetParent.replaceChildren();
             }
 
             if (nameList.length === 0) {
@@ -1482,9 +1499,9 @@
                 const itemsH = (end - start) * itemHeight;
                 let physBottom = this.physicalHeight - physTop - itemsH;
 
-                // 吸收微小负值，避免滚动条因浮点误差抖动。
-                if (physBottom < 0 && physBottom > -5) {
-                    physTop += physBottom;
+                // 底部空间不足以容纳缓冲行时回收顶部占位，避免总物理高度越界。
+                if (physBottom < 0) {
+                    physTop = this.physicalHeight - itemsH;
                     physBottom = 0;
                 }
 
@@ -4249,11 +4266,6 @@
                 addIndex = getUnlimitedAddIndex(classList);
             }
 
-            const originalDisplay = target.style.display;
-
-            // 批量移除和插入空格时暂时隐藏容器，减少逐节点变更引发的中间重排。
-            target.style.display = 'none';
-
             // 删除空格循环
             const safeStart = Math.max(0, totalRangeStart);
             const safeEnd = Math.min(children.length, totalRangeEnd);
@@ -4267,8 +4279,6 @@
             for (let i = addIndex.length - 1; i >= 0; i--) {
                 HtmlTools.appendDOMs(target, [space], {index: addIndex[i]});
             }
-
-            target.style.display = originalDisplay;
 
             HtmlTools.scrollToView();
         }
@@ -4794,6 +4804,13 @@
         static _currentRequestId = 0n;
 
         /**
+         * exe 执行序号；取消时递增，使旧任务不能关闭新任务的加载遮罩。
+         *
+         * @type {bigint}
+         */
+        static exeRequestId = 0n;
+
+        /**
          * VirtualScroll 实例。
          * 用于管理函数列表输出的显示。
          *
@@ -5038,38 +5055,34 @@
          */
         static async _mode0ShowOnScreenFunc() {
             const requestId = ++this._currentRequestId;
-            if (this.mode0ScreenInCalc) {
-                // 取消之前积压的计算任务，优先响应当前输入
-                await WorkerTools.restart();
-
-                // 也可以使用软取消（性能更好）
-                // WorkerTools.cancelWorker();
-
-                // 等待期间若有更新的请求进来，直接放弃本次过期调用。
-                if (this._currentRequestId !== requestId) {
-                    return;
-                }
-            }
+            const wasInCalc = this.mode0ScreenInCalc;
             this.mode0ScreenInCalc = true;
-            this._currentRequestId = requestId;
 
             const screen0Display = HtmlTools.getHtml('#screen_0_display');
             const screen0DisplayInner = HtmlTools.getHtml('#screen_0_display_inner');
 
-            let currentInput = HtmlTools.htmlClassToText(HtmlTools.getClassList(HtmlTools.getHtml('#input'), {ignoreSpace: true}));
-
-            // 实时预览允许输入尚未完成；去掉末尾连续中缀运算符后再计算最近的有效前缀。
-            let isMiddleFunc = true;
-            while (isMiddleFunc) {
-                const lastFragment = currentInput.slice(-TokenConfig.MAX_TOKEN_LENGTH - 2);
-                const lastToken = Public.tokenizer(lastFragment, {strictMode: false}).slice(-1)[0];
-                isMiddleFunc = Public.getTokenInfo(lastToken)?.funcPlace === 'middle';
-                if (isMiddleFunc) {
-                    currentInput = currentInput.slice(0, -lastToken.length);
-                }
-            }
-
             try {
+                if (wasInCalc) {
+                    await WorkerTools.cancelWorker();
+                    // 等待取消或重启期间若有新输入，放弃本次过期调用。
+                    if (this._currentRequestId !== requestId) {
+                        return;
+                    }
+                }
+
+                let currentInput = HtmlTools.htmlClassToText(HtmlTools.getClassList(HtmlTools.getHtml('#input'), {ignoreSpace: true}));
+
+                // 实时预览允许输入尚未完成；去掉末尾连续中缀运算符后再计算最近的有效前缀。
+                let isMiddleFunc = true;
+                while (isMiddleFunc) {
+                    const lastFragment = currentInput.slice(-TokenConfig.MAX_TOKEN_LENGTH - 2);
+                    const lastToken = Public.tokenizer(lastFragment, {strictMode: false}).slice(-1)[0];
+                    isMiddleFunc = Public.getTokenInfo(lastToken)?.funcPlace === 'middle';
+                    if (isMiddleFunc) {
+                        currentInput = currentInput.slice(0, -lastToken.length);
+                    }
+                }
+
                 const result = await WorkerTools.exec(currentInput, {
                     calcAcc: PageConfig.ACC_MODE_0.globalCalcAccuracy,
                     outputAcc: PageConfig.ACC_MODE_0.outputAccuracy,
@@ -5654,6 +5667,7 @@
                 return;
             }
 
+            const requestId = ++this.exeRequestId;
             HtmlTools.getHtml('#load_cover').classList.remove('NoDisplay');
             HtmlTools.getHtml('#main').classList.remove('Input');
             try {
@@ -5680,7 +5694,9 @@
                         break;
                 }
             } finally {
-                HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
+                if (requestId === this.exeRequestId) {
+                    HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
+                }
             }
         }
     }
@@ -5697,6 +5713,12 @@
          * @type {string}
          */
         static _currentRaModel = 'choose_ra_0';
+        /**
+         * 模式选择后延迟关闭主遮罩，重复选择只保留最后一次关闭任务。
+         * 面板显隐变化时调用 cancel()，避免旧任务关闭重新打开的面板。
+         * @type {Function & {cancel:function():void}}
+         */
+        static delayCloseMainCover = HtmlTools.debounce(() => PageControlTools.clickMainCover(), 340);
 
         /**
          * 阻止实例化静态页面控制器。
@@ -5866,6 +5888,7 @@
          * @returns {void}
          */
         static headChangeModes(mode) {
+            PageControlTools.delayCloseMainCover.cancel();
             const setting = HtmlTools.getHtml('#setting');
             HtmlTools.getHtml('._head_setting_').classList[mode === undefined ? 'toggle' : mode]('Horizontal');
             setting.classList[mode === undefined ? 'toggle' : mode]('SettingNotShow');
@@ -5886,6 +5909,7 @@
          * @returns {void}
          */
         static headChangeExplain(mode) {
+            PageControlTools.delayCloseMainCover.cancel();
             const showOrNot = mode === undefined ? 'toggle' : mode;
             HtmlTools.getHtml('#explain').classList[showOrNot]('ExplainNotShow');
             HtmlTools.getHtml('#head_explain').classList[showOrNot]('ExplainNotShow');
@@ -6222,6 +6246,7 @@
          * @returns {void}
          */
         static cancelPrint() {
+            ++PrintManager.exeRequestId;
             WorkerTools.restart().catch((err) => {
                 console.warn('[UI] Worker restart failed:', err);
             });
