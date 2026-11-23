@@ -9721,9 +9721,9 @@
                         const itemsH = (end - start) * itemHeight;
                         let physBottom = this.physicalHeight - physTop - itemsH;
 
-                        // 吸收微小负值，避免滚动条因浮点误差抖动。
-                        if (physBottom < 0 && physBottom > -5) {
-                            physTop += physBottom;
+                        // 底部空间不足以容纳缓冲行时回收顶部占位，避免总物理高度越界。
+                        if (physBottom < 0) {
+                            physTop = this.physicalHeight - itemsH;
                             physBottom = 0;
                         }
 
