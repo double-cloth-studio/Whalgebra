@@ -1475,6 +1475,19 @@
              */
             class BigNumber {
                 /**
+                 * 线性缓存 `10^exp` 的最大指数上限。
+                 * 512 足以覆盖全局最高计算精度（220）和 Lanczos 最高内部精度（420），
+                 * 常规舍入全部 O(1) 命中，且常驻内存上限仅约 55 KB。
+                 * @private
+                 */
+                static _MAX_POW10_CACHE_EXP = 512;
+                /**
+                 * 线性缓存表：`_pow10Cache[i] === 10n ** BigInt(i)`，长度不超过 `_MAX_POW10_CACHE_EXP + 1`。
+                 * @private
+                 */
+                static _pow10Cache = [1n];
+
+                /**
                  * 二次幂指数缓存上限：`k = 14` 对应 `10^(2^14) = 10^16384`。
                  * 15 项合计常驻内存仅约 14 KB；超过此规模的超大数在单次调用内临时计算，用完即由 GC 回收。
                  * @private
@@ -1679,6 +1692,32 @@
                 }
 
                 /**
+                 * 获取 10 的指定非负整数次幂。
+                 * 小指数走 O(1) 缓存表，大指数直接用原生 BigInt 快速幂，避免常驻内存膨胀。
+                 *
+                 * @param {number} exp
+                 * @returns {bigint}
+                 */
+                static pow10(exp) {
+                    if (!Number.isInteger(exp) || exp < 0) {
+                        throw new Error('[BigNumber] Input error: exponent for pow10 must be a non-negative integer.');
+                    }
+
+                    if (exp > BigNumber._MAX_POW10_CACHE_EXP) {
+                        return 10n ** BigInt(exp);
+                    }
+
+                    const cache = BigNumber._pow10Cache;
+
+                    // 按需扩展缓存，避免重复计算十的幂。
+                    while (cache.length <= exp) {
+                        cache.push(cache[cache.length - 1] * 10n);
+                    }
+
+                    return cache[exp];
+                }
+
+                /**
                  * 计算 BigNumber 的十进制数量级（即 floor(log10(|x|))）。
                  * 零值返回 -Infinity。
                  *
@@ -1809,14 +1848,14 @@
 
                     // 构造精度阈值：10^acc
                     // 当 absMantissa 大于该值时，说明尾数很可能超过目标有效位数，需要进一步计算实际位数
-                    const threshold = MathPlus.pow10(acc);
+                    const threshold = BigNumber.pow10(acc);
 
                     if (absMantissa > threshold) {
                         const mantissaLength = BigNumber.decimalLengthBigInt(absMantissa);
                         const digitsToShift = mantissaLength - acc;
 
                         if (digitsToShift > 0) {
-                            const divisor = MathPlus.pow10(digitsToShift);
+                            const divisor = BigNumber.pow10(digitsToShift);
 
                             // 截断得到基础部分
                             let roundedMantissa = absMantissa / divisor;
@@ -2149,7 +2188,11 @@
                         }
 
                         case 'bignumber':
-                            this.re = new BigNumber(x, {acc: acc, pow: pow, noiseMag: Array.isArray(noiseMag) ? noiseMag[0] : noiseMag});
+                            this.re = new BigNumber(x, {
+                                acc: acc,
+                                pow: pow,
+                                noiseMag: Array.isArray(noiseMag) ? noiseMag[0] : noiseMag
+                            });
                             this.im = new BigNumber([0, 0n, this.re.acc]);
                             break;
 
@@ -2350,51 +2393,12 @@
              */
             class MathPlus {
                 /**
-                 * 线性缓存 `10^exp` 的最大指数上限。
-                 * 512 足以覆盖全局最高计算精度（220）和 Lanczos 最高内部精度（420），
-                 * 常规舍入全部 O(1) 命中，且常驻内存上限仅约 55 KB。
-                 * @private
-                 */
-                static _MAX_POW10_CACHE_EXP = 512;
-                /**
-                 * 线性缓存表：`_pow10Cache[i] === 10n ** BigInt(i)`，长度不超过 `_MAX_POW10_CACHE_EXP + 1`。
-                 * @private
-                 */
-                static _pow10Cache = [1n];
-
-                /**
                  * 阻止实例化静态工具类。
                  *
                  * @throws {Error} 始终抛出。
                  */
                 constructor() {
                     throw new Error('[MathPlus] MathPlus is a static class and should not be instantiated.');
-                }
-
-                /**
-                 * 获取 10 的指定非负整数次幂。
-                 * 小指数走 O(1) 缓存表，大指数直接用原生 BigInt 快速幂，避免常驻内存膨胀。
-                 *
-                 * @param {number} exp
-                 * @returns {bigint}
-                 */
-                static pow10(exp) {
-                    if (!Number.isInteger(exp) || exp < 0) {
-                        throw new Error('[MathPlus] Input error: exponent for pow10 must be a non-negative integer.');
-                    }
-
-                    if (exp > MathPlus._MAX_POW10_CACHE_EXP) {
-                        return 10n ** BigInt(exp);
-                    }
-
-                    const cache = MathPlus._pow10Cache;
-
-                    // 按需扩展缓存，避免重复计算十的幂。
-                    while (cache.length <= exp) {
-                        cache.push(cache[cache.length - 1] * 10n);
-                    }
-
-                    return cache[exp];
                 }
 
                 /**
@@ -3122,7 +3126,7 @@
                                     }
                                 }
 
-                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * MathPlus.pow10(absB.power);
+                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * BigNumber.pow10(absB.power);
                                 const signedB = isExponentNegative ? -realB : realB;
                                 const finalPowerBigInt = BigInt(p) * signedB;
 
@@ -3155,7 +3159,7 @@
                             const workAcc = resultAcc + guardDigits;
 
                             try {
-                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * MathPlus.pow10(absB.power);
+                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * BigNumber.pow10(absB.power);
 
                                 // 5. 将完整 reA 交给 fastPow：仅当原生 BigInt 幂位数小于阈值且指数安全时走原生幂
                                 let canUseNativeBigInt = false;
@@ -13241,7 +13245,7 @@
                 static _currentRequestId = 0n;
 
                 /**
-                 * exe 执行序号；取消时递增，使旧任务不能关闭新任务的加载遮罩。
+                 * exe 执行序号；取消时递增，使旧任务不能更新结果、状态或关闭新任务的加载遮罩。
                  *
                  * @type {bigint}
                  */
@@ -13553,9 +13557,10 @@
                  * 它包含完整的错误处理流程：若计算失败，会自动判断是否为语法错误，并尝试通过 syntaxCheck 模式获取修正后的表达式，最终将格式化后的结果或错误信息渲染回界面。
                  *
                  * @private
+                 * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
                  * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
                  */
-                static async _exeMode0() {
+                static async _exeMode0(requestId) {
                     const inputEl = HtmlTools.getHtml('#input');
                     const textDisplay = HtmlTools.getHtml('#print_content_0_content_0');
                     const resultDisplay = HtmlTools.getHtml('#print_content_0_content_1');
@@ -13575,6 +13580,9 @@
                         screenDisplay.classList.add('NoDisplay');
                         if (this.mode0ScreenInCalc) {
                             await WorkerTools.restart();
+                            if (requestId !== this.exeRequestId) {
+                                return;
+                            }
                         }
 
                         this.mode0ScreenInCalc = false;
@@ -13587,13 +13595,16 @@
                             f: HtmlTools.deleteIllegal(PageConfig.screenData['2_00']),
                             g: HtmlTools.deleteIllegal(PageConfig.screenData['2_01'])
                         });
+                        if (requestId !== this.exeRequestId) {
+                            return;
+                        }
                         ({expr, result} = realResult);
 
                         expr = HtmlTools.textToHtmlClass(expr);
                         result = HtmlTools.textToHtmlClass(result);
                     } catch (error) {
-                        if (error.name === 'TerminationError' || error.name === 'CancellationError') {
-                            // 取消或重启后停止后续语法检查和 UI 更新。
+                        if (requestId !== this.exeRequestId || error.name === 'TerminationError' || error.name === 'CancellationError') {
+                            // 过期、取消或重启后停止后续语法检查和 UI 更新。
                             return;
                         }
 
@@ -13612,6 +13623,10 @@
                         }
                     }
 
+                    // 语法检查也可能在取消后才返回，渲染前再次确认本次任务仍有效。
+                    if (requestId !== this.exeRequestId) {
+                        return;
+                    }
                     HtmlTools.appendDOMs(textDisplay, expr);
                     HtmlTools.appendDOMs(resultDisplay, result);
                     InputManager.addSpace({area: textDisplay});
@@ -13639,9 +13654,10 @@
                  * 6. 将计算结果渲染到界面，并缓存结果以便导出。
                  *
                  * @private
+                 * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
                  * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
                  */
-                static async _exeMode1() {
+                static async _exeMode1(requestId) {
                     const screenData = PageConfig.screenData['1'];
                     const nextData = screenData.map((row) => [...row]);
                     const listA = [], listB = [];
@@ -13685,6 +13701,9 @@
 
                     try {
                         const resultList = await WorkerTools.statisticsCalc(listA, listB);
+                        if (requestId !== this.exeRequestId) {
+                            return;
+                        }
 
                         this._setMode1Results(resultList);
 
@@ -13699,7 +13718,7 @@
                             'choose_ra_6': resultList.reciprocal
                         };
                     } catch (error) {
-                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                        if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                             return;
                         }
                         this._setMode1Results('error');
@@ -13714,10 +13733,11 @@
                  * 计算完成后，它会动态生成一个HTML表格来展示自变量（x）、f(x)和g(x)的对应值。
                  *
                  * @private
+                 * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
                  *
                  * @returns {Promise<void>} 此方法没有返回值，其主要作用是通过DOM操作来更新页面内容。
                  */
-                static async _exeMode2() {
+                static async _exeMode2(requestId) {
                     const headInit = HtmlTools.getHtml('#print_content_2_head').children[1].children[0];
                     // 先恢复双函数表头，单函数分支再按本次输入收窄列数与标签。
                     HtmlTools.getHtml('#print_content_2').classList.add('TwoFunc');
@@ -13749,6 +13769,9 @@
                         }
 
                         const result = await WorkerTools.valueList(fx, gx, start, step, end);
+                        if (requestId !== this.exeRequestId) {
+                            return;
+                        }
 
                         // 虚拟列表自行异步渲染；此处只提交新数据并继续解除加载遮罩。
                         void this.printListRenderer.load(
@@ -13760,7 +13783,7 @@
                         HtmlTools.getHtml('#print_content_2_error').classList.add('NoDisplay');
                     } catch (error) {
                         // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
-                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                        if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                             return;
                         }
                         HtmlTools.getHtml('#print_content_2_error').classList.remove('NoDisplay');
@@ -13777,9 +13800,10 @@
                  * 4. 处理计算过程中的错误，并在界面上显示错误状态。
                  *
                  * @private
+                 * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
                  * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
                  */
-                static async _exeMode3() {
+                static async _exeMode3(requestId) {
                     /**
                      * 将所有分析结果区域重置为错误显示状态。
                      *
@@ -13930,6 +13954,9 @@
 
                     try {
                         const result = await WorkerTools.powerFunctionAnalysis(list);
+                        if (requestId !== this.exeRequestId) {
+                            return;
+                        }
 
                         for (let i = 0; i < 10; i++) {
                             switch (i) {
@@ -13963,7 +13990,7 @@
                         }
                     } catch (error) {
                         // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
-                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                        if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                             return;
                         }
                         errorPrint();
@@ -13979,9 +14006,10 @@
                  * 4. 处理计算过程中的错误，并在界面上显示错误状态。
                  *
                  * @private
+                 * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
                  * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
                  */
-                static async _exeMode4() {
+                static async _exeMode4(requestId) {
                     /**
                      * 将单个数值解格式化为 HTML DOM 元素并插入目标容器。
                      * 格式为：z_k = value
@@ -14008,6 +14036,9 @@
                     const content42 = HtmlTools.getHtml('#print_content_4_content_2');
                     try {
                         const result = await WorkerTools.radicalFunctionAnalysis(z, n);
+                        if (requestId !== this.exeRequestId) {
+                            return;
+                        }
 
                         if ([result.z, result.n].includes('error')) {
                             HtmlTools.appendDOMs(content40, ['_error_'], {mode: 'replace'});
@@ -14068,7 +14099,7 @@
                         HtmlTools.getHtml('#print_omit').classList[result.overflow ? 'remove' : 'add']('NoDisplay');
                     } catch (error) {
                         // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
-                        if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                        if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                             return;
                         }
                         HtmlTools.appendDOMs(content40, ['_error_'], {mode: 'replace'});
@@ -14110,10 +14141,13 @@
                     try {
                         switch (currentMode) {
                             case '0':
-                                await this._exeMode0();
+                                await this._exeMode0(requestId);
                                 break;
                             case '1':
-                                await this._exeMode1();
+                                await this._exeMode1(requestId);
+                                if (requestId !== this.exeRequestId) {
+                                    return;
+                                }
 
                                 // 结果页接管视图后暂停输入网格，返回时再由 closePrint 恢复。
                                 if (!HtmlTools.getHtml('#main').classList.contains('Input') && InputManager.statisticsRenderer.isRunning()) {
@@ -14121,13 +14155,13 @@
                                 }
                                 break;
                             case '2_1':
-                                await this._exeMode2();
+                                await this._exeMode2(requestId);
                                 break;
                             case '3':
-                                await this._exeMode3();
+                                await this._exeMode3(requestId);
                                 break;
                             case '4':
-                                await this._exeMode4();
+                                await this._exeMode4(requestId);
                                 break;
                         }
                     } finally {

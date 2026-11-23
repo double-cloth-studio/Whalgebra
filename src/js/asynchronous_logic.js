@@ -20,7 +20,7 @@
 
                 /**
                  * 按任务 ID 记录待处理 Promise 及其超时计时器。
-                 * @type {Map<bigint, {resolve: Function, reject: Function, timeoutId: number|null}>}
+                 * @type {Map<bigint, {resolve: Function, reject: Function, timeoutId: number|null, cancellable: boolean}>}
                  * @private
                  */
                 _taskQueue = new Map();
@@ -636,12 +636,13 @@
                  * @param {Array<Transferable>} [options.transfer=[]] - 转移所有权的对象；发送后主线程中的对应资源会被分离。
                  * @param {number} [options.timeout=0] - 从消息成功发出起计算的有限毫秒数；正数到期后拒绝
                  *   Promise 并通知 Worker 取消该任务，`0` 或负数表示不建立计时器。
+                 * @param {boolean} [options.cancellable=true] - 是否参与全局软取消；设为 false 仍受超时和终止约束。
                  * @returns {Promise<T>} 以目标函数的可结构化克隆返回值兑现；`undefined`、数组、普通对象和
                  *   可克隆平台对象保持自身结构。Worker 抛出的错误会重建
                  *   `name`、`message`、`stack` 后拒绝，主动取消和超时分别使用可区分的错误名称。
                  * @throws {Error} Worker 不可用、函数名未注册或选项无效时同步抛出。
                  */
-                exec(functionName, {args = [], transfer = [], timeout = 0} = {}) {
+                exec(functionName, {args = [], transfer = [], timeout = 0, cancellable = true} = {}) {
                     if (!this._worker) {
                         throw new Error('[SyncWorker] Cannot execute task: the worker has been terminated.');
                     }
@@ -663,6 +664,9 @@
                     if (typeof timeout !== 'number' || !Number.isFinite(timeout)) {
                         throw new Error('[SyncWorker] options.timeout must be a finite number.');
                     }
+                    if (typeof cancellable !== 'boolean') {
+                        throw new Error('[SyncWorker] options.cancellable must be a boolean.');
+                    }
 
                     const id = this._nextTaskId++;
                     return new Promise((resolve, reject) => {
@@ -675,7 +679,7 @@
                         }
 
                         // 先登记队列再发送消息，避免 Worker 极快返回时查不到对应 Promise。
-                        this._taskQueue.set(id, {resolve, reject, timeoutId});
+                        this._taskQueue.set(id, {resolve, reject, timeoutId, cancellable});
                         try {
                             this._worker.postMessage({type: 'exec', id, functionName, args}, transfer);
                         } catch (error) {
@@ -689,7 +693,7 @@
                 }
 
                 /**
-                 * 取消全部待处理任务，但保留 Worker 实例。
+                 * 取消允许软取消的待处理任务，保留配置同步、探测任务和 Worker 实例。
                  */
                 cancel() {
                     if (!this._worker || this._taskQueue.size === 0) {
@@ -700,19 +704,21 @@
                     cancellationError.name = 'CancellationError';
 
                     this._taskQueue.forEach((task, id) => {
+                        if (!task.cancellable) {
+                            return;
+                        }
                         if (task.timeoutId !== null) {
                             clearTimeout(task.timeoutId);
                         }
                         task.reject(cancellationError);
-                        // 即使同步密集任务暂时无法响应，稍后返回的结果也会因队列已清空而被丢弃。
+                        this._taskQueue.delete(id);
+                        // 即使同步密集任务暂时无法响应，稍后返回的结果也会因登记已移除而被丢弃。
                         try {
                             this._worker.postMessage({type: 'cancel', id});
                         } catch {
                             // 本地状态已清理，无需传播消息发送失败。
                         }
                     });
-
-                    this._taskQueue.clear();
                 }
 
                 /**
@@ -762,7 +768,7 @@
                 static _restartPromise = null;
 
                 /**
-                 * 当前 Worker 的环境同步 Promise；失败时保持拒绝，阻止继续派发。
+                 * 当前 Worker 的环境同步 Promise；失败后由自动重启或后续调用重新建立。
                  *
                  * @private
                  * @type {Promise<void>|null}
@@ -780,6 +786,11 @@
                 static _readyStateId = null;
                 /** 取消批次标识，使等待初始化的过期任务不再派发。 */
                 static _cancelId = Symbol();
+                /**
+                 * 当前软取消的探测及恢复 Promise，连续取消复用同一宽限期。
+                 * @type {Promise<void>|null}
+                 */
+                static _cancelPromise = null;
                 /** 软取消后等待 Worker 响应的最长时间（毫秒）。 */
                 static _CANCEL_GRACE_TIME = 150;
 
@@ -879,6 +890,10 @@
                         });
                         // 初始化独立于重启锁，首次同步期间仍允许强制重启。
                         this._initPromise = this._restoreState();
+                    } else if (this._mathWorker.isTerminated && !this._restartPromise) {
+                        // 同步失败会终止实例；下一次调用必须替换已拒绝的初始化 Promise。
+                        this._mathWorker.restart();
+                        this._initPromise = this._restoreState();
                     }
                     return this._mathWorker;
                 }
@@ -891,33 +906,42 @@
                  * @param {string} funcName - 数学 Worker 已注册的公开函数名；故障重启后不会自动重试本次调用。
                  * @param {Array} args - 可结构化克隆的位置参数；本方法会整体传给 `SyncWorker.exec`，不会改动
                  *   数组内容。每次分发统一使用 `_WORKER_TIMEOUT` 作为最长执行时间。
+                 * @param {object} [options={}] - 任务调度选项。
+                 * @param {boolean} [options.cancellable=true] - 配置同步设为 false，避免被业务软取消丢弃。
                  * @returns {Promise<T>} 目标 Worker 方法的原始结果；Worker 意外终止或任务超时会触发重启，
                  *   恢复后仍以本次错误拒绝；业务计算错误和主动终止、取消直接以原错误拒绝。
                  */
-                static async _dispatch(funcName, args = []) {
+                static async _dispatch(funcName, args = [], {cancellable = true} = {}) {
                     const cancelId = this._cancelId;
-                    this._ensureWorker();
-
-                    // 等待当前环境同步；等待期间若发生重启，继续等待新一轮同步。
-                    let initPromise;
-                    do {
-                        if (this._restartPromise) {
-                            await this._restartPromise;
-                        }
-                        initPromise = this._initPromise;
-                        await initPromise;
-                    } while (this._restartPromise || initPromise !== this._initPromise);
-
-                    if (cancelId !== this._cancelId) {
-                        const error = new Error('[WorkerTools] Task was cancelled before dispatch.');
-                        error.name = 'CancellationError';
-                        throw error;
-                    }
-
                     try {
+                        this._ensureWorker();
+
+                        // 等待当前环境同步；等待期间若发生重启，继续等待新一轮同步。
+                        let initPromise;
+                        do {
+                            if (this._restartPromise) {
+                                await this._restartPromise;
+                            }
+                            initPromise = this._initPromise;
+                            await initPromise.catch(error => {
+                                // 旧同步的失败由新一轮同步接替；当前同步失败交给外层恢复逻辑。
+                                if (initPromise === this._initPromise) {
+                                    throw error;
+                                }
+                            });
+                        } while (this._restartPromise || initPromise !== this._initPromise);
+
+                        if (cancellable && cancelId !== this._cancelId) {
+                            const error = new Error('[WorkerTools] Task was cancelled before dispatch.');
+                            error.name = 'CancellationError';
+                            // 取消直接拒绝本次调用，无需进入故障恢复逻辑。
+                            return Promise.reject(error);
+                        }
+
                         return await this._mathWorker.exec(funcName, {
                             args,
-                            timeout: this._WORKER_TIMEOUT
+                            timeout: this._WORKER_TIMEOUT,
+                            cancellable
                         });
                     } catch (e) {
                         // 主动终止或取消不触发自动恢复。
@@ -949,6 +973,7 @@
                  * @returns {Promise<void>}
                  */
                 static async _restoreState() {
+                    const worker = this._mathWorker;
                     const stateId = this._stateId = Symbol();
                     this._readyStateId = null;
                     // 若 initEnv 等待期间主线程配置再次变更，补同步一次最新快照，消除重启窗口期配置丢失。
@@ -961,14 +986,15 @@
 
                         try {
                             // 为 initEnv 加上超时保护，避免环境同步永久挂起。
-                            await this._mathWorker.exec('initEnv', {
+                            await worker.exec('initEnv', {
                                 args: [snapshot],
-                                timeout: 10000
+                                timeout: 10000,
+                                cancellable: false
                             });
                         } catch (error) {
                             // 旧初始化被重启中断时，不得终止已接替它的新 Worker。
-                            if (stateId === this._stateId) {
-                                this._mathWorker.terminate();
+                            if (worker === this._mathWorker && stateId === this._stateId) {
+                                worker.terminate();
                             }
                             throw error;
                         }
@@ -1032,21 +1058,32 @@
 
                     const worker = this._mathWorker;
                     const stateId = this._stateId;
+                    // 每次都取消新加入的业务任务；配置同步和已有探测不参与全局软取消。
                     worker.cancel();
-                    try {
-                        // 使用底层查询，避免探测超时进入 _dispatch 的通用故障恢复流程。
-                        await worker.exec('getCalcAccuracy', {timeout: this._CANCEL_GRACE_TIME});
-                    } catch (error) {
-                        if (worker !== this._mathWorker || stateId !== this._stateId ||
-                            error.name === 'CancellationError' || error.name === 'TerminationError') {
-                            return;
-                        }
-                        if (error.name === 'TimeoutError' || worker.isTerminated) {
-                            await this.restart();
-                        } else {
-                            throw error;
-                        }
+                    if (!this._cancelPromise) {
+                        this._cancelPromise = (async () => {
+                            try {
+                                // 使用底层查询，固定首次取消的截止时间，避免连续输入推迟重启。
+                                await worker.exec('getCalcAccuracy', {
+                                    timeout: this._CANCEL_GRACE_TIME,
+                                    cancellable: false
+                                });
+                            } catch (error) {
+                                if (worker !== this._mathWorker || stateId !== this._stateId ||
+                                    error.name === 'CancellationError' || error.name === 'TerminationError') {
+                                    return;
+                                }
+                                if (error.name === 'TimeoutError' || worker.isTerminated) {
+                                    await this.restart();
+                                } else {
+                                    throw error;
+                                }
+                            }
+                        })().finally(() => {
+                            this._cancelPromise = null;
+                        });
                     }
+                    return this._cancelPromise;
                 }
 
                 /**
@@ -1055,7 +1092,7 @@
                  * @returns {Promise<void>} 环境同步完成后兑现。
                  */
                 static initEnv(config) {
-                    return this._dispatch('initEnv', [config]);
+                    return this._dispatch('initEnv', [config], {cancellable: false});
                 }
 
                 /**
@@ -1066,7 +1103,7 @@
                  * @returns {Promise<number>} Worker 校验后实际保存的正整数计算精度；省略参数时返回预设值。
                  */
                 static setCalcAccuracy(acc) {
-                    return this._dispatch('setCalcAccuracy', [acc]);
+                    return this._dispatch('setCalcAccuracy', [acc], {cancellable: false});
                 }
 
                 /**
@@ -1086,7 +1123,7 @@
                  * @returns {Promise<number>} Worker 规范化并保存的输出精度策略值；绝对位数可能受计算精度限制。
                  */
                 static setOutputAccuracy(acc) {
-                    return this._dispatch('setOutputAccuracy', [acc]);
+                    return this._dispatch('setOutputAccuracy', [acc], {cancellable: false});
                 }
 
                 /**
@@ -1106,7 +1143,7 @@
                  * @returns {Promise<'algebra'|'polar'>} Worker 校验后实际保存的复数输出模式。
                  */
                 static setPrintMode(mode) {
-                    return this._dispatch('setPrintMode', [mode]);
+                    return this._dispatch('setPrintMode', [mode], {cancellable: false});
                 }
 
                 /**

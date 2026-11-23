@@ -193,7 +193,8 @@
 
         /**
          * 将精度范围内可忽略的分量归零。
-         * - 不传 refs 时：仅清理复数中相对另一分量可忽略的噪声，保留纯实数/纯虚数小量。
+         * - 各分量先按自身 noiseMag 清理底噪，保留不带噪声的精确小量。
+         * - 不传 refs 时：再清理复数中相对另一分量可忽略的噪声。
          * - 传入 refs 时：以参考值中的最大量级为基准，对实部和虚部执行相对判零。
          *
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 待修正的数值。
@@ -205,8 +206,24 @@
             const acc = input.acc;
             const tol = Math.max(Math.floor(0.9 * acc), acc - 8);
 
-            const reMag = BigNumber.getMag(input.re);
-            const imMag = BigNumber.getMag(input.im);
+            /**
+             * 清理已落入累计噪声底限的分量，容差不超过当前精度的保护位。
+             *
+             * @param {BigNumber} bn - 待清理的分量。
+             * @returns {BigNumber} 原分量或同精度的零。
+             */
+            const cleanNoise = (bn) => {
+                const margin = Math.min(4, Math.max(0, bn.acc - Math.max(1, Math.floor(0.9 * bn.acc), bn.acc - 8)));
+                if (!bn.isZero() && bn.noiseMag !== -Infinity && BigNumber.getMag(bn) <= bn.noiseMag + margin) {
+                    return new BigNumber([0, 0n, bn.acc]);
+                }
+                return bn;
+            };
+
+            const cleanedRe = cleanNoise(input.re);
+            const cleanedIm = cleanNoise(input.im);
+            const reMag = BigNumber.getMag(cleanedRe);
+            const imMag = BigNumber.getMag(cleanedIm);
 
             let refMag = -Infinity;
             for (const ref of refs) {
@@ -225,12 +242,12 @@
             const reRef = Math.max(refMag, imMag);
             const imRef = Math.max(refMag, reMag);
 
-            const re = (!input.re.isZero() && reRef !== -Infinity && reRef - reMag > tol)
-                       ? new BigNumber([0, 0n, input.re.acc])
-                       : input.re;
-            const im = (!input.im.isZero() && imRef !== -Infinity && imRef - imMag > tol)
-                       ? new BigNumber([0, 0n, input.im.acc])
-                       : input.im;
+            const re = (!cleanedRe.isZero() && reRef !== -Infinity && reRef - reMag > tol)
+                       ? new BigNumber([0, 0n, cleanedRe.acc])
+                       : cleanedRe;
+            const im = (!cleanedIm.isZero() && imRef !== -Infinity && imRef - imMag > tol)
+                       ? new BigNumber([0, 0n, cleanedIm.acc])
+                       : cleanedIm;
 
             if (re === input.re && im === input.im) {
                 return input;
@@ -301,19 +318,6 @@
                 return Math.min(acc, numAcc);
             };
 
-            /**
-             * 清理已完全落入噪声底噪的分量。
-             *
-             * @param {BigNumber} bn
-             * @returns {BigNumber}
-             */
-            const cleanNoise = (bn) => {
-                if (!bn.isZero() && bn.noiseMag !== -Infinity && BigNumber.getMag(bn) <= bn.noiseMag + 4) {
-                    return new BigNumber([0, 0n, bn.acc]);
-                }
-                return bn;
-            };
-
             switch (Public.typeOf(x)) {
                 case 'array': {
                     const result = [];
@@ -321,14 +325,9 @@
                         if (x[i] === 'error') {
                             result.push('error');
                         } else {
-                            const num = new ComplexNumber(x[i]);
-                            const cleanedRe = cleanNoise(num.re);
-                            const cleanedIm = cleanNoise(num.im);
-                            const cleanNum = (cleanedRe === num.re && cleanedIm === num.im)
-                                             ? num
-                                             : new ComplexNumber([cleanedRe, cleanedIm]);
-                            const realAcc = Math.max(1, getRealAcc(cleanNum.acc));
-                            result.push(Public.zeroCorrect(cleanNum).toString({
+                            const num = Public.zeroCorrect(new ComplexNumber(x[i]));
+                            const realAcc = Math.max(1, getRealAcc(num.acc));
+                            result.push(num.toString({
                                 acc: realAcc,
                                 printMode: printMode
                             }));
@@ -337,14 +336,9 @@
                     return result;
                 }
                 default: {
-                    const num = new ComplexNumber(x);
-                    const cleanedRe = cleanNoise(num.re);
-                    const cleanedIm = cleanNoise(num.im);
-                    const cleanNum = (cleanedRe === num.re && cleanedIm === num.im)
-                                     ? num
-                                     : new ComplexNumber([cleanedRe, cleanedIm]);
-                    const realAcc = Math.max(1, getRealAcc(cleanNum.acc));
-                    return Public.zeroCorrect(cleanNum).toString({
+                    const num = Public.zeroCorrect(new ComplexNumber(x));
+                    const realAcc = Math.max(1, getRealAcc(num.acc));
+                    return num.toString({
                         acc: realAcc,
                         printMode: printMode
                     });
@@ -1442,8 +1436,8 @@
             }
 
             Promise.resolve(WorkerTools[methodName](value)).catch((err) => {
-                // 同步途中被主动取消或重启打断属于预期竞态，新 Worker 会通过 _restoreState 拿到最新值。
-                if (err?.name === 'CancellationError' || err?.name === 'TerminationError') {
+                // 配置同步不参与业务软取消；重启打断时由 _restoreState 恢复最新值。
+                if (err?.name === 'TerminationError') {
                     return;
                 }
                 console.warn(`[CalcConfig] Failed to sync '${methodName}' to Worker:`, err);

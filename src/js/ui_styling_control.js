@@ -1499,9 +1499,9 @@
                 const itemsH = (end - start) * itemHeight;
                 let physBottom = this.physicalHeight - physTop - itemsH;
 
-                // 底部空间不足以容纳缓冲行时回收顶部占位，避免总物理高度越界。
-                if (physBottom < 0) {
-                    physTop = this.physicalHeight - itemsH;
+                // 仅吸收浮点尾差；底部缓冲行由 _render 裁剪，不能通过移动可见行回收空间。
+                if (physBottom < 0 && physBottom > -1e-6) {
+                    physTop += physBottom;
                     physBottom = 0;
                 }
 
@@ -1840,6 +1840,7 @@
             this._resumeRO = null;
             this._resumeFallbackTimer = null;
             this._measured = false;
+            this._needsRemeasure = false;
             this._remeasurePending = false;
             this._isSmoothScrolling = false;
             this._rendering = false;
@@ -2099,7 +2100,7 @@
          * - 测量完成后清空容器并更新 {@link VirtualScroll._HeightMapper}。
          * - 边界处理：
          *   - `totalCount === 0` → 回退到 `_FALLBACK_HEIGHT`（50px）并警告。
-         *   - 测量结果 `≤ 0` → 回退到 50px 并警告。
+         *   - 容器隐藏或采样为零 → 暂用已有行高或 50px，保留待重测标记。
          *   - 测量结果 `> 0` 但 `< _MIN_ITEM_HEIGHT` → 修正并警告。
          * - 测量后会尝试恢复原来的滚动位置（将旧虚拟滚动量映射到新物理坐标）。
          *
@@ -2110,6 +2111,14 @@
         _doMeasure() {
             const inlineOverflowY = this.container.style.overflowY;
             const clientHeight = this.container.clientHeight;
+            this._needsRemeasure = true;
+            // 隐藏期间不采样，也不把临时回退高度当成最终测量结果。
+            if (this.container.clientWidth <= 0 || clientHeight <= 0) {
+                this.itemHeight = this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT
+                                  ? this.itemHeight : VirtualScroll._FALLBACK_HEIGHT;
+                this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
+                return;
+            }
             const tempEls = [];
 
             try {
@@ -2130,6 +2139,7 @@
                 this._nodePool.clear();
 
                 if (this.totalCount === 0) {
+                    this._needsRemeasure = false;
                     this.itemHeight = VirtualScroll._FALLBACK_HEIGHT;
                     this._heightMapper.update(0, this.itemHeight, clientHeight);
                     console.warn('[VirtualScroll] Data is empty; item height falls back to 50px.');
@@ -2163,16 +2173,11 @@
                 }
 
                 if (measured <= 0) {
-                    if (this._measured && this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT) {
-                        console.warn(
-                            `[VirtualScroll] Measured item height is 0 (container may be hidden); ` +
-                            `keeping previous height (${this.itemHeight}px).`
-                        );
-                        measured = this.itemHeight;
-                    } else {
-                        console.warn('[VirtualScroll] Measured item height is 0; falling back to 50px.');
-                        measured = VirtualScroll._FALLBACK_HEIGHT;
-                    }
+                    // 视口切换时采样行也可能短暂为零，稍后重试，不提交为有效测量。
+                    measured = this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT
+                               ? this.itemHeight : VirtualScroll._FALLBACK_HEIGHT;
+                } else {
+                    this._needsRemeasure = false;
                 }
 
                 this.itemHeight = measured;
@@ -2396,19 +2401,22 @@
                 const newW = this.container.clientWidth;
                 const newH = this.container.clientHeight;
 
-                // 容器被隐藏（display: none）或处于 DevTools 切换视口瞬间的 0×0 状态时直接忽略。
+                // 隐藏或瞬态零尺寸时不测量，保留标记以便恢复到相同尺寸时也能重测。
                 if (newW <= 0 || newH <= 0) {
+                    if (this._remeasureOnResize) {
+                        this._needsRemeasure = true;
+                    }
                     return;
                 }
 
                 const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
                 const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
 
-                if (!widthChanged && !heightChanged) {
+                if (!widthChanged && !heightChanged && !this._needsRemeasure) {
                     return;
                 }
 
-                if (this._remeasureOnResize) {
+                if (this._remeasureOnResize || this._needsRemeasure) {
                     // 不在此处提前覆写 _lastContainerWidth/Height，等重测完成后再同步，
                     // 避免中间帧突然变为 0×0 放弃重测后，恢复原尺寸时被误判为“未变化”。
                     this._scheduleRemeasure();
@@ -2541,6 +2549,7 @@
             let lastW = -1;
             let lastH = -1;
             let attempts = 0;
+            let measureAttempts = 0;
             const MAX_STABILIZE_FRAMES = 6;
 
             /**
@@ -2559,6 +2568,7 @@
 
                 // 容器已隐藏或瞬态折叠，放弃本次重测，等待恢复非零尺寸时由 ResizeObserver 重新触发。
                 if (curW <= 0 || curH <= 0) {
+                    this._needsRemeasure = true;
                     this._remeasurePending = false;
                     return;
                 }
@@ -2593,8 +2603,14 @@
 
                     this._bindScroll();
                     this._forceRender();
+                    // 非零容器中的零高采样最多重试 6 次，持续异常时等待下一次尺寸通知。
+                    if (this._needsRemeasure && ++measureAttempts < MAX_STABILIZE_FRAMES) {
+                        this._remeasureRAF = requestAnimationFrame(runRemeasure);
+                    } else if (this._needsRemeasure) {
+                        console.warn('[VirtualScroll] Item height is still 0 after 6 measurements; waiting for the next resize.');
+                    }
                 } finally {
-                    this._remeasurePending = false;
+                    this._remeasurePending = this._remeasureRAF !== null;
                 }
             };
 
@@ -2740,6 +2756,9 @@
                 const {index, behavior, block} = pendingScroll;
                 this.scrollToIndex(index, {behavior, block});
                 this._bindEvents();
+                if (this._needsRemeasure) {
+                    this._scheduleRemeasure();
+                }
 
                 if (!this._isSmoothScrolling) {
                     this._render();
@@ -2756,6 +2775,9 @@
             this._bindEvents();
             this._render();
             this._scheduleRender();
+            if (this._needsRemeasure) {
+                this._scheduleRemeasure();
+            }
         }
 
         /**
@@ -2909,8 +2931,17 @@
                 // 在变更渲染窗口前同步最新逻辑锚点，供后续尺寸变化与重测使用。
                 this._updateAnchor();
 
-                const visibleEnd = visibleStart + Math.ceil(clientHeight / this.itemHeight);
-                const end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
+                // 排他终点包含视口底部仅露出一部分的行，避免裁剪缓冲区时漏渲染。
+                const visibleEnd = Math.min(
+                    this.totalCount, Math.ceil((virtScrollTop + clientHeight) / this.itemHeight)
+                );
+                let end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
+                if (hm.compressed) {
+                    const physTop = clampedPhysScrollTop + start * this.itemHeight - virtScrollTop;
+                    const maxEnd = start + Math.floor((hm.physicalHeight - physTop) / this.itemHeight);
+                    // 保留全部可见行，只裁剪超出物理高度的不可见底部缓冲行。
+                    end = Math.max(visibleEnd, Math.min(end, maxEnd));
+                }
                 const rangeUnchanged = start === this._startIndex && end === this._endIndex;
 
                 // 按新窗口 [start, end) 与当前物理偏移更新 spacer（统一处理负 marginTop）
@@ -3200,6 +3231,7 @@
             this._anchorIndex = 0;
             this._anchorRatio = 0;
             this._measured = false;
+            this._needsRemeasure = false;
             this.data = [];
             this.totalCount = 0;
             this.container = null;
@@ -3370,7 +3402,7 @@
                         Math.round(currentHeight) !== Math.round(this._lastContainerHeight)
                     );
 
-                const needMeasure = !this._measured || remeasure || sizeChanged;
+                const needMeasure = !this._measured || this._needsRemeasure || remeasure || sizeChanged;
 
                 if (needMeasure) {
                     this._setupContainer();
@@ -3428,6 +3460,9 @@
                 this._forceRender();
                 if (!this._sm.is(VirtualScroll.State.RUNNING)) {
                     this._sm.transition(VirtualScroll.State.RUNNING);
+                }
+                if (this._needsRemeasure) {
+                    this._scheduleRemeasure();
                 }
             } catch (error) {
                 // 加载失败后清理现场，回到可重新加载的空闲状态。
@@ -4804,7 +4839,7 @@
         static _currentRequestId = 0n;
 
         /**
-         * exe 执行序号；取消时递增，使旧任务不能关闭新任务的加载遮罩。
+         * exe 执行序号；取消时递增，使旧任务不能更新结果、状态或关闭新任务的加载遮罩。
          *
          * @type {bigint}
          */
@@ -5116,9 +5151,10 @@
          * 它包含完整的错误处理流程：若计算失败，会自动判断是否为语法错误，并尝试通过 syntaxCheck 模式获取修正后的表达式，最终将格式化后的结果或错误信息渲染回界面。
          *
          * @private
+         * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
          * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
          */
-        static async _exeMode0() {
+        static async _exeMode0(requestId) {
             const inputEl = HtmlTools.getHtml('#input');
             const textDisplay = HtmlTools.getHtml('#print_content_0_content_0');
             const resultDisplay = HtmlTools.getHtml('#print_content_0_content_1');
@@ -5138,6 +5174,9 @@
                 screenDisplay.classList.add('NoDisplay');
                 if (this.mode0ScreenInCalc) {
                     await WorkerTools.restart();
+                    if (requestId !== this.exeRequestId) {
+                        return;
+                    }
                 }
 
                 this.mode0ScreenInCalc = false;
@@ -5150,13 +5189,16 @@
                     f: HtmlTools.deleteIllegal(PageConfig.screenData['2_00']),
                     g: HtmlTools.deleteIllegal(PageConfig.screenData['2_01'])
                 });
+                if (requestId !== this.exeRequestId) {
+                    return;
+                }
                 ({expr, result} = realResult);
 
                 expr = HtmlTools.textToHtmlClass(expr);
                 result = HtmlTools.textToHtmlClass(result);
             } catch (error) {
-                if (error.name === 'TerminationError' || error.name === 'CancellationError') {
-                    // 取消或重启后停止后续语法检查和 UI 更新。
+                if (requestId !== this.exeRequestId || error.name === 'TerminationError' || error.name === 'CancellationError') {
+                    // 过期、取消或重启后停止后续语法检查和 UI 更新。
                     return;
                 }
 
@@ -5175,6 +5217,10 @@
                 }
             }
 
+            // 语法检查也可能在取消后才返回，渲染前再次确认本次任务仍有效。
+            if (requestId !== this.exeRequestId) {
+                return;
+            }
             HtmlTools.appendDOMs(textDisplay, expr);
             HtmlTools.appendDOMs(resultDisplay, result);
             InputManager.addSpace({area: textDisplay});
@@ -5202,9 +5248,10 @@
          * 6. 将计算结果渲染到界面，并缓存结果以便导出。
          *
          * @private
+         * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
          * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
          */
-        static async _exeMode1() {
+        static async _exeMode1(requestId) {
             const screenData = PageConfig.screenData['1'];
             const nextData = screenData.map((row) => [...row]);
             const listA = [], listB = [];
@@ -5248,6 +5295,9 @@
 
             try {
                 const resultList = await WorkerTools.statisticsCalc(listA, listB);
+                if (requestId !== this.exeRequestId) {
+                    return;
+                }
 
                 this._setMode1Results(resultList);
 
@@ -5262,7 +5312,7 @@
                     'choose_ra_6': resultList.reciprocal
                 };
             } catch (error) {
-                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                     return;
                 }
                 this._setMode1Results('error');
@@ -5277,10 +5327,11 @@
          * 计算完成后，它会动态生成一个HTML表格来展示自变量（x）、f(x)和g(x)的对应值。
          *
          * @private
+         * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
          *
          * @returns {Promise<void>} 此方法没有返回值，其主要作用是通过DOM操作来更新页面内容。
          */
-        static async _exeMode2() {
+        static async _exeMode2(requestId) {
             const headInit = HtmlTools.getHtml('#print_content_2_head').children[1].children[0];
             // 先恢复双函数表头，单函数分支再按本次输入收窄列数与标签。
             HtmlTools.getHtml('#print_content_2').classList.add('TwoFunc');
@@ -5312,6 +5363,9 @@
                 }
 
                 const result = await WorkerTools.valueList(fx, gx, start, step, end);
+                if (requestId !== this.exeRequestId) {
+                    return;
+                }
 
                 // 虚拟列表自行异步渲染；此处只提交新数据并继续解除加载遮罩。
                 void this.printListRenderer.load(
@@ -5323,7 +5377,7 @@
                 HtmlTools.getHtml('#print_content_2_error').classList.add('NoDisplay');
             } catch (error) {
                 // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
-                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                     return;
                 }
                 HtmlTools.getHtml('#print_content_2_error').classList.remove('NoDisplay');
@@ -5340,9 +5394,10 @@
          * 4. 处理计算过程中的错误，并在界面上显示错误状态。
          *
          * @private
+         * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
          * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
          */
-        static async _exeMode3() {
+        static async _exeMode3(requestId) {
             /**
              * 将所有分析结果区域重置为错误显示状态。
              *
@@ -5493,6 +5548,9 @@
 
             try {
                 const result = await WorkerTools.powerFunctionAnalysis(list);
+                if (requestId !== this.exeRequestId) {
+                    return;
+                }
 
                 for (let i = 0; i < 10; i++) {
                     switch (i) {
@@ -5526,7 +5584,7 @@
                 }
             } catch (error) {
                 // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
-                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                     return;
                 }
                 errorPrint();
@@ -5542,9 +5600,10 @@
          * 4. 处理计算过程中的错误，并在界面上显示错误状态。
          *
          * @private
+         * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
          * @returns {Promise<void>} 无返回值，通过操作 DOM 副作用更新页面。
          */
-        static async _exeMode4() {
+        static async _exeMode4(requestId) {
             /**
              * 将单个数值解格式化为 HTML DOM 元素并插入目标容器。
              * 格式为：z_k = value
@@ -5571,6 +5630,9 @@
             const content42 = HtmlTools.getHtml('#print_content_4_content_2');
             try {
                 const result = await WorkerTools.radicalFunctionAnalysis(z, n);
+                if (requestId !== this.exeRequestId) {
+                    return;
+                }
 
                 if ([result.z, result.n].includes('error')) {
                     HtmlTools.appendDOMs(content40, ['_error_'], {mode: 'replace'});
@@ -5631,7 +5693,7 @@
                 HtmlTools.getHtml('#print_omit').classList[result.overflow ? 'remove' : 'add']('NoDisplay');
             } catch (error) {
                 // 用户主动取消计算或重置 Worker 属于正常交互中断，静默退出避免屏幕误报错误提示。
-                if (error?.name === 'TerminationError' || error?.name === 'CancellationError') {
+                if (requestId !== this.exeRequestId || error?.name === 'TerminationError' || error?.name === 'CancellationError') {
                     return;
                 }
                 HtmlTools.appendDOMs(content40, ['_error_'], {mode: 'replace'});
@@ -5673,10 +5735,13 @@
             try {
                 switch (currentMode) {
                     case '0':
-                        await this._exeMode0();
+                        await this._exeMode0(requestId);
                         break;
                     case '1':
-                        await this._exeMode1();
+                        await this._exeMode1(requestId);
+                        if (requestId !== this.exeRequestId) {
+                            return;
+                        }
 
                         // 结果页接管视图后暂停输入网格，返回时再由 closePrint 恢复。
                         if (!HtmlTools.getHtml('#main').classList.contains('Input') && InputManager.statisticsRenderer.isRunning()) {
@@ -5684,13 +5749,13 @@
                         }
                         break;
                     case '2_1':
-                        await this._exeMode2();
+                        await this._exeMode2(requestId);
                         break;
                     case '3':
-                        await this._exeMode3();
+                        await this._exeMode3(requestId);
                         break;
                     case '4':
-                        await this._exeMode4();
+                        await this._exeMode4(requestId);
                         break;
                 }
             } finally {
