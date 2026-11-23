@@ -15042,10 +15042,42 @@
             "use strict";
 
             const key = event.key;
+            const isCodeNumber = TokenConfig.codeNumbers.has(`[${key}]`);
+
+            // 除配置中的数学符号输入外，Alt 组合键交由浏览器处理。
+            if (event.ctrlKey || event.metaKey || (event.altKey && !isCodeNumber)) {
+                return;
+            }
 
             PageControlTools.hideExplain();
 
-            if (event.ctrlKey || event.metaKey) {
+            const coverShown = !HtmlTools.getHtml('#main_cover').classList.contains('NoDisplay');
+            const inputMode = HtmlTools.getHtml('#main').classList.contains('Input');
+
+            // 按 UI 层级关闭模态遮罩或退出/取消结果页；Escape 在输入态不执行计算。
+            if (key === 'Enter' || key === 'Escape') {
+                if (coverShown) {
+                    event.preventDefault();
+                    return PageControlTools.clickMainCover();
+                }
+
+                if (!inputMode) {
+                    event.preventDefault();
+                    if (!HtmlTools.getHtml('#load_cover').classList.contains('NoDisplay')) {
+                        return PageControlTools.cancelPrint();
+                    }
+                    return PageControlTools.closePrint();
+                }
+
+                if (key === 'Enter') {
+                    event.preventDefault();
+                    return PrintManager.exe();
+                }
+                return;
+            }
+
+            // 非输入态保留按键默认行为，禁止修改隐藏的输入内容或光标。
+            if (coverShown || !inputMode) {
                 return;
             }
 
@@ -15073,30 +15105,13 @@
                     event.preventDefault();
 
                     return InputManager.moveCursor(key.slice(5).toLowerCase(), event.shiftKey);
-
-                case 'Enter':
-                    event.preventDefault();
-
-                    // Enter 按 UI 层级处理：先关闭模态遮罩，再退出/取消结果页，最后才提交当前表达式。
-                    if (!HtmlTools.getHtml('#main_cover').classList.contains('NoDisplay')) {
-                        return PageControlTools.clickMainCover();
-                    }
-
-                    if (!HtmlTools.getHtml('#main').classList.contains('Input')) {
-                        if (!HtmlTools.getHtml('#load_cover').classList.contains('NoDisplay')) {
-                            return PageControlTools.cancelPrint();
-                        }
-                        return PageControlTools.closePrint();
-                    }
-
-                    return PrintManager.exe();
             }
 
             if (/^([a-z0-9E])$/.test(key)) {
                 event.preventDefault();
 
-                if (event.altKey && ['e', 'i', 'x'].includes(key)) {
-                    // Alt+e/i/x 输入数学变量样式，普通按键仍保留字母词元，避免两种含义混淆。
+                if (event.altKey && isCodeNumber) {
+                    // 配置中的数学符号使用数学变量样式，普通按键仍保留字母词元。
                     const input = [`_${key}_mathit_`];
                     InputManager.input(input);
                     PageControlTools.showExplain(input);
