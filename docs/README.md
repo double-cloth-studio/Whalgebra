@@ -6,6 +6,7 @@
 | --- | --- |
 | 启动、离线使用、了解目录 | [项目说明](../README.md) |
 | 表达式、复数、大数和精度 | [计算引擎与构造器](./math_engine_and_constructors.md) |
+| MathPlus 各函数原理、用法和示例 | [MathPlus 函数说明](./mathplus_functions.md) |
 | 多项式、复根、数表、统计回归 | [数学分析工具](./advanced_analysis_tools.md) |
 | 异步调用、取消和故障恢复 | [Worker 架构](./architecture_and_worker.md) |
 | 配置、常数和词元优先级 | [配置与公共工具](./configuration_and_utilities.md) |

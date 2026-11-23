@@ -75,6 +75,7 @@ npm test
 ## 文档
 
 - [文档导航](./docs/README.md)：按任务查找 API 和实现说明。
+- [MathPlus 函数说明](./docs/mathplus_functions.md)：逐项查阅计算原理、用法与示例。
 - [工具使用](./tools/README.md)：命令参数、输出目录和 Web API 限制。
 - [测试维护](./test/README.md)：测试覆盖、用例格式和配置优先级。
 

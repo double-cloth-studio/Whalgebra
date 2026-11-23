@@ -42,7 +42,9 @@ console.log(normalized); // "2[cdot](3+4)"
 | 取整 | `floor(1.5)`、`ceil(1.5)` | `floor`、`ceil` |
 | 角度与极坐标 | `sin(30[degree])`、`2[toPolar]0` | `degree`、`toPolar` |
 
-`log(a,b)` 表示以 `a` 为底、`b` 为真数；`nroot(a,b)` 表示 `a` 的 `b` 次根主值。枚举全部正整数次复根使用 [RadicalFunctionTools](./advanced_analysis_tools.md)。三角函数和极坐标辐角均以弧度计，角度输入需显式使用 `[degree]`。
+`log(a,b)` 表示以 `a` 为底、`b` 为真数；`nroot(a,b)` 表示 `a` 的 `b` 次根的一个结果，分支沿用 `pow`，负实数的奇次根优先取实根。枚举全部正整数次复根使用 [RadicalFunctionTools](./advanced_analysis_tools.md)。三角函数和极坐标辐角均以弧度计，角度输入需显式使用 `[degree]`。
+
+全部静态方法的计算原理、逐项示例和分支限制见 [MathPlus 函数说明](./mathplus_functions.md)。
 
 静态数学方法通常返回 `ComplexNumber`，参数可用数值、数值字符串或数值对象。表达式字符串应先交给 `MathPlus.calc`，不要把 `"2+3"` 当普通数值传给构造器或算术方法。
 
