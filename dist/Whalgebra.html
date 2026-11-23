@@ -5876,36 +5876,6 @@
 
                         return result;
                     }
-                    if (!statesB.positive && !statesB.negative && statesB.zero) {
-                        const invalidModels = new Set();
-                        if (statesA.negative || statesA.zero) {
-                            invalidModels.add('ln');
-                            invalidModels.add('axb');
-                        }
-                        if (statesA.zero) {
-                            invalidModels.add('reciprocal');
-                        }
-
-                        twoParamModels.forEach((key) => {
-                            const invalid = invalidModels.has(key);
-                            result[key] = {
-                                parameter: invalid ? ['error', 'error'] : ['0', '0'],
-                                regressionEquation: invalid ? 'error' : '0',
-                                R2: 'error',
-                                model: key
-                            };
-                        });
-
-                        const squareInvalid = listA.length <= 2;
-                        result.square = {
-                            parameter: squareInvalid ? ['error', 'error', 'error'] : ['0', '0', '0'],
-                            regressionEquation: squareInvalid ? 'error' : '0',
-                            R2: 'error',
-                            model: 'square'
-                        };
-
-                        return result;
-                    }
 
                     // 计算 ssTotB
                     let ssTotB = new ComplexNumber(0);

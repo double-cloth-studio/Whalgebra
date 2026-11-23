@@ -646,7 +646,7 @@
     },
     {
       "description": [
-        "[statistics:all-y-zero] 所有 y 为 0 时提前返回零模型结构；覆盖 statesB 只有 zero 时所有模型返回 0 方程且 R2 为 error 的早退分支。；用于确认 bestModel 保持 linear 且各模型 model 字段齐全。"
+        "[statistics:all-y-zero] 所有 y 为 0 时沿用常规回归流程；定义域和唯一解成立的模型返回零方程，exp/abx/axb 返回 error，所有 R2 为 error。；用于确认 bestModel 保持 linear 且各模型 model 字段齐全。"
       ],
       "coeffs": [
         [
@@ -702,28 +702,28 @@
         },
         "axb": {
           "parameter": [
-            "0",
-            "0"
+            "error",
+            "error"
           ],
-          "regressionEquation": "0",
+          "regressionEquation": "error",
           "R2": "error",
           "model": "axb"
         },
         "exp": {
           "parameter": [
-            "0",
-            "0"
+            "error",
+            "error"
           ],
-          "regressionEquation": "0",
+          "regressionEquation": "error",
           "R2": "error",
           "model": "exp"
         },
         "abx": {
           "parameter": [
-            "0",
-            "0"
+            "error",
+            "error"
           ],
-          "regressionEquation": "0",
+          "regressionEquation": "error",
           "R2": "error",
           "model": "abx"
         },
