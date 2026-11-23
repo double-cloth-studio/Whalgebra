@@ -4066,6 +4066,11 @@
                     const input = new ComplexNumber(x);
                     const acc = input.acc;
 
+                    // 负实数利用奇函数性质，避免 x 与 sqrt(x² + 1) 相消。
+                    if (input.onlyReal && input.re.isNegative()) {
+                        return MathPlus._oppositeNumber(MathPlus.arsh(MathPlus._oppositeNumber(input)));
+                    }
+
                     return MathPlus.ln(
                         MathPlus.plus(
                             input,
@@ -4122,8 +4127,8 @@
                  * 计算双曲正切。
                  * tanh(x) = (e^(2x) - 1) / (e^(2x) + 1)。
                  *
-                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数自变量；通过
-                 *   `sinh(x) / cosh(x)` 计算，分母为零的复数点会被拒绝。
+                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数自变量；
+                 *   通过指数等价公式计算，分母为零的复数点会被拒绝。
                  * @returns {ComplexNumber} tanh(x)。
                  * @alias tanh
                  */
@@ -4132,9 +4137,11 @@
                     const acc = input.acc;
                     const one = [0, 1n, acc];
 
-                    const mid = MathPlus.exp(MathPlus.times([0, 2n, acc], input));
+                    // 正实数用 (1 - exp(-2x)) / (1 + exp(-2x))，避免中间指数溢出。
+                    const useNegativeExponent = input.onlyReal && input.re.isPositive();
+                    const mid = MathPlus.exp(MathPlus.times([0, useNegativeExponent ? -2n : 2n, acc], input));
                     return MathPlus.divide(
-                        MathPlus.plus(mid, [0, -1n, acc]),
+                        useNegativeExponent ? MathPlus.minus(one, mid) : MathPlus.plus(mid, [0, -1n, acc]),
                         Public.zeroCorrect(MathPlus.plus(mid, one), mid, one)
                     );
                 }
