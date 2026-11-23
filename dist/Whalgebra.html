@@ -7869,6 +7869,13 @@
                  */
                 static _stateId = null;
 
+                /** 已完成环境同步的标识；取消任务时不得中断 initEnv。 */
+                static _readyStateId = null;
+                /** 取消批次标识，使等待初始化的过期任务不再派发。 */
+                static _cancelId = Symbol();
+                /** 软取消后等待 Worker 响应的最长时间（毫秒）。 */
+                static _CANCEL_GRACE_TIME = 150;
+
                 /**
                  * 阻止实例化静态工具类。
                  *
@@ -7907,6 +7914,7 @@
                 static _ensureWorker() {
                     if (!this._mathWorker) {
                         this._mathWorker = new SyncWorker({
+                            injectCancelSignal: true,
                             callableFunctions: {
                                 setCalcAccuracy: (acc) => CalcConfig.globalCalcAccuracy = acc,
                                 getCalcAccuracy: () => CalcConfig.globalCalcAccuracy,
@@ -7923,7 +7931,7 @@
                                 statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
                                 radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
                                 valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
-                                exec: (expr, {
+                                exec: async (expr, {
                                     calcAcc,
                                     outputAcc,
                                     calcMode,
@@ -7931,15 +7939,22 @@
                                     printMode,
                                     f,
                                     g
-                                } = {}) => CalcTools.exec(expr, {
-                                    calcAcc: calcAcc,
-                                    outputAcc: outputAcc,
-                                    calcMode: calcMode,
-                                    outputMode: outputMode,
-                                    printMode: printMode,
-                                    f: f,
-                                    g: g
-                                })
+                                } = {}, cancellationSignal) => {
+                                    // 先让出事件循环，使已排队的取消消息能在同步计算前生效。
+                                    await new Promise(resolve => setTimeout(resolve, 0));
+                                    cancellationSignal.throwIfCancelled();
+                                    const result = CalcTools.exec(expr, {
+                                        calcAcc: calcAcc,
+                                        outputAcc: outputAcc,
+                                        calcMode: calcMode,
+                                        outputMode: outputMode,
+                                        printMode: printMode,
+                                        f: f,
+                                        g: g
+                                    });
+                                    cancellationSignal.throwIfCancelled();
+                                    return result;
+                                }
                             },
                             dependencies: [
                                 {name: 'TokenConfig', value: TokenConfig},
@@ -7973,6 +7988,7 @@
                  *   业务计算错误、取消和超时保持原拒绝原因，不被包装成成功值。
                  */
                 static async _dispatch(funcName, args = []) {
+                    const cancelId = this._cancelId;
                     this._ensureWorker();
 
                     // 等待当前环境同步；等待期间若发生重启，继续等待新一轮同步。
@@ -7984,6 +8000,12 @@
                         initPromise = this._initPromise;
                         await initPromise;
                     } while (this._restartPromise || initPromise !== this._initPromise);
+
+                    if (cancelId !== this._cancelId) {
+                        const error = new Error('[WorkerTools] Task was cancelled before dispatch.');
+                        error.name = 'CancellationError';
+                        throw error;
+                    }
 
                     try {
                         return await this._mathWorker.exec(funcName, {
@@ -8021,6 +8043,7 @@
                  */
                 static async _restoreState() {
                     const stateId = this._stateId = Symbol();
+                    this._readyStateId = null;
                     // 若 initEnv 等待期间主线程配置再次变更，补同步一次最新快照，消除重启窗口期配置丢失。
                     while (true) {
                         const snapshot = {
@@ -8057,6 +8080,7 @@
                             break;
                         }
                     }
+                    this._readyStateId = stateId;
                 }
 
                 /**
@@ -8084,16 +8108,38 @@
                 }
 
                 /**
-                 * 取消所有正在执行或排队的任务。
+                 * 软取消所有正在执行或等待派发的业务任务，保留环境初始化。
+                 * 若 Worker 在宽限期内仍无法响应轻量查询，再重启以中断同步长计算。
                  *
-                 * @returns {void}
+                 * @returns {Promise<void>} Worker 恢复响应或完成重启后解析。
                  */
-                static cancelWorker() {
+                static async cancelWorker() {
+                    this._cancelId = Symbol();
                     if (!this._mathWorker || this._mathWorker.isTerminated) {
                         return;
                     }
 
-                    this._mathWorker.cancel();
+                    if (this._restartPromise || this._readyStateId !== this._stateId) {
+                        return;
+                    }
+
+                    const worker = this._mathWorker;
+                    const stateId = this._stateId;
+                    worker.cancel();
+                    try {
+                        // 使用底层查询，避免探测超时进入 _dispatch 的通用故障恢复流程。
+                        await worker.exec('getCalcAccuracy', {timeout: this._CANCEL_GRACE_TIME});
+                    } catch (error) {
+                        if (worker !== this._mathWorker || stateId !== this._stateId ||
+                            error.name === 'CancellationError' || error.name === 'TerminationError') {
+                            return;
+                        }
+                        if (error.name === 'TimeoutError' || worker.isTerminated) {
+                            await this.restart();
+                        } else {
+                            throw error;
+                        }
+                    }
                 }
 
                 /**
@@ -13277,38 +13323,34 @@
                  */
                 static async _mode0ShowOnScreenFunc() {
                     const requestId = ++this._currentRequestId;
-                    if (this.mode0ScreenInCalc) {
-                        // 取消之前积压的计算任务，优先响应当前输入
-                        await WorkerTools.restart();
-
-                        // 也可以使用软取消（性能更好）
-                        // WorkerTools.cancelWorker();
-
-                        // 等待期间若有更新的请求进来，直接放弃本次过期调用。
-                        if (this._currentRequestId !== requestId) {
-                            return;
-                        }
-                    }
+                    const wasInCalc = this.mode0ScreenInCalc;
                     this.mode0ScreenInCalc = true;
-                    this._currentRequestId = requestId;
 
                     const screen0Display = HtmlTools.getHtml('#screen_0_display');
                     const screen0DisplayInner = HtmlTools.getHtml('#screen_0_display_inner');
 
-                    let currentInput = HtmlTools.htmlClassToText(HtmlTools.getClassList(HtmlTools.getHtml('#input'), {ignoreSpace: true}));
-
-                    // 实时预览允许输入尚未完成；去掉末尾连续中缀运算符后再计算最近的有效前缀。
-                    let isMiddleFunc = true;
-                    while (isMiddleFunc) {
-                        const lastFragment = currentInput.slice(-TokenConfig.MAX_TOKEN_LENGTH - 2);
-                        const lastToken = Public.tokenizer(lastFragment, {strictMode: false}).slice(-1)[0];
-                        isMiddleFunc = Public.getTokenInfo(lastToken)?.funcPlace === 'middle';
-                        if (isMiddleFunc) {
-                            currentInput = currentInput.slice(0, -lastToken.length);
-                        }
-                    }
-
                     try {
+                        if (wasInCalc) {
+                            await WorkerTools.cancelWorker();
+                            // 等待取消或重启期间若有新输入，放弃本次过期调用。
+                            if (this._currentRequestId !== requestId) {
+                                return;
+                            }
+                        }
+
+                        let currentInput = HtmlTools.htmlClassToText(HtmlTools.getClassList(HtmlTools.getHtml('#input'), {ignoreSpace: true}));
+
+                        // 实时预览允许输入尚未完成；去掉末尾连续中缀运算符后再计算最近的有效前缀。
+                        let isMiddleFunc = true;
+                        while (isMiddleFunc) {
+                            const lastFragment = currentInput.slice(-TokenConfig.MAX_TOKEN_LENGTH - 2);
+                            const lastToken = Public.tokenizer(lastFragment, {strictMode: false}).slice(-1)[0];
+                            isMiddleFunc = Public.getTokenInfo(lastToken)?.funcPlace === 'middle';
+                            if (isMiddleFunc) {
+                                currentInput = currentInput.slice(0, -lastToken.length);
+                            }
+                        }
+
                         const result = await WorkerTools.exec(currentInput, {
                             calcAcc: PageConfig.ACC_MODE_0.globalCalcAccuracy,
                             outputAcc: PageConfig.ACC_MODE_0.outputAccuracy,
@@ -14840,7 +14882,6 @@
         document.addEventListener('click', (event) => {
             "use strict";
 
-            // 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
             /**
              * 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
              * @param {Element|null} el - DOM 元素。
@@ -14856,6 +14897,10 @@
             };
 
             let target = event.target;
+
+            if (!(target instanceof Element)) {
+                return;
+            }
 
             // 键帽文字由内部 p 元素承载；除主输入区外统一提升到按钮容器，保证点击图标和空白处行为一致。
             if (target.tagName.toLowerCase() === 'p' && target.parentNode?.id !== 'input') {
