@@ -10,30 +10,39 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - name: Validate Pages entry point
+        run: test -s src/index.html
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: "src"
+
+  # 上传完成后通过任务依赖启动部署，避免在同一任务内立即查询时产物尚不可见。
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
       - name: Deploy to GitHub Pages
         id: deployment
