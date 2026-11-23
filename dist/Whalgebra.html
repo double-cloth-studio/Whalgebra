@@ -1431,18 +1431,6 @@
              */
             class BigNumber {
                 /**
-                 * 线性缓存 `10^exp` 的最大指数上限。
-                 * 512 足以覆盖全局最高计算精度（220）和 Lanczos 最高内部精度（420），
-                 * 常规舍入全部 O(1) 命中，且常驻内存上限仅约 55 KB。
-                 * @private
-                 */
-                static _MAX_POW10_CACHE_EXP = 512;
-                /**
-                 * 线性缓存表：`_pow10Cache[i] === 10n ** BigInt(i)`，长度不超过 `_MAX_POW10_CACHE_EXP + 1`。
-                 * @private
-                 */
-                static _pow10Cache = [1n];
-                /**
                  * 二次幂指数缓存上限：`k = 14` 对应 `10^(2^14) = 10^16384`。
                  * 15 项合计常驻内存仅约 14 KB；超过此规模的超大数在单次调用内临时计算，用完即由 GC 回收。
                  * @private
@@ -1670,33 +1658,6 @@
                 }
 
                 /**
-                 * 获取 10 的指定非负整数次幂。
-                 * 小指数走 O(1) 缓存表，大指数直接用原生 BigInt 快速幂，避免常驻内存膨胀。
-                 *
-                 * @private
-                 * @param {number} exp
-                 * @returns {bigint}
-                 */
-                static _pow10(exp) {
-                    if (!Number.isInteger(exp) || exp < 0) {
-                        throw new Error('[BigNumber] Input error: exponent for pow10 must be a non-negative integer.');
-                    }
-
-                    if (exp > BigNumber._MAX_POW10_CACHE_EXP) {
-                        return 10n ** BigInt(exp);
-                    }
-
-                    const cache = BigNumber._pow10Cache;
-
-                    // 按需扩展缓存，避免重复计算十的幂。
-                    while (cache.length <= exp) {
-                        cache.push(cache[cache.length - 1] * 10n);
-                    }
-
-                    return cache[exp];
-                }
-
-                /**
                  * 计算一个 BigInt 的十进制位数。
                  * 利用 `10^(2^k)` 倍增定位上界，再按二进制位从高到低整除缩减，
                  * 无需构造任何中间的 `10^mid`，内存占用严格有界。
@@ -1813,14 +1774,14 @@
 
                     // 构造精度阈值：10^acc
                     // 当 absMantissa 大于该值时，说明尾数很可能超过目标有效位数，需要进一步计算实际位数
-                    const threshold = BigNumber._pow10(acc);
+                    const threshold = MathPlus.pow10(acc);
 
                     if (absMantissa > threshold) {
                         const mantissaLength = BigNumber.decimalLengthBigInt(absMantissa);
                         const digitsToShift = mantissaLength - acc;
 
                         if (digitsToShift > 0) {
-                            const divisor = BigNumber._pow10(digitsToShift);
+                            const divisor = MathPlus.pow10(digitsToShift);
 
                             // 截断得到基础部分
                             let roundedMantissa = absMantissa / divisor;
@@ -2339,12 +2300,51 @@
              */
             class MathPlus {
                 /**
+                 * 线性缓存 `10^exp` 的最大指数上限。
+                 * 512 足以覆盖全局最高计算精度（220）和 Lanczos 最高内部精度（420），
+                 * 常规舍入全部 O(1) 命中，且常驻内存上限仅约 55 KB。
+                 * @private
+                 */
+                static _MAX_POW10_CACHE_EXP = 512;
+                /**
+                 * 线性缓存表：`_pow10Cache[i] === 10n ** BigInt(i)`，长度不超过 `_MAX_POW10_CACHE_EXP + 1`。
+                 * @private
+                 */
+                static _pow10Cache = [1n];
+
+                /**
                  * 阻止实例化静态工具类。
                  *
                  * @throws {Error} 始终抛出。
                  */
                 constructor() {
                     throw new Error('[MathPlus] MathPlus is a static class and should not be instantiated.');
+                }
+
+                /**
+                 * 获取 10 的指定非负整数次幂。
+                 * 小指数走 O(1) 缓存表，大指数直接用原生 BigInt 快速幂，避免常驻内存膨胀。
+                 *
+                 * @param {number} exp
+                 * @returns {bigint}
+                 */
+                static pow10(exp) {
+                    if (!Number.isInteger(exp) || exp < 0) {
+                        throw new Error('[MathPlus] Input error: exponent for pow10 must be a non-negative integer.');
+                    }
+
+                    if (exp > MathPlus._MAX_POW10_CACHE_EXP) {
+                        return 10n ** BigInt(exp);
+                    }
+
+                    const cache = MathPlus._pow10Cache;
+
+                    // 按需扩展缓存，避免重复计算十的幂。
+                    while (cache.length <= exp) {
+                        cache.push(cache[cache.length - 1] * 10n);
+                    }
+
+                    return cache[exp];
                 }
 
                 /**
@@ -3064,7 +3064,7 @@
                                     }
                                 }
 
-                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * BigNumber._pow10(absB.power);
+                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * MathPlus.pow10(absB.power);
                                 const signedB = isExponentNegative ? -realB : realB;
                                 const finalPowerBigInt = BigInt(p) * signedB;
 
@@ -3097,7 +3097,7 @@
                             const workAcc = resultAcc + guardDigits;
 
                             try {
-                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * BigNumber._pow10(absB.power);
+                                const realB = absB.power === 0 ? absB.mantissa : absB.mantissa * MathPlus.pow10(absB.power);
 
                                 // 5. 将完整 reA 交给 fastPow：仅当原生 BigInt 幂位数小于阈值且指数安全时走原生幂
                                 let canUseNativeBigInt = false;
