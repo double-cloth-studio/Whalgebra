@@ -2075,7 +2075,7 @@
                         }
 
                         default:
-                            throw new Error(`[BigNumber] Input error: Invalid argument}`);
+                            throw new Error(`[BigNumber] Input error: Invalid mode '${mode}'.`);
                     }
                 }
             }
@@ -2338,7 +2338,7 @@
                         }
 
                         default:
-                            throw new Error(`[ComplexNumber] Input error: Invalid argument}`);
+                            throw new Error(`[ComplexNumber] Input error: Invalid printMode '${printMode}'.`);
                     }
                 }
             }
@@ -9901,9 +9901,9 @@
                         const itemsH = (end - start) * itemHeight;
                         let physBottom = this.physicalHeight - physTop - itemsH;
 
-                        // 底部空间不足以容纳缓冲行时回收顶部占位，避免总物理高度越界。
-                        if (physBottom < 0) {
-                            physTop = this.physicalHeight - itemsH;
+                        // 仅吸收浮点尾差；底部缓冲行由 _render 裁剪，不能通过移动可见行回收空间。
+                        if (physBottom < 0 && physBottom > -1e-6) {
+                            physTop += physBottom;
                             physBottom = 0;
                         }
 
@@ -10242,6 +10242,7 @@
                     this._resumeRO = null;
                     this._resumeFallbackTimer = null;
                     this._measured = false;
+                    this._needsRemeasure = false;
                     this._remeasurePending = false;
                     this._isSmoothScrolling = false;
                     this._rendering = false;
@@ -10501,7 +10502,7 @@
                  * - 测量完成后清空容器并更新 {@link VirtualScroll._HeightMapper}。
                  * - 边界处理：
                  *   - `totalCount === 0` → 回退到 `_FALLBACK_HEIGHT`（50px）并警告。
-                 *   - 测量结果 `≤ 0` → 回退到 50px 并警告。
+                 *   - 容器隐藏或采样为零 → 暂用已有行高或 50px，保留待重测标记。
                  *   - 测量结果 `> 0` 但 `< _MIN_ITEM_HEIGHT` → 修正并警告。
                  * - 测量后会尝试恢复原来的滚动位置（将旧虚拟滚动量映射到新物理坐标）。
                  *
@@ -10512,6 +10513,14 @@
                 _doMeasure() {
                     const inlineOverflowY = this.container.style.overflowY;
                     const clientHeight = this.container.clientHeight;
+                    this._needsRemeasure = true;
+                    // 隐藏期间不采样，也不把临时回退高度当成最终测量结果。
+                    if (this.container.clientWidth <= 0 || clientHeight <= 0) {
+                        this.itemHeight = this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT
+                                          ? this.itemHeight : VirtualScroll._FALLBACK_HEIGHT;
+                        this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
+                        return;
+                    }
                     const tempEls = [];
 
                     try {
@@ -10532,6 +10541,7 @@
                         this._nodePool.clear();
 
                         if (this.totalCount === 0) {
+                            this._needsRemeasure = false;
                             this.itemHeight = VirtualScroll._FALLBACK_HEIGHT;
                             this._heightMapper.update(0, this.itemHeight, clientHeight);
                             console.warn('[VirtualScroll] Data is empty; item height falls back to 50px.');
@@ -10565,16 +10575,11 @@
                         }
 
                         if (measured <= 0) {
-                            if (this._measured && this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT) {
-                                console.warn(
-                                    `[VirtualScroll] Measured item height is 0 (container may be hidden); ` +
-                                    `keeping previous height (${this.itemHeight}px).`
-                                );
-                                measured = this.itemHeight;
-                            } else {
-                                console.warn('[VirtualScroll] Measured item height is 0; falling back to 50px.');
-                                measured = VirtualScroll._FALLBACK_HEIGHT;
-                            }
+                            // 视口切换时采样行也可能短暂为零，稍后重试，不提交为有效测量。
+                            measured = this.itemHeight >= VirtualScroll._MIN_ITEM_HEIGHT
+                                       ? this.itemHeight : VirtualScroll._FALLBACK_HEIGHT;
+                        } else {
+                            this._needsRemeasure = false;
                         }
 
                         this.itemHeight = measured;
@@ -10798,19 +10803,22 @@
                         const newW = this.container.clientWidth;
                         const newH = this.container.clientHeight;
 
-                        // 容器被隐藏（display: none）或处于 DevTools 切换视口瞬间的 0×0 状态时直接忽略。
+                        // 隐藏或瞬态零尺寸时不测量，保留标记以便恢复到相同尺寸时也能重测。
                         if (newW <= 0 || newH <= 0) {
+                            if (this._remeasureOnResize) {
+                                this._needsRemeasure = true;
+                            }
                             return;
                         }
 
                         const widthChanged = Math.round(newW) !== Math.round(this._lastContainerWidth);
                         const heightChanged = Math.round(newH) !== Math.round(this._lastContainerHeight);
 
-                        if (!widthChanged && !heightChanged) {
+                        if (!widthChanged && !heightChanged && !this._needsRemeasure) {
                             return;
                         }
 
-                        if (this._remeasureOnResize) {
+                        if (this._remeasureOnResize || this._needsRemeasure) {
                             // 不在此处提前覆写 _lastContainerWidth/Height，等重测完成后再同步，
                             // 避免中间帧突然变为 0×0 放弃重测后，恢复原尺寸时被误判为“未变化”。
                             this._scheduleRemeasure();
@@ -10943,6 +10951,7 @@
                     let lastW = -1;
                     let lastH = -1;
                     let attempts = 0;
+                    let measureAttempts = 0;
                     const MAX_STABILIZE_FRAMES = 6;
 
                     /**
@@ -10961,6 +10970,7 @@
 
                         // 容器已隐藏或瞬态折叠，放弃本次重测，等待恢复非零尺寸时由 ResizeObserver 重新触发。
                         if (curW <= 0 || curH <= 0) {
+                            this._needsRemeasure = true;
                             this._remeasurePending = false;
                             return;
                         }
@@ -10995,8 +11005,14 @@
 
                             this._bindScroll();
                             this._forceRender();
+                            // 非零容器中的零高采样最多重试 6 次，持续异常时等待下一次尺寸通知。
+                            if (this._needsRemeasure && ++measureAttempts < MAX_STABILIZE_FRAMES) {
+                                this._remeasureRAF = requestAnimationFrame(runRemeasure);
+                            } else if (this._needsRemeasure) {
+                                console.warn('[VirtualScroll] Item height is still 0 after 6 measurements; waiting for the next resize.');
+                            }
                         } finally {
-                            this._remeasurePending = false;
+                            this._remeasurePending = this._remeasureRAF !== null;
                         }
                     };
 
@@ -11142,6 +11158,9 @@
                         const {index, behavior, block} = pendingScroll;
                         this.scrollToIndex(index, {behavior, block});
                         this._bindEvents();
+                        if (this._needsRemeasure) {
+                            this._scheduleRemeasure();
+                        }
 
                         if (!this._isSmoothScrolling) {
                             this._render();
@@ -11158,6 +11177,9 @@
                     this._bindEvents();
                     this._render();
                     this._scheduleRender();
+                    if (this._needsRemeasure) {
+                        this._scheduleRemeasure();
+                    }
                 }
 
                 /**
@@ -11311,8 +11333,17 @@
                         // 在变更渲染窗口前同步最新逻辑锚点，供后续尺寸变化与重测使用。
                         this._updateAnchor();
 
-                        const visibleEnd = visibleStart + Math.ceil(clientHeight / this.itemHeight);
-                        const end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
+                        // 排他终点包含视口底部仅露出一部分的行，避免裁剪缓冲区时漏渲染。
+                        const visibleEnd = Math.min(
+                            this.totalCount, Math.ceil((virtScrollTop + clientHeight) / this.itemHeight)
+                        );
+                        let end = Math.min(this.totalCount, visibleEnd + this.bufferSize);
+                        if (hm.compressed) {
+                            const physTop = clampedPhysScrollTop + start * this.itemHeight - virtScrollTop;
+                            const maxEnd = start + Math.floor((hm.physicalHeight - physTop) / this.itemHeight);
+                            // 保留全部可见行，只裁剪超出物理高度的不可见底部缓冲行。
+                            end = Math.max(visibleEnd, Math.min(end, maxEnd));
+                        }
                         const rangeUnchanged = start === this._startIndex && end === this._endIndex;
 
                         // 按新窗口 [start, end) 与当前物理偏移更新 spacer（统一处理负 marginTop）
@@ -11602,6 +11633,7 @@
                     this._anchorIndex = 0;
                     this._anchorRatio = 0;
                     this._measured = false;
+                    this._needsRemeasure = false;
                     this.data = [];
                     this.totalCount = 0;
                     this.container = null;
@@ -11772,7 +11804,7 @@
                                 Math.round(currentHeight) !== Math.round(this._lastContainerHeight)
                             );
 
-                        const needMeasure = !this._measured || remeasure || sizeChanged;
+                        const needMeasure = !this._measured || this._needsRemeasure || remeasure || sizeChanged;
 
                         if (needMeasure) {
                             this._setupContainer();
@@ -11830,6 +11862,9 @@
                         this._forceRender();
                         if (!this._sm.is(VirtualScroll.State.RUNNING)) {
                             this._sm.transition(VirtualScroll.State.RUNNING);
+                        }
+                        if (this._needsRemeasure) {
+                            this._scheduleRemeasure();
                         }
                     } catch (error) {
                         // 加载失败后清理现场，回到可重新加载的空闲状态。
