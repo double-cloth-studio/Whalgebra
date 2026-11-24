@@ -1140,7 +1140,7 @@
                      * 将十六进制尾数字符串转换为 `BigInt`。
                      *
                      * @param {[number, string, number]} rawTuple - 常量表中的 `[power, mantissa, acc]`：
-                     *   `power` 为十进制指数，`mantissa` 是避免脚本解析损失的十进制整数字符串，
+                     *   `power` 为十进制指数，`mantissa` 是避免脚本解析损失的十六进制整数字符串，
                      *   `acc` 是该常量可用的有效位数。返回值会将尾数转换为 `bigint`。
                      * @returns {[number, bigint, number]} 可直接传给 `BigNumber` 的
                      *   `[power, mantissa, acc]`：十进制指数、带符号整数尾数和有效位数；返回新数组。
@@ -2939,8 +2939,8 @@
                         // 提取公共指数 m，把取模转换为整数尾数上的运算，最后再乘回 10^m。
                         const m = Math.min(reA.power, reB.power);
 
-                        const isNegativeA = reA.mantissa < 0;
-                        const isNegativeB = reB.mantissa < 0;
+                        const isNegativeA = reA.mantissa < 0n;
+                        const isNegativeB = reB.mantissa < 0n;
                         let calcA = isNegativeA ? -reA.mantissa : reA.mantissa;
                         let calcB = isNegativeB ? -reB.mantissa : reB.mantissa;
 
