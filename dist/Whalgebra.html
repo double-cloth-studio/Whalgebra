@@ -2483,10 +2483,11 @@
                     }
                     const highPrecisionRe = new ComplexNumber(angle, {acc: highPrecisionAcc});
                     const n = MathPlus.floor(MathPlus.times(highPrecisionRe, CalcConfig.constants.invTwoPi));
+                    angle = highPrecisionRe.re;
                     if (!n.isZero()) {
                         reduced = true;
+                        angle = MathPlus.minus(highPrecisionRe, MathPlus.divide(n, CalcConfig.constants.invTwoPi)).re;
                     }
-                    angle = MathPlus.minus(highPrecisionRe, MathPlus.divide(n, CalcConfig.constants.invTwoPi)).re;
 
                     // 利用 cos(x) = cos(2π - x)，将 re 从 (π, 2π) 映射到 (0, π)
                     if (MathPlus.minus(angle, CalcConfig.constants.pi).re.isPositive()) {
@@ -2528,6 +2529,9 @@
                         if (!angle.isZero() && BigNumber.getMag(angle) <= noiseMag + 4) {
                             angle = new BigNumber([0, 0n, acc]);
                         }
+                    } else {
+                        // 未归约时保留原角度的精度和噪声信息。
+                        angle = originalAngle;
                     }
 
                     return [angle, changeSign];
