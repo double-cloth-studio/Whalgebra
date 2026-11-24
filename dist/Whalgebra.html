@@ -3749,8 +3749,8 @@
                  * @throws {Error} 如果 a=1，或者 a,b 的某些组合导致 ln(a) 或 ln(b) 未定义（例如 ln(0)）。
                  */
                 static log(a, b) {
-                    const aAcc = (a instanceof ComplexNumber || a instanceof BigNumber) ? a.acc : new ComplexNumber(a).acc;
-                    const lnA = Public.zeroCorrect(MathPlus.ln(a), [0, 1n, aAcc]);
+                    // 按对数自身的噪声判零，保留接近 1 的合法底数产生的小对数。
+                    const lnA = Public.zeroCorrect(MathPlus.ln(a));
                     return MathPlus.divide(MathPlus.ln(b), lnA);
                 }
 
@@ -3952,7 +3952,8 @@
                         }
 
                         const res = new ComplexNumber([result.re.power, sign * result.re.mantissa, acc], {noiseMag: result.re.noiseMag});
-                        return Public.zeroCorrect(res, [0, 1n, acc]);
+                        // 按结果自身的噪声判零，保留零点附近仍有有效数字的余弦值。
+                        return Public.zeroCorrect(res);
                     }
 
                     // --- 输入为复数 ---
@@ -4227,7 +4228,8 @@
                         MathPlus.ln(
                             MathPlus.divide(
                                 MathPlus.plus(one, input),
-                                Public.zeroCorrect(MathPlus.minus(one, input), one, input)
+                                // 按差值自身的噪声判零，保留精确输入与 1 之间的微小差值。
+                                Public.zeroCorrect(MathPlus.minus(one, input))
                             )
                         ),
                         [0, 2n, acc]
