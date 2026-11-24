@@ -25,7 +25,7 @@ test("精确大角度的三角函数不应被相对判零", async (t) => {
                         const actual = win.MathPlus[name](input);
                         const expectedValue = new win.BigNumber(expected, {acc});
                         const signedExpected = name === "sin" && sign < 0
-                                               ? win.MathPlus._oppositeNumber(expectedValue)
+                                               ? win.MathPlus.oppositeNumber(expectedValue)
                                                : expectedValue;
                         assert.equal(actual.acc, acc);
                         assert.equal(actual.toString({acc: 25}), signedExpected.toString({acc: 25}), name);
