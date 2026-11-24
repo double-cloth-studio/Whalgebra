@@ -1890,9 +1890,12 @@
                     }
 
                     // 移除尾数末尾的零并补偿指数，使同一个数尽量只有一种内部表示，便于比较和后续运算。
-                    while (absMantissa % 10n === 0n) {
-                        absMantissa /= 10n;
-                        finalPower++;
+                    // 奇数不可能是 10 的倍数，常规热路径直接跳过取模。
+                    if ((absMantissa & 1n) === 0n) {
+                        while (absMantissa % 10n === 0n) {
+                            absMantissa /= 10n;
+                            finalPower++;
+                        }
                     }
 
                     return {mantissa: absMantissa * sign, power: finalPower, noiseMag};
@@ -5761,16 +5764,16 @@
                 }
 
                 /**
-                 * 构造并求解正规方程，得到指定阶数的最小二乘多项式。
+                 * 使用 Householder QR 分解求解指定阶数的实数最小二乘多项式。
                  *
                  * @private
                  * @param {Array<ComplexNumber|string|number>} listA - 自变量样本 `xᵢ`；与 `listB` 等长，
-                 *   至少需要 `power + 1` 个观测点才能建立满秩正规方程。
-                 * @param {Array<ComplexNumber|string|number>} listB - 与 `xᵢ` 同索引的因变量样本 `yᵢ`。
+                 *   仅接受实数，至少需要 `power + 1` 个观测点才能建立满列秩设计矩阵。
+                 * @param {Array<ComplexNumber|string|number>} listB - 与 `xᵢ` 同索引的实数因变量样本 `yᵢ`。
                  * @param {number} power - 非负整数多项式阶数；结果包含 `power + 1` 个从常数项到最高次项的系数。
                  * @returns {Array<ComplexNumber>} 长度为 `power + 1` 的最小二乘系数 `[a₀,a₁,…]`，
                  *   按常数项到最高次项排列，使预测式为 `a₀ + a₁x + …`。
-                 * @throws {Error} 数据不足或两组数据长度不一致时抛出。
+                 * @throws {Error} 数据不足、长度不一致、包含复数或设计矩阵不满列秩时抛出。
                  */
                 static _regressionAnalysis(listA, listB, power) {
                     if (listA.length <= power) {
@@ -5781,35 +5784,81 @@
                     }
 
                     const n = listA.length;
-                    // 正规方程中 b_i=Σ(x^i·y)，A_ij=Σ(x^(i+j))；预先计算各次幂和以复用结果。
-                    const constants = [StatisticsTools._averageAndSum(listB).sum];
-                    const coefficientsList = [new ComplexNumber(n)];
-                    const coefficients = [];
+                    const m = power + 1;
+                    const matrix = [];
+                    const columnScales = Array.from({length: m}, () => new BigNumber(0));
+                    const {realPlus: plus, realMinus: minus, realTimes: times, realDivide: divide} = MathPlus;
 
-                    // 使用递推累乘代替重复计算 pow(x, i)，合并遍历以优化性能。
-                    const baseListA = listA.map((x) => new ComplexNumber(x));
-                    const curPow = baseListA.map((x) => new ComplexNumber(x));
-
-                    for (let p = 1; p <= 2 * power; p++) {
-                        if (p > 1) {
-                            for (let k = 0; k < n; k++) {
-                                curPow[k] = MathPlus.times(curPow[k], baseListA[k]);
+                    // 递推构造 [1, x, …, x^power | y] 副本，直接分解设计矩阵，避免条件数平方。
+                    for (let i = 0; i < n; i++) {
+                        const x = new ComplexNumber(listA[i]);
+                        const y = new ComplexNumber(listB[i]);
+                        if (!x.onlyReal || !y.onlyReal) {
+                            throw new Error('[StatisticsTools] Complex number appear in the input.');
+                        }
+                        const row = [new BigNumber(1)];
+                        for (let j = 1; j < m; j++) {
+                            row.push(times(row[j - 1], x.re));
+                        }
+                        for (let j = 0; j < m; j++) {
+                            const abs = row[j].isNegative() ? MathPlus._oppositeNumber(row[j]) : row[j];
+                            if (minus(abs, columnScales[j]).isPositive()) {
+                                columnScales[j] = abs;
                             }
                         }
-                        coefficientsList.push(StatisticsTools._averageAndSum(curPow).sum);
-                        if (p <= power) {
-                            constants.push(StatisticsTools._dotProduct(curPow, listB));
+                        row.push(y.re);
+                        matrix.push(row);
+                    }
+
+                    for (let k = 0; k < m; k++) {
+                        let normSquared = new BigNumber(0);
+                        for (let i = k; i < n; i++) {
+                            normSquared = plus(normSquared, times(matrix[i][k], matrix[i][k]));
+                        }
+                        const norm = MathPlus.sqrt(normSquared).re;
+                        // 各列使用自身原始尺度判秩，避免不同次幂的量级差误判小列为零。
+                        if (norm.isZero() || Public.zeroCorrect(norm, columnScales[k]).isZero()) {
+                            throw new Error('[StatisticsTools] The system of equations has no unique solution.');
+                        }
+
+                        // 对角元取与列首相反的符号，避免构造反射向量时发生相消；向量首项归一为 1。
+                        const first = matrix[k][k];
+                        const diagonal = first.isNegative() ? norm : MathPlus._oppositeNumber(norm);
+                        const head = minus(first, diagonal);
+                        const reflector = [new BigNumber(1)];
+                        for (let i = k + 1; i < n; i++) {
+                            reflector.push(divide(matrix[i][k], head));
+                        }
+                        const tau = divide(minus(diagonal, first), diagonal);
+
+                        // 同时对剩余设计列和 y 应用 H = I - tau*v*v^T，无需显式构造 Q。
+                        for (let j = k + 1; j <= m; j++) {
+                            let projection = matrix[k][j];
+                            for (let i = k + 1; i < n; i++) {
+                                projection = plus(projection, times(reflector[i - k], matrix[i][j]));
+                            }
+                            const factor = times(tau, projection);
+                            matrix[k][j] = minus(matrix[k][j], factor);
+                            for (let i = k + 1; i < n; i++) {
+                                matrix[i][j] = minus(matrix[i][j], times(reflector[i - k], factor));
+                            }
+                        }
+                        matrix[k][k] = diagonal;
+                        for (let i = k + 1; i < n; i++) {
+                            matrix[i][k] = new BigNumber(0);
                         }
                     }
-                    for (let i = 0; i < power + 1; i++) {
-                        const rowList = [];
-                        const endNum = i + power + 1;
-                        for (let j = i; j < endNum; j++) {
-                            rowList.push(coefficientsList[j]);
+
+                    // 对 R*a = Q^T*y 的前 m 行回代，保持系数按升幂排列。
+                    const solution = new Array(m);
+                    for (let i = m - 1; i >= 0; i--) {
+                        let value = matrix[i][m];
+                        for (let j = i + 1; j < m; j++) {
+                            value = minus(value, times(matrix[i][j], solution[j].re));
                         }
-                        coefficients.push(rowList);
+                        solution[i] = new ComplexNumber(divide(value, matrix[i][i]));
                     }
-                    return StatisticsTools._solveLinearEquation(coefficients, constants);
+                    return solution;
                 }
 
                 /**
@@ -5897,7 +5946,7 @@
                  *
                  * @private
                  * @param {Array<ComplexNumber|string|number>} listA - 送入回归求解器的自变量；可为原值或模型要求的变换值。
-                 * @param {Array<ComplexNumber|string|number>} listB - 送入正规方程的因变量；对数/指数模型中可能已变换。
+                 * @param {Array<ComplexNumber|string|number>} listB - 送入最小二乘求解器的因变量；对数/指数模型中可能已变换。
                  * @param {number} power - 传给多项式回归的非负整数阶数，也决定失败时生成的参数占位数。
                  * @param {Array<ComplexNumber|string|number>} originalListB - 未变换的实际因变量；仅用于在原始量纲上计算 R²。
                  * @param {function(ComplexNumber|string|number, Array<ComplexNumber|string|number>): ComplexNumber} func -
@@ -5967,7 +6016,7 @@
                  * @param {Array<ComplexNumber|string|number>} listB - 因变量样本；必须非空且只含实数，元素按索引
                  *   与 `listA` 配对。样本数不足时高阶模型以 `error` 占位。
                  * @returns {StatisticsAnalysisResult} 完整统计结果。所有直接数值字段均已转换为显示字符串；
-                 *   模型不满足定义域、样本不足或正规方程奇异时，不删除模型字段，而是在对应
+                 *   模型不满足定义域、样本不足或设计矩阵不满列秩时，不删除模型字段，而是在对应
                  *   `parameter`、`regressionEquation`、`R2` 中保留 `error`，便于 UI 使用固定结构渲染。
                  * @throws {Error} 数据长度不一致、包含复数或不足以拟合时抛出。
                  */
