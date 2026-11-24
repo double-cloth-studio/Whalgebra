@@ -60,3 +60,5 @@ try {
 ```
 
 更新 UI 时还需检查请求标识，丢弃旧请求返回的结果。`PrintManager` 分别用 `_currentRequestId` 和 `exeRequestId` 管理实时预览与正式计算；`cancelMode0Preview()` 同时作废已启动的预览并丢弃防抖队列，本身不取消 Worker。调用方负责取消或重启 Worker、复位计算状态，详见[界面与交互](./ui_and_interaction.md)。
+
+编辑区提交另由 `PageControlTools._inputSyncRequestId` 管理，语法检查返回后须核对原模式和子屏幕。取消或终止错误不应标记为语法错误；模式切换与 `cancelPrint()` 会作废当前提交。完整流程见[编辑区提交](./ui_and_interaction.md#编辑区提交到子屏幕)。

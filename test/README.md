@@ -18,7 +18,7 @@ node --test test/node/statistics.test.js
 - `statistics.test.js`：全零因变量时的回归定义域、样本数量和参数唯一性。
 - `reverse_build.test.js`、`svg_compressor.test.js`、`server.test.js`：有效资源拆分、SVG 输出、目录清理边界和本地服务 API 约束。
 
-这批测试不直接验证 `WorkerTools.isReady` 的环境同步条件，也不验证实时预览的请求作废、浮层关闭顺序等界面行为；这些流程的人工检查见[界面与交互](../docs/ui_and_interaction.md#修改后的人工检查)。
+这批测试不直接验证 `WorkerTools.isReady` 的环境同步条件，也不验证实时预览的请求作废、子屏幕异步提交的重复执行与取消、浮层关闭顺序等界面行为；这些流程的人工检查见[界面与交互](../docs/ui_and_interaction.md#修改后的人工检查)。
 
 真实浏览器测试：运行 `npm start`，从工作台进入 `test/web/index.html`。控制台通过 iframe 加载发行版并使用真实 Worker，可单独运行测试集、定位失败用例及运行性能基准。UI 改动仍需人工检查受影响流程。
 

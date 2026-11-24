@@ -63,7 +63,7 @@ console.log(new BigNumber("12.34", { acc: 30 }).valueOf()); // [-2, 1234n, 30]
 console.log(new BigNumber("3.14159265").toString({ acc: 5 })); // "3.1416"
 ```
 
-常用方法：`isZero()`、`isPositive()`、`isNegative()`、`getMag()`、`toString()`、`valueOf()`。`getMag()` 返回十进制数量级，零返回 `-Infinity`；`BigNumber.pow10(n)` 返回非负整数次的 `10n` 幂。
+常用实例方法：`isZero()`、`isPositive()`、`isNegative()`、`toString()`、`valueOf()`。数量级通过静态方法 `BigNumber.getMag(value)` 获取，零返回 `-Infinity`；`BigNumber.decimalLengthBigInt(n)` 返回整数绝对值的十进制位数（零为 1），`BigNumber.pow10(n)` 返回非负整数次的 `10n` 幂。
 
 `toString({ acc, mode })` 的 `mode` 可取 `auto`、`normal`、`scientific`。`valueOf()` **返回内部元组，不是原生 Number**；请通过 `MathPlus` 运算，不要使用 JavaScript 的 `+` 等操作符组合这些对象。高精度输入优先用字符串或 `bigint`，已经在原生浮点计算中损失的位数无法恢复。
 
@@ -97,3 +97,5 @@ console.log(MathPlus.abs(z).toString()); // "5"
 核心默认计算精度为 220，输出策略为 `0.9`；界面初始化会应用用户保存的精度档位。需要稳定、可复现的示例时，显式指定精度和显示模式。
 
 `MathPlus.calc` 的 `acc` 控制计算精度；`toString({ acc })` 控制显示有效位数。`CalcTools.exec` 还支持输出比例和底噪归整，参数见[分析工具文档](./advanced_analysis_tools.md)。增加显示位数不会提高已有结果的计算精度，数值算法也可能因输入过大或精度不可靠而拒绝计算。
+
+全局上限与算法内部工作精度不同：基础常数保存 440 位，若干超越函数使用额外保护位，阶乘按系数集与输入规模选择工作精度，最终仍按目标 `acc` 返回结果。实现说明见[MathPlus 函数文档](./mathplus_functions.md)。

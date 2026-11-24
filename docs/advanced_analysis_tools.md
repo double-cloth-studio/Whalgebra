@@ -68,13 +68,18 @@ console.log(stats.linear.regressionEquation); // "2[x]"
 | --- | --- |
 | `n` | 样本数量 |
 | `averageA/B`、`sumA/B`、`sum2A/B` | 均值、总和、平方和，A/B 分别对应两列 |
-| `totalVarianceA/B`、`sampleVarianceA/B` | 总体 / 样本**标准差**，历史字段名虽含 Variance，结果已开平方 |
+| `populationStandardDeviationA/B` | 总体标准差，sqrt(Σ(x−均值)²/n) |
+| `sampleStandardDeviationA/B` | 样本标准差，sqrt(Σ(x−均值)²/(n−1)) |
 | `maxA/B`、`minA/B` | 各列极值 |
 | `dotAB`、`dotA2B` | Σxy、Σx²y |
 | `totalCovariance`、`sampleCovariance` | 总体 / 样本协方差 |
 | `r` | 皮尔逊相关系数 |
 
 单样本的样本标准差、样本协方差以及不可计算的相关系数等使用 `"error"`。输入长度不符、为空或含非零虚部会抛错。
+
+上述 `A/B` 表示字段分别以 `A`、`B` 结尾。
+
+样本中的字符串会先按表达式求值，因此也可以传入 `"1/2"`、`"sqrt(2)"` 等实数表达式；语法或求值错误会抛出异常。
 
 ### 回归模型
 
@@ -89,6 +94,8 @@ console.log(stats.linear.regressionEquation); // "2[x]"
 | `reciprocal` | y=a+b/x | x 非零 |
 
 各模型返回 `parameter`、`regressionEquation`、`R2` 和 `model`。定义域不满足、样本不足或方程组奇异时仍保留字段，以 `"error"` 占位。`bestModel` 按原始 y 尺度的 R² 比较选择；使用前仍需检查该模型的 `R2`，全部失败时不能把默认模型名视为拟合成功。
+
+底层最小二乘拟合对设计矩阵直接做 Householder QR 分解，再回代求系数；按各列原始尺度检查秩，减少不同次幂量级差造成的误判。线性模型至少需要 2 个样本，二次模型至少需要 3 个样本，且设计矩阵须满列秩。`parameter` 顺序与表中的 a、b、c 一致；指数、幂模型在线性化空间拟合后还原参数，R² 在原始 y 尺度计算。
 
 全零因变量也需要满足各模型的定义域及参数唯一性要求，不会无条件生成零系数。即使能够返回方程 `"0"`，因 y 的总离差为零，`R2` 仍为 `"error"`；例如 x 为 `[1,2,3]`、y 为 `[0,0,0]` 时，线性模型可返回零系数，而指数模型仍不适用。
 

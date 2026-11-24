@@ -40,7 +40,7 @@ CalcConfig.globalPrintMode = 'algebra';
 
 ### 内置常数
 
-`CalcConfig.constants` 惰性解析并缓存常数，如 `pi`、`e`、`ln2`、`ln10`。常数通常以 `[power, bigintMantissa, acc]` 元组提供，**不是十进制字符串**。
+`CalcConfig.constants` 惰性解析并缓存常数，如 `pi`、`e`、`ln_10`、`ln_1_2`。常数通常以 `[power, bigintMantissa, acc]` 元组提供，**不是十进制字符串**；没有 `ln2`、`ln10` 这两个键。
 
 ```javascript
 const pi = new BigNumber(CalcConfig.constants.pi);
@@ -48,6 +48,8 @@ console.log(pi.toString({ acc: 10 })); // "3.141592654"
 ```
 
 常数表也含算法辅助数据；完整键名和数据结构以源码为准，业务代码不应改写缓存。
+
+`pi`、`e`、`ln_10`、`ln_1_2` 和周期归约用的 `invTwoPi` 均保存 440 位有效数字，为保护位运算和嵌套调用提供余量。这不改变全局计算精度上限 220 位。`_rawConstants` 中的尾数是十六进制字符串，读取 `constants` 时才转换为 `bigint`；Lanczos 系数集则使用含 `acc`、`g`、`p` 的对象，详见[阶乘实现](./mathplus_functions.md#阶乘伽马与取整)。
 
 ## TokenConfig 与 Public.getTokenInfo
 

@@ -6,11 +6,11 @@
 | --- | --- |
 | 启动、离线使用、了解目录 | [项目说明](../README.md) |
 | 表达式、复数、大数和精度 | [计算引擎与构造器](./math_engine_and_constructors.md) |
-| MathPlus 各函数原理、用法和示例 | [MathPlus 函数说明](./mathplus_functions.md) |
+| MathPlus 各函数原理、实数运算核、阶乘精度和示例 | [MathPlus 函数说明](./mathplus_functions.md) |
 | 多项式、复根、数表、统计回归 | [数学分析工具](./advanced_analysis_tools.md) |
 | 异步调用、取消和故障恢复 | [Worker 架构](./architecture_and_worker.md) |
 | 配置、常数和词元优先级 | [配置与公共工具](./configuration_and_utilities.md) |
-| 页面模式、输入和虚拟列表 | [界面与交互](./ui_and_interaction.md) |
+| 页面模式、输入提交、取消和虚拟列表 | [界面与交互](./ui_and_interaction.md) |
 | 修改、同步、测试和部署流程 | [工具链与验证](./toolchain_and_testing.md) |
 | CLI 参数与路径限制 | [工具手册](../tools/README.md) |
 | JSON 用例格式与测试配置 | [测试手册](../test/README.md) |
