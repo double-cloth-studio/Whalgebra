@@ -136,3 +136,11 @@ test("服务器 CLI 参数解析默认不打开浏览器，并支持 --open 与 
     assert.equal(parseArguments(["--open", "--no-open"]).open, false);
     assert.equal(parseArguments(["--no-open", "--open"]).open, true);
 });
+
+test("服务器 CLI 参数解析默认关闭访问日志，并支持 --log 与 --no-log", () => {
+    assert.equal(parseArguments([]).log, false);
+    assert.equal(parseArguments(["--log"]).log, true);
+    assert.equal(parseArguments(["--no-log"]).log, false);
+    assert.equal(parseArguments(["--log", "--no-log"]).log, false);
+    assert.equal(parseArguments(["--no-log", "--log"]).log, true);
+});

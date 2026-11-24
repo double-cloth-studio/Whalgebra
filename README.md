@@ -26,6 +26,7 @@ npm start
 ```powershell
 npm start -- --open          # 启动并打开工作台
 npm start -- --lan           # 允许局域网设备访问
+npm start -- --log           # 输出 HTTP 访问日志
 npm test                    # 运行 Node 回归测试及 JSON 计算用例
 ```
 

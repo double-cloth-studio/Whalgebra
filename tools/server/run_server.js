@@ -14,8 +14,12 @@ export const SERVER_CONFIG = Object.freeze({
     DEFAULT_PORT: 8000,
     MAX_PORT_RETRIES: 1000,
     DEFAULT_DIR: PROJECT_ROOT,
-    DEFAULT_OPEN: false
+    DEFAULT_OPEN: false,
+    DEFAULT_LOG: false
 });
+
+const NOOP_LOGGER = () => {
+};
 
 const MIME_TYPES = new Map([
     [".html", "text/html; charset=utf-8"],
@@ -322,6 +326,8 @@ function printHelp() {
   --local        仅监听 127.0.0.1（默认）
   --open         启动后自动打开浏览器
   --no-open      启动后不自动打开浏览器（默认）
+  --log          输出 HTTP 访问日志
+  --no-log       不输出 HTTP 访问日志（默认）
   -h, --help     显示帮助`);
 }
 
@@ -330,7 +336,8 @@ export function parseArguments(argv) {
         directory: SERVER_CONFIG.DEFAULT_DIR,
         port: SERVER_CONFIG.DEFAULT_PORT,
         lan: false,
-        open: SERVER_CONFIG.DEFAULT_OPEN
+        open: SERVER_CONFIG.DEFAULT_OPEN,
+        log: SERVER_CONFIG.DEFAULT_LOG
     };
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
@@ -344,6 +351,10 @@ export function parseArguments(argv) {
             options.open = true;
         } else if (argument === "--no-open") {
             options.open = false;
+        } else if (argument === "--log") {
+            options.log = true;
+        } else if (argument === "--no-log") {
+            options.log = false;
         } else if (argument === "--dir" || argument === "--port") {
             const value = argv[index + 1];
             if (!value) {
@@ -375,7 +386,8 @@ async function runCli() {
         throw new Error(`目录 '${options.directory}' 不存在。`);
     }
 
-    const {server, port} = await createServer(options.directory, options.port, options.lan);
+    const logger = options.log ? console.log : NOOP_LOGGER;
+    const {server, port} = await createServer(options.directory, options.port, options.lan, logger);
     const localhostUrl = `http://localhost:${port}`;
     console.log("=".repeat(60));
     console.log("服务器已启动");

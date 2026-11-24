@@ -18,7 +18,7 @@ npm start -- --port 8080 --open
 npm start -- --lan
 ```
 
-入口为 `tools/server/run_server.js`，默认仅本机监听、从 8000 查找空闲端口、不自动打开浏览器。实际地址以终端输出为准，按 `Ctrl+C` 停止。
+入口为 `tools/server/run_server.js`，默认仅本机监听、从 8000 查找空闲端口、不自动打开浏览器且不输出 HTTP 访问日志。实际地址以终端输出为准，按 `Ctrl+C` 停止。
 
 | 参数 | 含义 |
 | --- | --- |
@@ -26,6 +26,7 @@ npm start -- --lan
 | `--port <PORT>` | 起始端口，占用时继续查找 |
 | `--local` / `--lan` | 监听 `127.0.0.1`（默认）/ `0.0.0.0` |
 | `--open` / `--no-open` | 自动打开 / 不打开浏览器（默认） |
+| `--log` / `--no-log` | 输出 / 不输出 HTTP 访问日志（默认） |
 | `-h, --help` | 帮助 |
 
 服务器禁用缓存，添加 `nosniff`、`Referrer-Policy: same-origin` 响应头；没有 `index.html` 的目录返回 403，不列目录。`--lan` 也会开放工具页面及其 API，应仅在需要局域网预览时启用。
