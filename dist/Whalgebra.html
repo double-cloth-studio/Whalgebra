@@ -757,16 +757,16 @@
                  * @type {Object}
                  */
                 static _rawConstants = {
-                    // 基础常量。
-                    e: [-219, '1ecd49d9e3c29326029305c8f68bacfa3c6316f631eac146b2134a1e6c0b75cef869bf281f79ee8c71f281e2c884aeb87fb37c64089a0ec56be456431569d592c56ae708d6630c6ccf7af1f75d487096c3a75ad203963a6ddc1914a', 220],
-                    pi: [-219, '23993e59d8f1beed1a7593d4faa8f71e7e7bfabd3bce9147f36fe49488ef48e00256540fb0bed3a804f57ca4ae2a25415b67d6bfc0a4b0052eebd7de00d229188a05edd25b4921fa0718579873598ff6e2f639b2ca5cb0a930b4c86', 220],
+                    // 基础常量保留 440 位，为最高精度下的保护位运算和嵌套调用提供余量。
+                    e: [-439, 'da248b11988be0263f768d874488f1f86f891bc89fd8f04c352d5343b54536e3682cf6a0f9ca0eae0a1238298626495d408e0965dd53dfb6a3dada166ce941b73de8b0cd07b7f80a791c9c51408da761b3e292e895ed70a0a2e3d8850fcda3db7b3253b8c554d488c3ef64501af5db8cc0c8648e258536d3fdd0a9cb2719a489a541b8d8b93e6cf0016a68aca24036fed336d9e5c459ac778c58ade7b946e53b7928c8943ea0cc8ab804543876ff723ddf853c4b8fbf4', 440],
+                    pi: [-439, 'fc1d10e27bbeba42ffcfcc5ca26b70db62e03f3305106c001642f05c44a7b8bafe7ffba5156903100a7c06286f0dc10de93973b98c5d31bc627cda2611f6ecd40d7e602ae282bdde9dbd44181c3c54582bea04e0761578bfe166c42744141ce088d1d1180c07753a53c1a2f4b0f79089ba56f2cda4750e0f58fd79ba9fba5dbe030308d77cfabc1bde31920d228169ecc887b157bcf6b6c76582c06f76fada5bd65f3377a0c4ddac0981ef7b2acf81980d3f78e21bea6', 440],
 
                     // `1/(2*pi)` 用于三角函数的周期性计算。
                     invTwoPi: [-440, '7fb8e2cfa572366dac69f800d8ea4a71dec50a009caf878c5a967130e4d2dc7099d5db874d0390b8b540fafae08078229c44539acf4e25efb46ba78b8941b6725e93e7d9700720e4cbafef059ccf263028f519e3ec8defa7424ffb0bf026259cc4f88003d435b98bcf2e0406f9effdb81a5a46340909994465cf71fdc630153a6f51f44ab249beaf7daf8ec4ab820e393fdf4a18a2e16f47f1009414efe0eb850747b99448819486378e7e2ff4e8f829eb599570c017e', 440],
 
-                    ln_10: [-219, '1a176bae18c7780dbb8d48b8882691c90a86e72d72de2f768182d52f07d96dbb38aa172b3c124babac9116cabbf5455a8886de7468c185b63a2b557dd589b14e85802b87b72bd8d0eb7d86d273bd8ca8fdd8384034f38977b89d16e', 220],
+                    ln_10: [-439, 'b8c871e04ac9a06c42edda7906c3806e8e8c1a3889e013015b752a2c7d7591377db346ca61ee713c19555c8649eb0f2bd0e01e9cfc70a60e768c07b90b96d73de92becfb599b51935f35fa95b32210e62d4f1593330b1beaf208f56bd83f8df82a71d05cc77c65d4d8c67eb763807fd59bbb686655340267fe7c1c2b7d3ab025b66b93a177071c83d7f3c40d37bd8dc866b42af8131821672fcdd72acb38e560ca6aeae362358a2424ebc9a9e0b686b907ec472bb55e8', 440],
                     // `ln(1.2)` 用于对数范围缩减。
-                    ln_1_2: [-220, '14a8d935f98be97b04624e3a7e3ae0617137ebf4346878d6338c45f0a167b2dd07c6c4b8c01f39378cc7816de8f6825aca7f00bef7c13790b9238ba6b373b5c18ae1f1364de093c6c002937af1bf247e88d0ca62944fa60c5f5afab', 220],
+                    ln_1_2: [-440, '92503fb4b74b5ec32c20df9d7161e104a815ac370f3d0c9dac4f77a8f2220e0a18330446ef7390a30d6672bfe7b533569437bf321b9725bece4a6e80db2eb3f38ded94a6d4843f7e13cf10186b8c2e636a3728ba8678eb78fd41b06c843f04fa18256485c39b57854d08d5fa9e2ce26caf3dce3bdd03307fe084a767c442b789384394e58f64388dc2fc0254c2664f139496a3bf874f173aadb4b532df644a6cf064a9689e4614ddb2fd7828eb3e69a16f9d97b4aebee', 440],
 
                     /**
                      * 伽玛函数的 Lanczos Approximation 系数。
@@ -3634,50 +3634,53 @@
                  */
                 static exp(x) {
                     const input = new ComplexNumber(x);
+                    const acc = input.acc;
+                    // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
+                    const workAcc = acc + 6;
+                    const workInput = new ComplexNumber(input, {acc: workAcc});
 
                     if (input.onlyReal) {
-                        const re = input.re;
-                        const acc = re.acc;
+                        const re = workInput.re;
 
                         if (re.isZero()) {
                             return new ComplexNumber([0, 1n, acc]);
                         }
 
                         if (re.power >= 0) {
-                            return MathPlus.pow(CalcConfig.constants.e, input);
+                            return new ComplexNumber(MathPlus.pow(CalcConfig.constants.e, workInput), {acc: acc});
                         }
 
                         // 将 x 拆为整数和小数部分：e^x = e^floor(x) · e^(x-floor(x))。
                         let resultMid, iterationMantissa;
                         const pow = -re.power;
                         if (re.acc < pow) {
-                            resultMid = new ComplexNumber([0, 1n, acc]);
+                            resultMid = new ComplexNumber([0, 1n, workAcc]);
                             iterationMantissa = re.mantissa;
                         } else {
                             const realPower = BigNumber.pow10(-re.power);
                             const intPart = re.mantissa / realPower;
                             resultMid = MathPlus.pow(
-                                new BigNumber(CalcConfig.constants.e, {acc: acc}),
-                                [0, intPart, acc]
+                                new BigNumber(CalcConfig.constants.e, {acc: workAcc}),
+                                [0, intPart, workAcc]
                             );
                             iterationMantissa = re.mantissa - intPart * realPower;
                         }
 
                         // 先计算更小参数的泰勒级数 e^t = Σ(t^n/n!)，随后取十次幂还原小数部分。
-                        const iteration = new BigNumber(iterationMantissa, {pow: re.power - 1, acc: acc});
+                        const iteration = new BigNumber(iterationMantissa, {pow: re.power - 1, acc: workAcc});
 
-                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
-                        const minPower = -2 * acc - 1;
+                        const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
+                        const minMag = 0 - workAcc - 1;
 
-                        let mid = new BigNumber(1n, {pow: 0, acc: acc});
-                        let result = new BigNumber(0n, {pow: 0, acc: acc});
+                        let mid = new BigNumber(1n, {pow: 0, acc: workAcc});
+                        let result = new BigNumber(0n, {pow: 0, acc: workAcc});
                         let i = 1;
 
-                        for (; mid.power > minPower && !mid.isZero() && i < max; i++) {
+                        for (; BigNumber.getMag(mid) > minMag && !mid.isZero() && i < max; i++) {
                             result = MathPlus.realPlus(result, mid);
                             mid = MathPlus.realDivide(
                                 MathPlus.realTimes(iteration, mid),
-                                new BigNumber(BigInt(i), {pow: 0, acc: acc})
+                                new BigNumber(BigInt(i), {pow: 0, acc: workAcc})
                             );
                         }
 
@@ -3686,22 +3689,22 @@
                         }
 
                         // 组合最终结果：e^x = e^i * e^f
-                        return MathPlus.times(
-                            MathPlus.pow(result, [1, 1n, acc]),
+                        return new ComplexNumber(MathPlus.times(
+                            MathPlus.pow(result, [1, 1n, workAcc]),
                             resultMid
-                        );
+                        ), {acc: acc});
                     }
 
-                    const module = MathPlus.exp(input.re);
+                    const module = MathPlus.exp(workInput.re);
 
                     // 欧拉公式：e^(a+bi) = e^a(cos b + i·sin b)。
-                    const cosAngle = MathPlus.cos(input.im);
-                    const sinAngle = MathPlus.sin(input.im);
+                    const cosAngle = MathPlus.cos(workInput.im);
+                    const sinAngle = MathPlus.sin(workInput.im);
 
                     return new ComplexNumber([
                         MathPlus.times(module, cosAngle).re,
                         MathPlus.times(module, sinAngle).re
-                    ]);
+                    ], {acc: acc});
                 }
 
                 /**
@@ -3714,9 +3717,12 @@
                 static ln(x) {
                     const input = new ComplexNumber(x);
                     const acc = input.acc;
+                    // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
+                    const workAcc = acc + 6;
+                    const workInput = new ComplexNumber(input, {acc: workAcc});
 
                     if (input.onlyReal && !input.re.isNegative()) {
-                        const re = input.re;
+                        const re = workInput.re;
 
                         if (re.isZero()) {
                             throw new Error('[MathPlus] mathematical error: ln(0) is undefined.');
@@ -3727,14 +3733,14 @@
 
                         // 先用 10 和 1.2 缩放到 0.9～1.1，再计算 y=(x-1)/(x+1)。
                         // ln(x) = 2·(y + y³/3 + y⁵/5 + ...)，最后补回缩放产生的 ln(10) 与 ln(1.2)。
-                        const const_1_2 = new BigNumber(12n, {pow: -1, acc: acc});
-                        const const_1_1 = new BigNumber(11n, {pow: -1, acc: acc});
-                        const const_0_9 = new BigNumber(9n, {pow: -1, acc: acc});
+                        const const_1_2 = new BigNumber(12n, {pow: -1, acc: workAcc});
+                        const const_1_1 = new BigNumber(11n, {pow: -1, acc: workAcc});
+                        const const_0_9 = new BigNumber(9n, {pow: -1, acc: workAcc});
                         // 接近 1 时直接展开，避免缩放后相消使合法小对数落入常数量级的底噪。
                         const nearOne = MathPlus.realMinus(re, const_1_1).isNegative() && MathPlus.realMinus(re, const_0_9).isPositive();
                         const mantissaLen = BigNumber.decimalLengthBigInt(re.mantissa);
                         const mantissaChangedBy10 = nearOne ? 0 : mantissaLen + re.power;
-                        let mid = new BigNumber(re, {pow: -mantissaChangedBy10});
+                        let mid = new BigNumber(re, {pow: -mantissaChangedBy10, acc: workAcc});
 
                         // 将 x 进一步标准化到 [0.9, 1.1) 范围内
                         let mantissaChangedBy1_2 = 0;
@@ -3750,34 +3756,34 @@
 
                         if (nearOne) {
                             mid = MathPlus.realDivide(
-                                MathPlus.realMinus(mid, new BigNumber(1n, {pow: 0, acc: acc})),
-                                MathPlus.realPlus(mid, new BigNumber(1n, {pow: 0, acc: acc}))
+                                MathPlus.realMinus(mid, new BigNumber(1n, {pow: 0, acc: workAcc})),
+                                MathPlus.realPlus(mid, new BigNumber(1n, {pow: 0, acc: workAcc}))
                             );
                         } else {
                             mid = MathPlus.realPlus(
-                                new BigNumber(1n, {pow: 0, acc: acc}),
+                                new BigNumber(1n, {pow: 0, acc: workAcc}),
                                 MathPlus.realDivide(
-                                    new BigNumber(-2n, {pow: 0, acc: acc}),
-                                    MathPlus.realPlus(new BigNumber(1n, {pow: 0, acc: acc}), mid)
+                                    new BigNumber(-2n, {pow: 0, acc: workAcc}),
+                                    MathPlus.realPlus(new BigNumber(1n, {pow: 0, acc: workAcc}), mid)
                                 )
                             );
                         }
 
                         const squareOfMid = MathPlus.realTimes(mid, mid);
-                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) * 2 + 5;
-                        const minPower = -2 * acc - 1;
+                        const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) * 2 + 5;
+                        const minMag = BigNumber.getMag(mid) - workAcc - 1;
 
-                        let result = new BigNumber(0n, {pow: 0, acc: acc});
+                        let result = new BigNumber(0n, {pow: 0, acc: workAcc});
                         let i = 1;
 
-                        for (; mid.power > minPower && !mid.isZero() && i < max; i += 2) {
+                        for (; BigNumber.getMag(mid) > minMag && !mid.isZero() && i < max; i += 2) {
                             result = MathPlus.realPlus(result, mid);
                             mid = MathPlus.realTimes(
                                 MathPlus.realTimes(squareOfMid, mid),
                                 MathPlus.realDivide(new BigNumber(BigInt(i), {
                                     pow: 0,
-                                    acc: acc
-                                }), new BigNumber(BigInt(i + 2), {pow: 0, acc: acc}))
+                                    acc: workAcc
+                                }), new BigNumber(BigInt(i + 2), {pow: 0, acc: workAcc}))
                             );
                         }
 
@@ -3786,24 +3792,24 @@
                         }
 
                         // 组合所有部分得到最终结果
-                        result = MathPlus.realTimes(new BigNumber(2n, {pow: 0, acc: acc}), result);
+                        result = MathPlus.realTimes(new BigNumber(2n, {pow: 0, acc: workAcc}), result);
                         result = MathPlus.realPlus(result, MathPlus.realTimes(
-                            new BigNumber(CalcConfig.constants.ln_10, {acc: acc}),
-                            new BigNumber(BigInt(mantissaChangedBy10), {pow: 0, acc: acc})
+                            new BigNumber(CalcConfig.constants.ln_10, {acc: workAcc}),
+                            new BigNumber(BigInt(mantissaChangedBy10), {pow: 0, acc: workAcc})
                         ));
                         result = MathPlus.realPlus(result, MathPlus.realTimes(
-                            new BigNumber(CalcConfig.constants.ln_1_2, {acc: acc}),
-                            new BigNumber(BigInt(mantissaChangedBy1_2), {pow: 0, acc: acc})
+                            new BigNumber(CalcConfig.constants.ln_1_2, {acc: workAcc}),
+                            new BigNumber(BigInt(mantissaChangedBy1_2), {pow: 0, acc: workAcc})
                         ));
 
-                        return new ComplexNumber(result);
+                        return new ComplexNumber(result, {acc: acc});
                     }
 
                     // 复对数主值：Log(z) = ln|z| + i·arg(z)。
-                    const absValue = MathPlus.abs(input);
+                    const absValue = MathPlus.abs(workInput);
                     const lnAbsValue = MathPlus.ln(absValue);
-                    const argValue = MathPlus.arg(input);
-                    return new ComplexNumber([lnAbsValue.re, argValue.re]);
+                    const argValue = MathPlus.arg(workInput);
+                    return new ComplexNumber([lnAbsValue.re, argValue.re], {acc: acc});
                 }
 
                 /**
@@ -3845,18 +3851,21 @@
                 static sin(x) {
                     const input = new ComplexNumber(x);
                     const acc = input.acc;
+                    // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
+                    const workAcc = acc + 6;
+                    const workInput = new ComplexNumber(input, {acc: workAcc});
 
                     if (input.onlyReal) {
                         // 将实数参数归约到 [0, π/4]，再用三倍角继续缩减。
-                        let [re, sign] = MathPlus._toLessThanHalfPi(input.re, 'sin');
+                        let [re, sign] = MathPlus._toLessThanHalfPi(workInput.re, 'sin');
 
                         if (re.isZero()) {
                             return new ComplexNumber([0, 0n, acc]);
                         }
 
-                        const threshold = new BigNumber(1n, {pow: -1, acc: acc});
-                        const three = new BigNumber(3n, {pow: 0, acc: acc});
-                        const four = new BigNumber(4n, {pow: 0, acc: acc});
+                        const threshold = new BigNumber(1n, {pow: -1, acc: workAcc});
+                        const three = new BigNumber(3n, {pow: 0, acc: workAcc});
+                        const four = new BigNumber(4n, {pow: 0, acc: workAcc});
                         let divideBy3 = 0;
                         // 继续除以 3 可加快级数收敛，计算后用 sin(3x)=3sin(x)-4sin³(x) 逐层还原。
                         for (; !MathPlus.realMinus(re, threshold).isNegative() && divideBy3 < 4; divideBy3++) {
@@ -3867,17 +3876,17 @@
                         }
 
                         const squareOfRe = MathPlus.realTimes(re, re);
-                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
-                        const minPower = -2 * acc - 1;
+                        const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
+                        const minMag = BigNumber.getMag(re) - workAcc - 1;
                         let mid = new BigNumber(re);
                         let result = mid;
                         let i = 1;
 
                         // sin(x)=x-x³/3!+x⁵/5!-...，相邻项递推可避免重复计算幂和阶乘。
-                        for (; mid.power > minPower && !mid.isZero() && i < max; i++) {
+                        for (; BigNumber.getMag(mid) > minMag && !mid.isZero() && i < max; i++) {
                             mid = MathPlus.realDivide(
                                 MathPlus.realTimes(mid, squareOfRe),
-                                new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {pow: 0, acc: acc})
+                                new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {pow: 0, acc: workAcc})
                             );
                             result = MathPlus[i % 2 === 0 ? 'realPlus' : 'realMinus'](result, mid);
                         }
@@ -3907,11 +3916,11 @@
 
                     // --- 输入为复数 ---
                     // sin(z) = (e^(iz) - e^(-iz)) / (2i)
-                    const mid = MathPlus.exp([MathPlus._oppositeNumber(input.im), input.re]);
-                    return MathPlus.divide(
-                        MathPlus.minus(mid, MathPlus.divide([0, 1n, acc], mid)),
-                        new ComplexNumber([0n, 2n], {acc: acc})
-                    );
+                    const mid = MathPlus.exp([MathPlus._oppositeNumber(workInput.im), workInput.re]);
+                    return new ComplexNumber(MathPlus.divide(
+                        MathPlus.minus(mid, MathPlus.divide([0, 1n, workAcc], mid)),
+                        new ComplexNumber([0n, 2n], {acc: workAcc})
+                    ), {acc: acc});
                 }
 
                 /**
@@ -3989,20 +3998,23 @@
                 static cos(x) {
                     const input = new ComplexNumber(x);
                     const acc = input.acc;
+                    // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
+                    const workAcc = acc + 6;
+                    const workInput = new ComplexNumber(input, {acc: workAcc});
 
                     if (input.onlyReal) {
                         // 将实数参数归约到 [0, π/4]，再用四倍角继续缩减。
-                        let [re, sign] = MathPlus._toLessThanHalfPi(input.re, 'cos');
+                        let [re, sign] = MathPlus._toLessThanHalfPi(workInput.re, 'cos');
 
                         if (re.isZero()) {
                             return new ComplexNumber([0, sign, acc]);
                         }
 
-                        const threshold = new BigNumber(1n, {pow: -1, acc: acc});
-                        const four = new BigNumber(4n, {pow: 0, acc: acc});
-                        const one = new BigNumber(1n, {pow: 0, acc: acc});
-                        const minusOne = new BigNumber(-1n, {pow: 0, acc: acc});
-                        const eight = new BigNumber(8n, {pow: 0, acc: acc});
+                        const threshold = new BigNumber(1n, {pow: -1, acc: workAcc});
+                        const four = new BigNumber(4n, {pow: 0, acc: workAcc});
+                        const one = new BigNumber(1n, {pow: 0, acc: workAcc});
+                        const minusOne = new BigNumber(-1n, {pow: 0, acc: workAcc});
+                        const eight = new BigNumber(8n, {pow: 0, acc: workAcc});
                         let divideBy4 = 0;
                         // 继续除以 4 可加快级数收敛，计算后用 cos(4x)=8cos⁴(x)-8cos²(x)+1 还原。
                         for (; !MathPlus.realMinus(re, threshold).isNegative() && divideBy4 < 3; divideBy4++) {
@@ -4013,18 +4025,18 @@
                         }
 
                         const squareOfRe = MathPlus.realTimes(re, re);
-                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
-                        const minPower = -2 * acc - 1;
+                        const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
+                        const minMag = 0 - workAcc - 1;
                         let mid = one;
-                        let result = new BigNumber(0n, {pow: 0, acc: acc});
+                        let result = new BigNumber(0n, {pow: 0, acc: workAcc});
                         let i = 0;
 
                         // cos(x)=1-x²/2!+x⁴/4!-...，使用相邻项递推累计。
-                        for (; mid.power > minPower && !mid.isZero() && i < max; i++) {
+                        for (; BigNumber.getMag(mid) > minMag && !mid.isZero() && i < max; i++) {
                             result = MathPlus[i % 2 === 0 ? 'realPlus' : 'realMinus'](result, mid);
                             mid = MathPlus.realDivide(
                                 MathPlus.realTimes(mid, squareOfRe),
-                                new BigNumber(BigInt(2 * i + 1) * BigInt(2 * i + 2), {pow: 0, acc: acc})
+                                new BigNumber(BigInt(2 * i + 1) * BigInt(2 * i + 2), {pow: 0, acc: workAcc})
                             );
                         }
 
@@ -4055,11 +4067,11 @@
 
                     // --- 输入为复数 ---
                     // cos(z) = (e^(iz) + e^(-iz)) / 2
-                    const mid = MathPlus.exp([MathPlus._oppositeNumber(input.im), input.re]);
-                    return MathPlus.divide(
-                        MathPlus.plus(mid, MathPlus.divide([0, 1n, acc], mid)),
-                        [0, 2n, acc]
-                    );
+                    const mid = MathPlus.exp([MathPlus._oppositeNumber(workInput.im), workInput.re]);
+                    return new ComplexNumber(MathPlus.divide(
+                        MathPlus.plus(mid, MathPlus.divide([0, 1n, workAcc], mid)),
+                        [0, 2n, workAcc]
+                    ), {acc: acc});
                 }
 
                 /**
@@ -4109,9 +4121,12 @@
                 static arctan(x) {
                     const input = new ComplexNumber(x);
                     const acc = input.acc;
+                    // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
+                    const workAcc = acc + 6;
+                    const workInput = new ComplexNumber(input, {acc: workAcc});
 
                     if (input.onlyReal) {
-                        let re = input.re;
+                        let re = workInput.re;
                         let isNegative = false;
 
                         if (re.isNegative()) {
@@ -4121,19 +4136,19 @@
 
                         // x > 1 时使用 arctan(x)=π/2-arctan(1/x)。
                         let reciprocal = false;
-                        if (MathPlus.plus(re, [0, -1n, acc]).re.isPositive()) {
-                            re = MathPlus.divide([0, 1n, acc], re).re;
+                        if (MathPlus.plus(re, [0, -1n, workAcc]).re.isPositive()) {
+                            re = MathPlus.divide([0, 1n, workAcc], re).re;
                             reciprocal = true;
                         }
 
                         // 反复使用 tan(θ/2)=tanθ/(1+sqrt(1+tan²θ))，把参数缩减到 0.1 以内。
                         let j = 0;
-                        for (; MathPlus.plus(re, [-1, -1n, acc]).re.isPositive() && j < 4; j++) {
+                        for (; MathPlus.plus(re, [-1, -1n, workAcc]).re.isPositive() && j < 4; j++) {
                             re = MathPlus.divide(
                                 re,
                                 MathPlus.plus(
-                                    [0, 1n, acc],
-                                    MathPlus.sqrt(MathPlus.plus([0, 1n, acc], MathPlus.times(re, re)))
+                                    [0, 1n, workAcc],
+                                    MathPlus.sqrt(MathPlus.plus([0, 1n, workAcc], MathPlus.times(re, re)))
                                 )
                             ).re;
                         }
@@ -4143,19 +4158,19 @@
 
                         let [mid, mid_pow] = [re, re];
                         const squareOfRe = MathPlus.times(re, re);
-                        const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
-                        const minPower = -2 * acc - 1;
-                        let result = new ComplexNumber([0, 0n, acc]);
+                        const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
+                        const minMag = BigNumber.getMag(re) - workAcc - 1;
+                        let result = new ComplexNumber([0, 0n, workAcc]);
                         let i = 0;
 
                         // arctan(x)=x-x³/3+x⁵/5-...；级数结果乘 2^j 后还原半角缩减。
-                        for (; mid.power > minPower && !mid.isZero() && i < max; i++) {
+                        for (; BigNumber.getMag(mid) > minMag && !mid.isZero() && i < max; i++) {
                             result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
 
                             mid_pow = MathPlus.times(mid_pow, squareOfRe);
                             mid = MathPlus.divide(
                                 mid_pow,
-                                [0, BigInt(2 * i + 3), acc]
+                                [0, BigInt(2 * i + 3), workAcc]
                             ).re;
                         }
                         if (i >= max) {
@@ -4163,38 +4178,38 @@
                         }
 
                         // 将级数结果乘以 2^j 来补偿半角公式的应用。
-                        result = MathPlus.times([0, 2n ** BigInt(j), acc], result);
+                        result = MathPlus.times([0, 2n ** BigInt(j), workAcc], result);
 
                         // 如果初始 x > 1，应用 arctan(x) = π/2 - arctan(1/x)。
-                        result = reciprocal ? MathPlus.minus(MathPlus.divide(CalcConfig.constants.pi, [0, 2n, acc]), result) : result;
+                        result = reciprocal ? MathPlus.minus(MathPlus.divide(CalcConfig.constants.pi, [0, 2n, workAcc]), result) : result;
                         // 如果初始 x < 0，应用 arctan(-x) = -arctan(x)。
                         if (isNegative) {
-                            return MathPlus._oppositeNumber(result);
+                            return new ComplexNumber(MathPlus._oppositeNumber(result), {acc: acc});
                         }
-                        return result;
+                        return new ComplexNumber(result, {acc: acc});
                     }
 
                     // --- 输入为复数 ---
                     // arctan(z) = (-i/2) * ln((1 + iz) / (1 - iz))
                     const mid = MathPlus.minus(
-                        [[0, 0n, acc], [0, 1n, acc]],
-                        input
+                        [[0, 0n, workAcc], [0, 1n, workAcc]],
+                        workInput
                     );
                     const mid_pow = MathPlus.plus(
-                        [[0, 0n, acc], [0, 1n, acc]],
-                        input
+                        [[0, 0n, workAcc], [0, 1n, workAcc]],
+                        workInput
                     );
 
                     if (mid.isZero() || mid_pow.isZero()) {
                         throw new Error(`[MathPlus] mathematical error: Unable to calculate arctan, input cannot be ${input.toString()}.`);
                     }
 
-                    return MathPlus.times(
-                        [[0, 0n, acc], [-1, -5n, acc]],
+                    return new ComplexNumber(MathPlus.times(
+                        [[0, 0n, workAcc], [-1, -5n, workAcc]],
                         MathPlus.ln(
                             MathPlus.divide(mid, mid_pow)
                         )
-                    );
+                    ), {acc: acc});
                 }
 
                 /**
@@ -5354,8 +5369,8 @@
              * @property {string} average - 算术平均值的格式化字符串。
              * @property {string} sum - 样本和 `Σxᵢ` 的格式化字符串。
              * @property {string} sum2 - 平方和 `Σxᵢ²` 的格式化字符串。
-             * @property {string} totalVariance - 总体标准差 `sqrt(Σ(xᵢ-x̄)²/n)`；字段名沿用既有 UI 协议。
-             * @property {string|'error'} sampleVariance - 样本标准差；样本量为 1 时为 `error`。
+             * @property {string} populationStandardDeviation - 总体标准差 `sqrt(Σ(xᵢ-x̄)²/n)`。
+             * @property {string|'error'} sampleStandardDeviation - 样本标准差；样本量为 1 时为 `error`。
              * @property {string} max - 按实数大小比较得到的最大值。
              * @property {string} min - 按实数大小比较得到的最小值。
              */
@@ -5380,15 +5395,15 @@
              * @property {string} averageA - A 组均值。
              * @property {string} sumA - A 组样本和。
              * @property {string} sum2A - A 组平方和。
-             * @property {string} totalVarianceA - A 组总体标准差。
-             * @property {string|'error'} sampleVarianceA - A 组样本标准差。
+             * @property {string} populationStandardDeviationA - A 组总体标准差。
+             * @property {string|'error'} sampleStandardDeviationA - A 组样本标准差。
              * @property {string} maxA - A 组最大值。
              * @property {string} minA - A 组最小值。
              * @property {string} averageB - B 组均值。
              * @property {string} sumB - B 组样本和。
              * @property {string} sum2B - B 组平方和。
-             * @property {string} totalVarianceB - B 组总体标准差。
-             * @property {string|'error'} sampleVarianceB - B 组样本标准差。
+             * @property {string} populationStandardDeviationB - B 组总体标准差。
+             * @property {string|'error'} sampleStandardDeviationB - B 组样本标准差。
              * @property {string} maxB - B 组最大值。
              * @property {string} minB - B 组最小值。
              * @property {string} dotAB - 点积 `ΣAᵢBᵢ`。
@@ -5839,7 +5854,7 @@
                 }
 
                 /**
-                 * 汇总列表的均值、总和、平方和、方差及极值。
+                 * 汇总列表的均值、总和、平方和、标准差及极值。
                  *
                  * @private
                  * @param {Array<ComplexNumber|string|number>} list - 要汇总的非空样本；返回结果中的极值按实部比较。
@@ -5864,8 +5879,8 @@
                     statisticsResult.sum2 = Public.idealizationToString(StatisticsTools._averageAndSum(list2).sum);
 
                     const variance = varianceList === null ? StatisticsTools._variance(list, averageAndSum) : varianceList;
-                    statisticsResult.totalVariance = Public.idealizationToString(MathPlus.sqrt(variance[0]));
-                    statisticsResult.sampleVariance = Public.idealizationToString(variance[1] === 'error' ? 'error' : MathPlus.sqrt(variance[1]));
+                    statisticsResult.populationStandardDeviation = Public.idealizationToString(MathPlus.sqrt(variance[0]));
+                    statisticsResult.sampleStandardDeviation = Public.idealizationToString(variance[1] === 'error' ? 'error' : MathPlus.sqrt(variance[1]));
 
                     const maxAndMin = StatisticsTools._getMaxAndMin(list);
                     statisticsResult.max = Public.idealizationToString(maxAndMin.max);
@@ -6003,7 +6018,7 @@
                         averageAndSum: averageAndSumB,
                         varianceList: varianceB
                     });
-                    for (let key in statisticsInfoA.statisticsResult) {
+                    for (const key in statisticsInfoA.statisticsResult) {
                         result[key + 'A'] = statisticsInfoA.statisticsResult[key];
                         result[key + 'B'] = statisticsInfoB.statisticsResult[key];
                     }
@@ -13558,15 +13573,15 @@
                         'averageA': '#print_content_1_content_3',
                         'sumA': '#print_content_1_content_4',
                         'sum2A': '#print_content_1_content_5',
-                        'totalVarianceA': '#print_content_1_content_6',
-                        'sampleVarianceA': '#print_content_1_content_7',
+                        'populationStandardDeviationA': '#print_content_1_content_6',
+                        'sampleStandardDeviationA': '#print_content_1_content_7',
                         'maxA': '#print_content_1_content_8',
                         'minA': '#print_content_1_content_9',
                         'averageB': '#print_content_1_content_10',
                         'sumB': '#print_content_1_content_11',
                         'sum2B': '#print_content_1_content_12',
-                        'totalVarianceB': '#print_content_1_content_13',
-                        'sampleVarianceB': '#print_content_1_content_14',
+                        'populationStandardDeviationB': '#print_content_1_content_13',
+                        'sampleStandardDeviationB': '#print_content_1_content_14',
                         'maxB': '#print_content_1_content_15',
                         'minB': '#print_content_1_content_16',
                         'dotAB': '#print_content_1_content_17',
