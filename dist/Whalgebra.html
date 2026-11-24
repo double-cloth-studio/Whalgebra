@@ -2402,6 +2402,23 @@
                 }
 
                 /**
+                 * 复用不可变数值实例；仅在入口解析外部输入，纯实数不装箱为复数。
+                 * @private
+                 * @param {*} x - 与公开算术接口相同的输入。
+                 * @returns {BigNumber|ComplexNumber} 实数分量或非实复数。
+                 */
+                static _arithmeticInput(x) {
+                    if (x instanceof BigNumber) {
+                        return x;
+                    }
+                    if (typeof x === 'number' || typeof x === 'bigint' || (Array.isArray(x) && x.length === 3)) {
+                        return new BigNumber(x);
+                    }
+                    const input = x instanceof ComplexNumber ? x : new ComplexNumber(x);
+                    return input.onlyReal ? input.re : input;
+                }
+
+                /**
                  * (内部辅助方法) 计算一个 BigNumber 或 ComplexNumber 的相反数。
                  *
                  * @private
@@ -2412,7 +2429,7 @@
                 static _oppositeNumber(x) {
                     switch (Public.typeOf(x)) {
                         case 'bignumber':
-                            return new BigNumber([x.power, -x.mantissa, x.acc], {noiseMag: x.noiseMag});
+                            return new BigNumber(-x.mantissa, {pow: x.power, acc: x.acc, noiseMag: x.noiseMag});
 
                         case 'complexnumber':
                             return new ComplexNumber([MathPlus._oppositeNumber(x.re), MathPlus._oppositeNumber(x.im)]);
@@ -2538,6 +2555,168 @@
                 }
 
                 /**
+                 * 纯实数加法核，保留原有舍入、精度和噪声传播规则。
+                 * @param {BigNumber} reA - 第一个操作数。
+                 * @param {BigNumber} reB - 第二个操作数。
+                 * @returns {BigNumber} 新的实数结果。
+                 */
+                static realPlus(reA, reB) {
+                    const resultAcc = Math.min(reA.acc, reB.acc);
+                    const combinedNoiseMag = Math.max(reA.noiseMag ?? -Infinity, reB.noiseMag ?? -Infinity);
+
+                    if (reA.isZero()) {
+                        return new BigNumber(reB, {acc: resultAcc});
+                    }
+                    if (reB.isZero()) {
+                        return new BigNumber(reA, {acc: resultAcc});
+                    }
+
+                    let mantissaA = reA.mantissa;
+                    let mantissaB = reB.mantissa;
+                    const powerDifference = reB.power - reA.power;
+
+                    const guardAcc = resultAcc + 5;
+                    if (powerDifference > guardAcc) {
+                        // 快路径：即使 mA 占满 reA.acc 位也追不上，O(1) 直接返回
+                        if (powerDifference > reA.acc + guardAcc) {
+                            return new BigNumber(reB, {
+                                acc: resultAcc,
+                                noiseMag: Math.max(combinedNoiseMag, reA.power + reA.acc - 1)
+                            });
+                        }
+                        const magA = BigNumber.getMag(reA);
+                        const magB = BigNumber.getMag(reB);
+                        if (magB - magA > guardAcc) {
+                            return new BigNumber(reB, {
+                                acc: resultAcc,
+                                noiseMag: Math.max(combinedNoiseMag, magA)
+                            });
+                        }
+                    } else if (powerDifference < -guardAcc) {
+                        if (-powerDifference > reB.acc + guardAcc) {
+                            return new BigNumber(reA, {
+                                acc: resultAcc,
+                                noiseMag: Math.max(combinedNoiseMag, reB.power + reB.acc - 1)
+                            });
+                        }
+                        const magA = BigNumber.getMag(reA);
+                        const magB = BigNumber.getMag(reB);
+                        if (magA - magB > guardAcc) {
+                            return new BigNumber(reA, {
+                                acc: resultAcc,
+                                noiseMag: Math.max(combinedNoiseMag, magB)
+                            });
+                        }
+                    }
+
+                    if (powerDifference < 0) {
+                        // 对齐到较小的十进制指数后再相加尾数，保持 `mantissa * 10^power` 表示一致。
+                        mantissaA *= BigNumber.pow10(-powerDifference);
+                    } else if (powerDifference > 0) {
+                        mantissaB *= BigNumber.pow10(powerDifference);
+                    }
+
+                    const resultMantissa = mantissaA + mantissaB;
+                    const resultPower = Math.min(reA.power, reB.power);
+
+                    return new BigNumber(resultMantissa, {
+                        pow: resultPower,
+                        acc: resultAcc,
+                        noiseMag: combinedNoiseMag
+                    });
+                }
+
+                /**
+                 * 纯实数乘法核，保留原有舍入、精度和噪声传播规则。
+                 * @param {BigNumber} reA - 第一个操作数。
+                 * @param {BigNumber} reB - 第二个操作数。
+                 * @returns {BigNumber} 新的实数结果。
+                 */
+                static realTimes(reA, reB) {
+                    // (m1 * 10^p1)(m2 * 10^p2) = (m1m2) * 10^(p1+p2)。
+                    const resultMantissa = reA.mantissa * reB.mantissa;
+                    const resultPower = reA.power + reB.power;
+                    const resultAcc = Math.min(reA.acc, reB.acc);
+
+                    const noiseA = reA.noiseMag ?? -Infinity;
+                    const noiseB = reB.noiseMag ?? -Infinity;
+                    let propagatedNoise = -Infinity;
+                    if (!reA.isZero() && !reB.isZero()) {
+                        const magA = BigNumber.getMag(reA);
+                        const magB = BigNumber.getMag(reB);
+                        const term1 = noiseA === -Infinity ? -Infinity : noiseA + magB;
+                        const term2 = noiseB === -Infinity ? -Infinity : noiseB + magA;
+                        propagatedNoise = Math.max(term1, term2);
+                    }
+
+                    return new BigNumber(resultMantissa, {
+                        pow: resultPower,
+                        acc: resultAcc,
+                        noiseMag: propagatedNoise
+                    });
+                }
+
+                /**
+                 * 纯实数除法核，保留原有舍入、精度和噪声传播规则。
+                 * @param {BigNumber} reA - 第一个操作数。
+                 * @param {BigNumber} reB - 第二个操作数。
+                 * @returns {BigNumber} 新的实数结果。
+                 */
+                static realDivide(reA, reB) {
+                    if (reB.isZero()) {
+                        throw new Error('[MathPlus] mathematical error: Division by zero.');
+                    }
+
+                    const resultAcc = Math.min(reA.acc, reB.acc);
+
+                    const lenA = BigNumber.decimalLengthBigInt(
+                        (reA.isNegative() ? -reA.mantissa : reA.mantissa)
+                    );
+                    const lenB = BigNumber.decimalLengthBigInt(
+                        (reB.isNegative() ? -reB.mantissa : reB.mantissa)
+                    );
+
+                    // BigInt 除法会截断，因此先按目标精度、尾数位数差和保护位放大被除数。
+                    const scalingDigits = resultAcc + lenB - lenA + 4;
+                    const finalScalingDigits = Math.max(0, scalingDigits);
+                    const scaledMantissaA = reA.mantissa * BigNumber.pow10(finalScalingDigits);
+                    const resultMantissa = scaledMantissaA / reB.mantissa;
+                    const resultPower = reA.power - reB.power - finalScalingDigits;
+
+                    const noiseA = reA.noiseMag ?? -Infinity;
+                    const noiseB = reB.noiseMag ?? -Infinity;
+                    const magA = BigNumber.getMag(reA);
+                    const magB = BigNumber.getMag(reB);
+                    const termA = noiseA === -Infinity ? -Infinity : noiseA - magB;
+                    const termB = noiseB === -Infinity ? -Infinity : noiseB + magA - 2 * magB;
+                    let divisionNoise = Math.max(termA, termB);
+
+                    if (scaledMantissaA % reB.mantissa !== 0n) {
+                        const magRes = BigNumber.decimalLengthBigInt(
+                            resultMantissa < 0n ? -resultMantissa : resultMantissa
+                        ) + resultPower - 1;
+                        const roundNoise = magRes - resultAcc;
+                        divisionNoise = Math.max(divisionNoise, roundNoise);
+                    }
+
+                    return new BigNumber(resultMantissa, {
+                        pow: resultPower,
+                        acc: resultAcc,
+                        noiseMag: divisionNoise
+                    });
+                }
+
+                /**
+                 * 纯实数减法，不经过复数接口。
+                 * @param {BigNumber} a - 被减数。
+                 * @param {BigNumber} b - 减数。
+                 * @returns {BigNumber} 差。
+                 */
+                static realMinus(a, b) {
+                    return MathPlus.realPlus(a, MathPlus._oppositeNumber(b));
+                }
+
+                /**
                  * 提取复数的实部。
                  *
                  * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 可由 `ComplexNumber` 构造的输入；
@@ -2639,94 +2818,40 @@
                  * @returns {ComplexNumber} 代表两个数之和的 ComplexNumber 实例。
                  */
                 static plus(a, b) {
-                    const inputA = new ComplexNumber(a);
-                    const inputB = new ComplexNumber(b);
-
-                    if (inputA.onlyReal && inputB.onlyReal) {
-                        // 纯实数直接在 BigNumber 的尾数上运算；复数分支则分别合并实部和虚部。
-                        const reA = inputA.re;
-                        const reB = inputB.re;
-                        const resultAcc = Math.min(reA.acc, reB.acc);
-                        const combinedNoiseMag = Math.max(reA.noiseMag ?? -Infinity, reB.noiseMag ?? -Infinity);
-
-                        if (reA.isZero()) {
-                            return new ComplexNumber(inputB, {acc: resultAcc});
-                        }
-                        if (reB.isZero()) {
-                            return new ComplexNumber(inputA, {acc: resultAcc});
-                        }
-
-                        let mantissaA = reA.mantissa;
-                        let mantissaB = reB.mantissa;
-                        const powerDifference = reB.power - reA.power;
-
-                        const guardAcc = resultAcc + 5;
-                        if (powerDifference > guardAcc) {
-                            // 快路径：即使 mA 占满 reA.acc 位也追不上，O(1) 直接返回
-                            if (powerDifference > reA.acc + guardAcc) {
-                                return new ComplexNumber(inputB, {
-                                    acc: resultAcc,
-                                    noiseMag: Math.max(combinedNoiseMag, reA.power + reA.acc - 1)
-                                });
-                            }
-                            const magA = BigNumber.getMag(reA);
-                            const magB = BigNumber.getMag(reB);
-                            if (magB - magA > guardAcc) {
-                                return new ComplexNumber(inputB, {
-                                    acc: resultAcc,
-                                    noiseMag: Math.max(combinedNoiseMag, magA)
-                                });
-                            }
-                        } else if (powerDifference < -guardAcc) {
-                            if (-powerDifference > reB.acc + guardAcc) {
-                                return new ComplexNumber(inputA, {
-                                    acc: resultAcc,
-                                    noiseMag: Math.max(combinedNoiseMag, reB.power + reB.acc - 1)
-                                });
-                            }
-                            const magA = BigNumber.getMag(reA);
-                            const magB = BigNumber.getMag(reB);
-                            if (magA - magB > guardAcc) {
-                                return new ComplexNumber(inputA, {
-                                    acc: resultAcc,
-                                    noiseMag: Math.max(combinedNoiseMag, magB)
-                                });
-                            }
-                        }
-
-                        if (powerDifference < 0) {
-                            // 对齐到较小的十进制指数后再相加尾数，保持 `mantissa * 10^power` 表示一致。
-                            mantissaA *= 10n ** BigInt(-powerDifference);
-                        } else if (powerDifference > 0) {
-                            mantissaB *= 10n ** BigInt(powerDifference);
-                        }
-
-                        const resultMantissa = mantissaA + mantissaB;
-                        const resultPower = Math.min(reA.power, reB.power);
-
-                        return new ComplexNumber(resultMantissa, {
-                            pow: resultPower,
-                            acc: resultAcc,
-                            noiseMag: combinedNoiseMag
-                        });
+                    const numberA = MathPlus._arithmeticInput(a);
+                    const numberB = MathPlus._arithmeticInput(b);
+                    if (numberA instanceof BigNumber && numberB instanceof BigNumber) {
+                        return new ComplexNumber(MathPlus.realPlus(numberA, numberB));
                     }
 
-                    const resultRe = MathPlus.plus(inputA.re, inputB.re);
-                    const resultIm = MathPlus.plus(inputA.im, inputB.im);
+                    const inputA = numberA instanceof ComplexNumber ? numberA : new ComplexNumber(numberA);
+                    const inputB = numberB instanceof ComplexNumber ? numberB : new ComplexNumber(numberB);
 
-                    return new ComplexNumber([resultRe.re, resultIm.re]);
+                    const resultRe = MathPlus.realPlus(inputA.re, inputB.re);
+                    const resultIm = MathPlus.realPlus(inputA.im, inputB.im);
+                    return new ComplexNumber([resultRe, resultIm]);
                 }
 
                 /**
                  * 计算两个数的差 (a - b)。
-                 * 该实现通过将减法转换为加法 (a + (-b)) 来复用现有的 `plus` 和 `_oppositeNumber` 方法，
-                 * 展现了优秀的代码抽象。
+                 * 纯实数直接调用实数核，复数分别计算实部和虚部的差。
                  * @param {string|number|bigint|BigNumber|ComplexNumber|Array} a - 被减数。
                  * @param {string|number|bigint|BigNumber|ComplexNumber|Array} b - 减数。
                  * @returns {ComplexNumber} 代表两个数之差的 ComplexNumber 实例。
                  */
                 static minus(a, b) {
-                    return MathPlus.plus(a, MathPlus._oppositeNumber(b));
+                    const numberA = MathPlus._arithmeticInput(a);
+                    const numberB = MathPlus._arithmeticInput(b);
+                    if (numberA instanceof BigNumber && numberB instanceof BigNumber) {
+                        return new ComplexNumber(MathPlus.realMinus(numberA, numberB));
+                    }
+
+                    const inputA = numberA instanceof ComplexNumber ? numberA : new ComplexNumber(numberA);
+                    const inputB = numberB instanceof ComplexNumber ? numberB : new ComplexNumber(numberB);
+
+                    const resultRe = MathPlus.realMinus(inputA.re, inputB.re);
+                    const resultIm = MathPlus.realMinus(inputA.im, inputB.im);
+                    return new ComplexNumber([resultRe, resultIm]);
                 }
 
                 /**
@@ -2736,46 +2861,22 @@
                  * @returns {ComplexNumber} 代表两个数乘积的 ComplexNumber 实例。
                  */
                 static times(a, b) {
-                    const inputA = new ComplexNumber(a);
-                    const inputB = new ComplexNumber(b);
-
-                    if (inputA.onlyReal && inputB.onlyReal) {
-                        // (m1 * 10^p1)(m2 * 10^p2) = (m1m2) * 10^(p1+p2)。
-                        const reA = inputA.re;
-                        const reB = inputB.re;
-
-                        const resultMantissa = reA.mantissa * reB.mantissa;
-                        const resultPower = reA.power + reB.power;
-                        const resultAcc = Math.min(reA.acc, reB.acc);
-
-                        const noiseA = reA.noiseMag ?? -Infinity;
-                        const noiseB = reB.noiseMag ?? -Infinity;
-                        let propagatedNoise = -Infinity;
-                        if (!reA.isZero() && !reB.isZero()) {
-                            const magA = BigNumber.getMag(reA);
-                            const magB = BigNumber.getMag(reB);
-                            const term1 = noiseA === -Infinity ? -Infinity : noiseA + magB;
-                            const term2 = noiseB === -Infinity ? -Infinity : noiseB + magA;
-                            propagatedNoise = Math.max(term1, term2);
-                        }
-
-                        return new ComplexNumber(resultMantissa, {
-                            pow: resultPower,
-                            acc: resultAcc,
-                            noiseMag: propagatedNoise
-                        });
+                    const numberA = MathPlus._arithmeticInput(a);
+                    const numberB = MathPlus._arithmeticInput(b);
+                    if (numberA instanceof BigNumber && numberB instanceof BigNumber) {
+                        return new ComplexNumber(MathPlus.realTimes(numberA, numberB));
                     }
 
-                    const ac = MathPlus.times(inputA.re, inputB.re);
-                    const bd = MathPlus.times(inputA.im, inputB.im);
-                    const ad = MathPlus.times(inputA.re, inputB.im);
-                    const bc = MathPlus.times(inputA.im, inputB.re);
+                    const inputA = numberA instanceof ComplexNumber ? numberA : new ComplexNumber(numberA);
+                    const inputB = numberB instanceof ComplexNumber ? numberB : new ComplexNumber(numberB);
+
+                    const ac = MathPlus.realTimes(inputA.re, inputB.re);
+                    const bd = MathPlus.realTimes(inputA.im, inputB.im);
+                    const ad = MathPlus.realTimes(inputA.re, inputB.im);
+                    const bc = MathPlus.realTimes(inputA.im, inputB.re);
 
                     // (a+bi)(c+di) = (ac-bd) + (ad+bc)i。
-                    const realPart = MathPlus.minus(ac, bd);
-                    const imagPart = MathPlus.plus(ad, bc);
-
-                    return new ComplexNumber([realPart.re, imagPart.re]);
+                    return new ComplexNumber([MathPlus.realMinus(ac, bd), MathPlus.realPlus(ad, bc)]);
                 }
 
                 /**
@@ -2788,65 +2889,26 @@
                  * @throws {Error} 如果除数为零。
                  */
                 static divide(a, b) {
-                    const inputA = new ComplexNumber(a);
-                    const inputB = new ComplexNumber(b);
+                    const numberA = MathPlus._arithmeticInput(a);
+                    const numberB = MathPlus._arithmeticInput(b);
+                    if (numberA instanceof BigNumber && numberB instanceof BigNumber) {
+                        return new ComplexNumber(MathPlus.realDivide(numberA, numberB));
+                    }
+
+                    const inputA = numberA instanceof ComplexNumber ? numberA : new ComplexNumber(numberA);
+                    const inputB = numberB instanceof ComplexNumber ? numberB : new ComplexNumber(numberB);
 
                     if (inputB.isZero()) {
                         throw new Error('[MathPlus] mathematical error: Division by zero.');
                     }
-
-                    if (inputA.onlyReal && inputB.onlyReal) {
-                        const reA = inputA.re;
-                        const reB = inputB.re;
-
-                        const resultAcc = Math.min(reA.acc, reB.acc);
-
-                        const lenA = BigNumber.decimalLengthBigInt(
-                            (reA.isNegative() ? -reA.mantissa : reA.mantissa)
-                        );
-                        const lenB = BigNumber.decimalLengthBigInt(
-                            (reB.isNegative() ? -reB.mantissa : reB.mantissa)
-                        );
-
-                        // BigInt 除法会截断，因此先按目标精度、尾数位数差和保护位放大被除数。
-                        const scalingDigits = resultAcc + lenB - lenA + 4;
-                        const finalScalingDigits = Math.max(0, scalingDigits);
-                        const scaledMantissaA = reA.mantissa * (10n ** BigInt(finalScalingDigits));
-                        const resultMantissa = scaledMantissaA / reB.mantissa;
-                        const resultPower = reA.power - reB.power - finalScalingDigits;
-
-                        const noiseA = reA.noiseMag ?? -Infinity;
-                        const noiseB = reB.noiseMag ?? -Infinity;
-                        const magA = BigNumber.getMag(reA);
-                        const magB = BigNumber.getMag(reB);
-                        const termA = noiseA === -Infinity ? -Infinity : noiseA - magB;
-                        const termB = noiseB === -Infinity ? -Infinity : noiseB + magA - 2 * magB;
-                        let divisionNoise = Math.max(termA, termB);
-
-                        if (scaledMantissaA % reB.mantissa !== 0n) {
-                            const magRes = BigNumber.decimalLengthBigInt(
-                                resultMantissa < 0n ? -resultMantissa : resultMantissa
-                            ) + resultPower - 1;
-                            const roundNoise = magRes - resultAcc;
-                            divisionNoise = Math.max(divisionNoise, roundNoise);
-                        }
-
-                        return new ComplexNumber(resultMantissa, {
-                            pow: resultPower,
-                            acc: resultAcc,
-                            noiseMag: divisionNoise
-                        });
-                    }
-
                     const conjB = MathPlus.conj(inputB);
-                    // 复数除法乘以分母的共轭：a/b = a·conj(b)/|b|²，使分母化为实数。
+                    // 复数除法乘以分母的共轭，使分母化为实数。
                     const numerator = MathPlus.times(inputA, conjB);
                     const denominator = MathPlus.times(inputB, conjB);
-
-                    const resultRe = MathPlus.divide(numerator.re, denominator.re);
-                    const resultIm = MathPlus.divide(numerator.im, denominator.re);
-
-                    return new ComplexNumber([resultRe.re, resultIm.re]);
+                    return new ComplexNumber([
+                        MathPlus.realDivide(numerator.re, denominator.re),
+                        MathPlus.realDivide(numerator.im, denominator.re)
+                    ]);
                 }
 
                 /**
@@ -2914,12 +2976,12 @@
                                 }
                                 return new ComplexNumber(inputA, {acc: resultAcc});
                             } else {
-                                calcB = calcB * (10n ** BigInt(powOfB));
+                                calcB = calcB * BigNumber.pow10(powOfB);
                                 modResult = calcA % calcB;
                             }
                         } else {
-                            calcA = powOfA === 0 ? calcA : calcA * (10n ** BigInt(powOfA));
-                            calcB = powOfB === 0 ? calcB : calcB * (10n ** BigInt(powOfB));
+                            calcA = powOfA === 0 ? calcA : calcA * BigNumber.pow10(powOfA);
+                            calcB = powOfB === 0 ? calcB : calcB * BigNumber.pow10(powOfB);
                             modResult = calcA % calcB;
                         }
 
@@ -3157,7 +3219,7 @@
                             }
 
                             // 3. 用对数尺度整体预估最终数量级：log10(|b| * |log10|a||) = log10|b| + log10|log10|a||
-                            // 在不展开 10n ** BigInt(absB.power) 的前提下完成溢出/下溢判断。
+                            // 在不展开 BigNumber.pow10(absB.power) 的前提下完成溢出/下溢判断。
                             const baseInfo = _estimateBaseLog10Info(reA);
                             const log10FinalMag = log10B + baseInfo.log10Log10A;
                             const willOverflow = baseInfo.isGreaterThanOne !== isExponentNegative;
@@ -3592,7 +3654,7 @@
                             resultMid = new ComplexNumber([0, 1n, acc]);
                             iterationMantissa = re.mantissa;
                         } else {
-                            const realPower = 10n ** BigInt(-re.power);
+                            const realPower = BigNumber.pow10(-re.power);
                             const intPart = re.mantissa / realPower;
                             resultMid = MathPlus.pow(
                                 new BigNumber(CalcConfig.constants.e, {acc: acc}),
@@ -3602,20 +3664,20 @@
                         }
 
                         // 先计算更小参数的泰勒级数 e^t = Σ(t^n/n!)，随后取十次幂还原小数部分。
-                        const iteration = new ComplexNumber([re.power - 1, iterationMantissa, acc]);
+                        const iteration = new BigNumber(iterationMantissa, {pow: re.power - 1, acc: acc});
 
                         const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                         const minPower = -2 * acc - 1;
 
-                        let mid = new ComplexNumber([0, 1n, acc]);
-                        let result = new ComplexNumber([0, 0n, acc]);
+                        let mid = new BigNumber(1n, {pow: 0, acc: acc});
+                        let result = new BigNumber(0n, {pow: 0, acc: acc});
                         let i = 1;
 
-                        for (; mid.re.power > minPower && !mid.isZero() && i < max; i++) {
-                            result = MathPlus.plus(result, mid);
-                            mid = MathPlus.divide(
-                                MathPlus.times(iteration, mid),
-                                [0, BigInt(i), acc]
+                        for (; mid.power > minPower && !mid.isZero() && i < max; i++) {
+                            result = MathPlus.realPlus(result, mid);
+                            mid = MathPlus.realDivide(
+                                MathPlus.realTimes(iteration, mid),
+                                new BigNumber(BigInt(i), {pow: 0, acc: acc})
                             );
                         }
 
@@ -3665,20 +3727,20 @@
 
                         // 先用 10 和 1.2 缩放到 0.9～1.1，再计算 y=(x-1)/(x+1)。
                         // ln(x) = 2·(y + y³/3 + y⁵/5 + ...)，最后补回缩放产生的 ln(10) 与 ln(1.2)。
-                        const const_1_2 = new ComplexNumber([-1, 12n, acc]);
-                        const const_1_1 = new ComplexNumber([-1, 11n, acc]);
-                        const const_0_9 = new ComplexNumber([-1, 9n, acc]);
+                        const const_1_2 = new BigNumber(12n, {pow: -1, acc: acc});
+                        const const_1_1 = new BigNumber(11n, {pow: -1, acc: acc});
+                        const const_0_9 = new BigNumber(9n, {pow: -1, acc: acc});
                         // 接近 1 时直接展开，避免缩放后相消使合法小对数落入常数量级的底噪。
-                        const nearOne = MathPlus.minus(input, const_1_1).re.isNegative() && MathPlus.minus(input, const_0_9).re.isPositive();
+                        const nearOne = MathPlus.realMinus(re, const_1_1).isNegative() && MathPlus.realMinus(re, const_0_9).isPositive();
                         const mantissaLen = BigNumber.decimalLengthBigInt(re.mantissa);
                         const mantissaChangedBy10 = nearOne ? 0 : mantissaLen + re.power;
-                        let mid = new ComplexNumber(re, {pow: -mantissaChangedBy10});
+                        let mid = new BigNumber(re, {pow: -mantissaChangedBy10});
 
                         // 将 x 进一步标准化到 [0.9, 1.1) 范围内
                         let mantissaChangedBy1_2 = 0;
                         let j = 0;
-                        for (; !(MathPlus.minus(mid, const_1_1).re.isNegative() && MathPlus.minus(mid, const_0_9).re.isPositive()) && j < 14; j++) {
-                            mid = MathPlus.times(mid, const_1_2);
+                        for (; !(MathPlus.realMinus(mid, const_1_1).isNegative() && MathPlus.realMinus(mid, const_0_9).isPositive()) && j < 14; j++) {
+                            mid = MathPlus.realTimes(mid, const_1_2);
                             mantissaChangedBy1_2 -= 1;
                         }
 
@@ -3687,32 +3749,35 @@
                         }
 
                         if (nearOne) {
-                            mid = MathPlus.divide(
-                                MathPlus.minus(mid, [0, 1n, acc]),
-                                MathPlus.plus(mid, [0, 1n, acc])
+                            mid = MathPlus.realDivide(
+                                MathPlus.realMinus(mid, new BigNumber(1n, {pow: 0, acc: acc})),
+                                MathPlus.realPlus(mid, new BigNumber(1n, {pow: 0, acc: acc}))
                             );
                         } else {
-                            mid = MathPlus.plus(
-                                [0, 1n, acc],
-                                MathPlus.divide(
-                                    [0, -2n, acc],
-                                    MathPlus.plus([0, 1n, acc], mid)
+                            mid = MathPlus.realPlus(
+                                new BigNumber(1n, {pow: 0, acc: acc}),
+                                MathPlus.realDivide(
+                                    new BigNumber(-2n, {pow: 0, acc: acc}),
+                                    MathPlus.realPlus(new BigNumber(1n, {pow: 0, acc: acc}), mid)
                                 )
                             );
                         }
 
-                        const squareOfMid = MathPlus.times(mid, mid);
+                        const squareOfMid = MathPlus.realTimes(mid, mid);
                         const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) * 2 + 5;
                         const minPower = -2 * acc - 1;
 
-                        let result = new ComplexNumber([0, 0n, acc]);
+                        let result = new BigNumber(0n, {pow: 0, acc: acc});
                         let i = 1;
 
-                        for (; mid.re.power > minPower && !mid.isZero() && i < max; i += 2) {
-                            result = MathPlus.plus(result, mid);
-                            mid = MathPlus.times(
-                                MathPlus.times(squareOfMid, mid),
-                                MathPlus.divide([0, BigInt(i), acc], [0, BigInt(i + 2), acc])
+                        for (; mid.power > minPower && !mid.isZero() && i < max; i += 2) {
+                            result = MathPlus.realPlus(result, mid);
+                            mid = MathPlus.realTimes(
+                                MathPlus.realTimes(squareOfMid, mid),
+                                MathPlus.realDivide(new BigNumber(BigInt(i), {
+                                    pow: 0,
+                                    acc: acc
+                                }), new BigNumber(BigInt(i + 2), {pow: 0, acc: acc}))
                             );
                         }
 
@@ -3721,17 +3786,17 @@
                         }
 
                         // 组合所有部分得到最终结果
-                        result = MathPlus.times([0, 2n, acc], result);
-                        result = MathPlus.plus(result, MathPlus.times(
-                            new ComplexNumber(CalcConfig.constants.ln_10, {acc: acc}),
-                            [0, BigInt(mantissaChangedBy10), acc]
+                        result = MathPlus.realTimes(new BigNumber(2n, {pow: 0, acc: acc}), result);
+                        result = MathPlus.realPlus(result, MathPlus.realTimes(
+                            new BigNumber(CalcConfig.constants.ln_10, {acc: acc}),
+                            new BigNumber(BigInt(mantissaChangedBy10), {pow: 0, acc: acc})
                         ));
-                        result = MathPlus.plus(result, MathPlus.times(
-                            new ComplexNumber(CalcConfig.constants.ln_1_2, {acc: acc}),
-                            [0, BigInt(mantissaChangedBy1_2), acc]
+                        result = MathPlus.realPlus(result, MathPlus.realTimes(
+                            new BigNumber(CalcConfig.constants.ln_1_2, {acc: acc}),
+                            new BigNumber(BigInt(mantissaChangedBy1_2), {pow: 0, acc: acc})
                         ));
 
-                        return result;
+                        return new ComplexNumber(result);
                     }
 
                     // 复对数主值：Log(z) = ln|z| + i·arg(z)。
@@ -3789,29 +3854,32 @@
                             return new ComplexNumber([0, 0n, acc]);
                         }
 
+                        const threshold = new BigNumber(1n, {pow: -1, acc: acc});
+                        const three = new BigNumber(3n, {pow: 0, acc: acc});
+                        const four = new BigNumber(4n, {pow: 0, acc: acc});
                         let divideBy3 = 0;
                         // 继续除以 3 可加快级数收敛，计算后用 sin(3x)=3sin(x)-4sin³(x) 逐层还原。
-                        for (; !MathPlus.plus(re, [-1, -1n, acc]).re.isNegative() && divideBy3 < 4; divideBy3++) {
-                            re = MathPlus.divide(re, [0, 3n, acc]).re;
+                        for (; !MathPlus.realMinus(re, threshold).isNegative() && divideBy3 < 4; divideBy3++) {
+                            re = MathPlus.realDivide(re, three);
                         }
                         if (divideBy3 === 4) {
                             throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: sin. Input: ${input.toString()}`);
                         }
 
-                        const squareOfRe = MathPlus.times(re, re);
+                        const squareOfRe = MathPlus.realTimes(re, re);
                         const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                         const minPower = -2 * acc - 1;
-                        let mid = new ComplexNumber(re);
+                        let mid = new BigNumber(re);
                         let result = mid;
                         let i = 1;
 
                         // sin(x)=x-x³/3!+x⁵/5!-...，相邻项递推可避免重复计算幂和阶乘。
-                        for (; mid.re.power > minPower && !mid.isZero() && i < max; i++) {
-                            mid = MathPlus.divide(
-                                MathPlus.times(mid, squareOfRe),
-                                [0, BigInt(2 * i) * BigInt(2 * i + 1), acc]
+                        for (; mid.power > minPower && !mid.isZero() && i < max; i++) {
+                            mid = MathPlus.realDivide(
+                                MathPlus.realTimes(mid, squareOfRe),
+                                new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {pow: 0, acc: acc})
                             );
-                            result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
+                            result = MathPlus[i % 2 === 0 ? 'realPlus' : 'realMinus'](result, mid);
                         }
 
                         if (i >= max) {
@@ -3820,17 +3888,21 @@
 
                         // 反复应用三倍角公式 sin(3x) = 3sin(x) - 4sin³(x) 来还原结果
                         for (; divideBy3 !== 0; divideBy3--) {
-                            const squareOfResult = MathPlus.times(result, result);
-                            result = MathPlus.times(
-                                MathPlus.minus(
-                                    [0, 3n, acc],
-                                    MathPlus.times([0, 4n, acc], squareOfResult)
+                            const squareOfResult = MathPlus.realTimes(result, result);
+                            result = MathPlus.realTimes(
+                                MathPlus.realMinus(
+                                    three,
+                                    MathPlus.realTimes(four, squareOfResult)
                                 ),
                                 result
                             );
                         }
 
-                        return new ComplexNumber([result.re.power, sign * result.re.mantissa, acc], {noiseMag: result.re.noiseMag});
+                        return new ComplexNumber(new BigNumber(sign * result.mantissa, {
+                            pow: result.power,
+                            acc: acc,
+                            noiseMag: result.noiseMag
+                        }));
                     }
 
                     // --- 输入为复数 ---
@@ -3926,28 +3998,33 @@
                             return new ComplexNumber([0, sign, acc]);
                         }
 
+                        const threshold = new BigNumber(1n, {pow: -1, acc: acc});
+                        const four = new BigNumber(4n, {pow: 0, acc: acc});
+                        const one = new BigNumber(1n, {pow: 0, acc: acc});
+                        const minusOne = new BigNumber(-1n, {pow: 0, acc: acc});
+                        const eight = new BigNumber(8n, {pow: 0, acc: acc});
                         let divideBy4 = 0;
                         // 继续除以 4 可加快级数收敛，计算后用 cos(4x)=8cos⁴(x)-8cos²(x)+1 还原。
-                        for (; !MathPlus.plus(re, [-1, -1n, acc]).re.isNegative() && divideBy4 < 3; divideBy4++) {
-                            re = MathPlus.divide(re, [0, 4n, acc]).re;
+                        for (; !MathPlus.realMinus(re, threshold).isNegative() && divideBy4 < 3; divideBy4++) {
+                            re = MathPlus.realDivide(re, four);
                         }
                         if (divideBy4 === 3) {
                             throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: cos. Input: ${input.toString()}`);
                         }
 
-                        const squareOfRe = MathPlus.times(re, re);
+                        const squareOfRe = MathPlus.realTimes(re, re);
                         const max = Math.max(acc, CalcConfig.globalCalcAccuracy, 16) + 5;
                         const minPower = -2 * acc - 1;
-                        let mid = new ComplexNumber([0, 1n, acc]);
-                        let result = new ComplexNumber([0, 0n, acc]);
+                        let mid = one;
+                        let result = new BigNumber(0n, {pow: 0, acc: acc});
                         let i = 0;
 
                         // cos(x)=1-x²/2!+x⁴/4!-...，使用相邻项递推累计。
-                        for (; mid.re.power > minPower && !mid.isZero() && i < max; i++) {
-                            result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
-                            mid = MathPlus.divide(
-                                MathPlus.times(mid, squareOfRe),
-                                [0, BigInt(2 * i + 1) * BigInt(2 * i + 2), acc]
+                        for (; mid.power > minPower && !mid.isZero() && i < max; i++) {
+                            result = MathPlus[i % 2 === 0 ? 'realPlus' : 'realMinus'](result, mid);
+                            mid = MathPlus.realDivide(
+                                MathPlus.realTimes(mid, squareOfRe),
+                                new BigNumber(BigInt(2 * i + 1) * BigInt(2 * i + 2), {pow: 0, acc: acc})
                             );
                         }
 
@@ -3957,17 +4034,21 @@
 
                         // 反复应用四倍角公式还原原始结果
                         for (; divideBy4 !== 0; divideBy4--) {
-                            const squareOfResult = MathPlus.times(result, result);
-                            result = MathPlus.plus(
-                                MathPlus.times(
-                                    MathPlus.plus(squareOfResult, [0, -1n, acc]),
-                                    MathPlus.times([0, 8n, acc], squareOfResult)
+                            const squareOfResult = MathPlus.realTimes(result, result);
+                            result = MathPlus.realPlus(
+                                MathPlus.realTimes(
+                                    MathPlus.realPlus(squareOfResult, minusOne),
+                                    MathPlus.realTimes(eight, squareOfResult)
                                 ),
-                                [0, 1n, acc]
+                                one
                             );
                         }
 
-                        const res = new ComplexNumber([result.re.power, sign * result.re.mantissa, acc], {noiseMag: result.re.noiseMag});
+                        const res = new ComplexNumber(new BigNumber(sign * result.mantissa, {
+                            pow: result.power,
+                            acc: acc,
+                            noiseMag: result.noiseMag
+                        }));
                         // 按结果自身的噪声判零，保留零点附近仍有有效数字的余弦值。
                         return Public.zeroCorrect(res);
                     }
@@ -4324,7 +4405,7 @@
                             throw new Error('[MathPlus] mathematical error: Negative integer factorial undefined.');
                         }
 
-                        const realNumber = re.mantissa * (10n ** BigInt(re.power));
+                        const realNumber = re.mantissa * BigNumber.pow10(re.power);
                         return new ComplexNumber(factorialOptimized(realNumber), {
                             acc: acc
                         });
@@ -4436,7 +4517,7 @@
                         }
 
                         const pow = -re.power;
-                        let result = re.acc < pow ? 0n : re.mantissa / (10n ** BigInt(pow));
+                        let result = re.acc < pow ? 0n : re.mantissa / BigNumber.pow10(pow);
 
                         // 根据 floor 函数的定义调整结果。
                         // - 对于正数，floor(x) 等于 trunc(x)。
@@ -4473,7 +4554,7 @@
                         }
 
                         const pow = -re.power;
-                        let result = re.acc < pow ? 0n : re.mantissa / (10n ** BigInt(pow));
+                        let result = re.acc < pow ? 0n : re.mantissa / BigNumber.pow10(pow);
 
                         if (result > 0n || (result === 0n && re.isPositive())) {
                             result += 1n;
@@ -5581,6 +5662,7 @@
 
                     const augmentedMatrix = [];
                     let maxAbs = new ComplexNumber(0);
+                    let onlyReal = true;
                     // 复制系数并附加常数列，构造增广矩阵，避免修改调用方传入的数组。
                     for (let i = 0; i < n; i++) {
                         if (coefficients[i].length !== n) {
@@ -5589,19 +5671,34 @@
                         const newRow = [];
                         for (let j = 0; j < n; j++) {
                             const cell = new ComplexNumber(coefficients[i][j]);
+                            onlyReal = onlyReal && cell.onlyReal;
                             const cellAbs = MathPlus.abs(cell);
                             if (!cellAbs.isZero() && (maxAbs.isZero() || MathPlus.minus(cellAbs, maxAbs).re.isPositive())) {
                                 maxAbs = cellAbs;
                             }
                             newRow.push(cell);
                         }
-                        newRow.push(new ComplexNumber(constants[i]));
+                        const constant = new ComplexNumber(constants[i]);
+                        onlyReal = onlyReal && constant.onlyReal;
+                        newRow.push(constant);
                         augmentedMatrix.push(newRow);
                     }
 
                     if (maxAbs.isZero()) {
                         throw new Error('[StatisticsTools] The system of equations has no unique solution.');
                     }
+
+                    // 运算函数只选择一次，三重循环内不再进行类型解析或复数装箱。
+                    if (onlyReal) {
+                        for (const row of augmentedMatrix) {
+                            for (let j = 0; j <= n; j++) {
+                                row[j] = row[j].re;
+                            }
+                        }
+                    }
+                    const divide = onlyReal ? MathPlus.realDivide : MathPlus.divide;
+                    const minus = onlyReal ? MathPlus.realMinus : MathPlus.minus;
+                    const times = onlyReal ? MathPlus.realTimes : MathPlus.times;
 
                     for (let i = 0; i < n; i++) {
                         // 每列选取绝对值最大的主元并换行，减少除以极小数造成的误差放大。
@@ -5623,7 +5720,7 @@
 
                         // 主元行归一化，再消去该列的其他元素；结束时左侧矩阵成为单位矩阵。
                         for (let j = i; j < n + 1; j++) {
-                            augmentedMatrix[i][j] = MathPlus.divide(augmentedMatrix[i][j], pivot);
+                            augmentedMatrix[i][j] = divide(augmentedMatrix[i][j], pivot);
                         }
 
                         for (let k = 0; k < n; k++) {
@@ -5631,9 +5728,9 @@
                                 const factor = augmentedMatrix[k][i];
 
                                 for (let j = i; j < n + 1; j++) {
-                                    augmentedMatrix[k][j] = MathPlus.minus(
+                                    augmentedMatrix[k][j] = minus(
                                         augmentedMatrix[k][j],
-                                        MathPlus.times(factor, augmentedMatrix[i][j])
+                                        times(factor, augmentedMatrix[i][j])
                                     );
                                 }
                             }
@@ -5642,7 +5739,7 @@
 
                     const solution = new Array(n);
                     for (let i = 0; i < n; i++) {
-                        solution[i] = augmentedMatrix[i][n];
+                        solution[i] = onlyReal ? new ComplexNumber(augmentedMatrix[i][n]) : augmentedMatrix[i][n];
                     }
 
                     return solution;
