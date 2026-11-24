@@ -258,6 +258,20 @@ document.addEventListener('keydown', (event) => {
             return PageControlTools.clickMainCover();
         }
 
+        // Escape 优先收起当前页面的浮层，每次只关闭一层。
+        if (key === 'Escape' && inputMode && (
+            HtmlTools.getHtml('#keyboard_cover').classList.contains('KeyboardCover') ||
+            HtmlTools.getHtml('#keyboard_cover_ForMode1').classList.contains('KeyboardCover')
+        )) {
+            event.preventDefault();
+            return PageControlTools.changeSubKeyboard('allNotShow');
+        }
+        if (key === 'Escape' && !inputMode &&
+            !HtmlTools.getHtml('#print_content_1_cover').classList.contains('NoDisplay')) {
+            event.preventDefault();
+            return PageControlTools.clickPrint1Cover();
+        }
+
         if (!inputMode) {
             event.preventDefault();
             if (!HtmlTools.getHtml('#load_cover').classList.contains('NoDisplay')) {

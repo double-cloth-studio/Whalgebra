@@ -1441,7 +1441,7 @@
                         return;
                     }
 
-                    // Worker 正在重启时跳过零散同步，避免产生无意义请求；重启末尾的 _restoreState() 会统一恢复最新配置。
+                    // Worker 尚未就绪或正在重启时跳过零散同步；_restoreState() 会统一恢复最新配置。
                     if (!WorkerTools.isReady || WorkerTools.isRestarting) {
                         return;
                     }
@@ -3414,7 +3414,7 @@
                             } while (i < max);
 
                             if (i >= max && diffMag > -acc) {
-                                console.warn(`[MathPlus] Square root (${x.toString()}) calculation takes too long.`);
+                                console.warn(`[MathPlus] Square root (${input.toString()}) calculation takes too long.`);
                                 useAlternative = true;
                             }
                         }
@@ -4218,8 +4218,8 @@
                     const acc = input.acc;
                     const one = [0, 1n, acc];
 
-                    // 正实数用 (1 - exp(-2x)) / (1 + exp(-2x))，避免中间指数溢出。
-                    const useNegativeExponent = input.onlyReal && input.re.isPositive();
+                    // 实部为正时用 (1 - exp(-2x)) / (1 + exp(-2x))，避免中间指数溢出。
+                    const useNegativeExponent = input.re.isPositive();
                     const mid = MathPlus.exp(MathPlus.times([0, useNegativeExponent ? -2n : 2n, acc], input));
                     return MathPlus.divide(
                         useNegativeExponent ? MathPlus.minus(one, mid) : MathPlus.plus(mid, [0, -1n, acc]),
@@ -8000,13 +8000,14 @@
                 }
 
                 /**
-                 * 判断 Worker 是否可用。
+                 * 判断 Worker 是否存活且已完成当前环境同步。
                  *
                  * @readonly
                  * @type {boolean}
                  */
                 static get isReady() {
-                    return this._mathWorker !== null && !this._mathWorker.isTerminated;
+                    return this._mathWorker !== null && !this._mathWorker.isTerminated &&
+                        this._readyStateId === this._stateId;
                 }
 
                 /**
@@ -15374,6 +15375,20 @@
                 if (coverShown) {
                     event.preventDefault();
                     return PageControlTools.clickMainCover();
+                }
+
+                // Escape 优先收起当前页面的浮层，每次只关闭一层。
+                if (key === 'Escape' && inputMode && (
+                    HtmlTools.getHtml('#keyboard_cover').classList.contains('KeyboardCover') ||
+                    HtmlTools.getHtml('#keyboard_cover_ForMode1').classList.contains('KeyboardCover')
+                )) {
+                    event.preventDefault();
+                    return PageControlTools.changeSubKeyboard('allNotShow');
+                }
+                if (key === 'Escape' && !inputMode &&
+                    !HtmlTools.getHtml('#print_content_1_cover').classList.contains('NoDisplay')) {
+                    event.preventDefault();
+                    return PageControlTools.clickPrint1Cover();
                 }
 
                 if (!inputMode) {

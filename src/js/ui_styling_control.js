@@ -585,7 +585,13 @@
                 return;
             }
             if (PageConfig._currentMode === '0' && mode !== '0') {
-                PrintManager.mode0ShowOnScreen.cancel();
+                PrintManager.cancelMode0Preview();
+                if (PrintManager.mode0ScreenInCalc) {
+                    WorkerTools.cancelWorker().catch((err) => {
+                        console.warn('[UI] Worker cancellation failed:', err);
+                    });
+                    PrintManager.mode0ScreenInCalc = false;
+                }
             }
 
             // 标题和屏幕切换仍需读取旧模式，因此必须在覆写 _currentMode 前执行。
@@ -4371,7 +4377,7 @@
             // 标准计算模式还需取消实时预览及其可能仍在运行的 Worker。
             if (PageConfig.currentMode === '0') {
                 HtmlTools.getHtml('#screen_0_display').classList.add('NoDisplay');
-                PrintManager.mode0ShowOnScreen.cancel();
+                PrintManager.cancelMode0Preview();
                 if (PrintManager.mode0ScreenInCalc) {
                     WorkerTools.restart().catch((err) => {
                         console.warn('[UI] Worker restart failed:', err);
@@ -4911,6 +4917,17 @@
         });
 
         /**
+         * 作废已启动的实时预览，并丢弃防抖队列中的待执行调用。
+         * Worker 取消或重启及计算状态由调用方处理。
+         *
+         * @returns {void}
+         */
+        static cancelMode0Preview() {
+            ++this._currentRequestId;
+            this.mode0ShowOnScreen.cancel();
+        }
+
+        /**
          * 阻止实例化静态输出管理器。
          *
          * @throws {Error} 始终抛出。
@@ -5099,7 +5116,7 @@
             try {
                 if (wasInCalc) {
                     await WorkerTools.cancelWorker();
-                    // 等待取消或重启期间若有新输入，放弃本次过期调用。
+                    // 等待取消或重启期间若预览已作废，放弃本次过期调用。
                     if (this._currentRequestId !== requestId) {
                         return;
                     }
@@ -5169,8 +5186,8 @@
             InputManager.ac({acArea: textDisplay});
             InputManager.ac({acArea: resultDisplay});
             const needReshow = this.mode0ScreenInCalc || this.mode0ShowOnScreen.pending();
+            this.cancelMode0Preview();
             if (needReshow) {
-                this.mode0ShowOnScreen.cancel();
                 screenDisplay.classList.add('NoDisplay');
                 if (this.mode0ScreenInCalc) {
                     await WorkerTools.restart();
@@ -6278,7 +6295,7 @@
 
             switch (PageConfig.currentMode) {
                 case '0':
-                    PrintManager.mode0ShowOnScreen.cancel();
+                    PrintManager.cancelMode0Preview();
 
                     if (PrintManager.mode0ScreenInCalc) {
                         WorkerTools.restart().catch((err) => {
@@ -6312,6 +6329,7 @@
          */
         static cancelPrint() {
             ++PrintManager.exeRequestId;
+            PrintManager.cancelMode0Preview();
             WorkerTools.restart().catch((err) => {
                 console.warn('[UI] Worker restart failed:', err);
             });

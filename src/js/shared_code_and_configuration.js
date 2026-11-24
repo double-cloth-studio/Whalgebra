@@ -1430,7 +1430,7 @@
                 return;
             }
 
-            // Worker 正在重启时跳过零散同步，避免产生无意义请求；重启末尾的 _restoreState() 会统一恢复最新配置。
+            // Worker 尚未就绪或正在重启时跳过零散同步；_restoreState() 会统一恢复最新配置。
             if (!WorkerTools.isReady || WorkerTools.isRestarting) {
                 return;
             }

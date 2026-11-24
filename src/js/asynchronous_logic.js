@@ -814,13 +814,14 @@
                 }
 
                 /**
-                 * 判断 Worker 是否可用。
+                 * 判断 Worker 是否存活且已完成当前环境同步。
                  *
                  * @readonly
                  * @type {boolean}
                  */
                 static get isReady() {
-                    return this._mathWorker !== null && !this._mathWorker.isTerminated;
+                    return this._mathWorker !== null && !this._mathWorker.isTerminated &&
+                        this._readyStateId === this._stateId;
                 }
 
                 /**

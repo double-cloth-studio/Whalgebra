@@ -1018,10 +1018,11 @@
             }
             const highPrecisionRe = new ComplexNumber(angle, {acc: highPrecisionAcc});
             const n = MathPlus.floor(MathPlus.times(highPrecisionRe, CalcConfig.constants.invTwoPi));
+            angle = highPrecisionRe.re;
             if (!n.isZero()) {
                 reduced = true;
+                angle = MathPlus.minus(highPrecisionRe, MathPlus.divide(n, CalcConfig.constants.invTwoPi)).re;
             }
-            angle = MathPlus.minus(highPrecisionRe, MathPlus.divide(n, CalcConfig.constants.invTwoPi)).re;
 
             // 利用 cos(x) = cos(2π - x)，将 re 从 (π, 2π) 映射到 (0, π)
             if (MathPlus.minus(angle, CalcConfig.constants.pi).re.isPositive()) {
@@ -1063,6 +1064,9 @@
                 if (!angle.isZero() && BigNumber.getMag(angle) <= noiseMag + 4) {
                     angle = new BigNumber([0, 0n, acc]);
                 }
+            } else {
+                // 未归约时保留原角度的精度和噪声信息。
+                angle = originalAngle;
             }
 
             return [angle, changeSign];
@@ -1195,21 +1199,33 @@
                 if (powerDifference > guardAcc) {
                     // 快路径：即使 mA 占满 reA.acc 位也追不上，O(1) 直接返回
                     if (powerDifference > reA.acc + guardAcc) {
-                        return new ComplexNumber(inputB, {acc: resultAcc});
+                        return new ComplexNumber(inputB, {
+                            acc: resultAcc,
+                            noiseMag: Math.max(combinedNoiseMag, reA.power + reA.acc - 1)
+                        });
                     }
                     const magA = BigNumber.getMag(reA);
                     const magB = BigNumber.getMag(reB);
                     if (magB - magA > guardAcc) {
-                        return new ComplexNumber(inputB, {acc: resultAcc});
+                        return new ComplexNumber(inputB, {
+                            acc: resultAcc,
+                            noiseMag: Math.max(combinedNoiseMag, magA)
+                        });
                     }
                 } else if (powerDifference < -guardAcc) {
                     if (-powerDifference > reB.acc + guardAcc) {
-                        return new ComplexNumber(inputA, {acc: resultAcc});
+                        return new ComplexNumber(inputA, {
+                            acc: resultAcc,
+                            noiseMag: Math.max(combinedNoiseMag, reB.power + reB.acc - 1)
+                        });
                     }
                     const magA = BigNumber.getMag(reA);
                     const magB = BigNumber.getMag(reB);
                     if (magA - magB > guardAcc) {
-                        return new ComplexNumber(inputA, {acc: resultAcc});
+                        return new ComplexNumber(inputA, {
+                            acc: resultAcc,
+                            noiseMag: Math.max(combinedNoiseMag, magB)
+                        });
                     }
                 }
 
@@ -1933,7 +1949,7 @@
                     } while (i < max);
 
                     if (i >= max && diffMag > -acc) {
-                        console.warn(`[MathPlus] Square root (${x.toString()}) calculation takes too long.`);
+                        console.warn(`[MathPlus] Square root (${input.toString()}) calculation takes too long.`);
                         useAlternative = true;
                     }
                 }
@@ -2284,8 +2300,8 @@
          * @throws {Error} 如果 a=1，或者 a,b 的某些组合导致 ln(a) 或 ln(b) 未定义（例如 ln(0)）。
          */
         static log(a, b) {
-            const aAcc = (a instanceof ComplexNumber || a instanceof BigNumber) ? a.acc : new ComplexNumber(a).acc;
-            const lnA = Public.zeroCorrect(MathPlus.ln(a), [0, 1n, aAcc]);
+            // 按对数自身的噪声判零，保留接近 1 的合法底数产生的小对数。
+            const lnA = Public.zeroCorrect(MathPlus.ln(a));
             return MathPlus.divide(MathPlus.ln(b), lnA);
         }
 
@@ -2487,7 +2503,8 @@
                 }
 
                 const res = new ComplexNumber([result.re.power, sign * result.re.mantissa, acc], {noiseMag: result.re.noiseMag});
-                return Public.zeroCorrect(res, [0, 1n, acc]);
+                // 按结果自身的噪声判零，保留零点附近仍有有效数字的余弦值。
+                return Public.zeroCorrect(res);
             }
 
             // --- 输入为复数 ---
@@ -2736,8 +2753,8 @@
             const acc = input.acc;
             const one = [0, 1n, acc];
 
-            // 正实数用 (1 - exp(-2x)) / (1 + exp(-2x))，避免中间指数溢出。
-            const useNegativeExponent = input.onlyReal && input.re.isPositive();
+            // 实部为正时用 (1 - exp(-2x)) / (1 + exp(-2x))，避免中间指数溢出。
+            const useNegativeExponent = input.re.isPositive();
             const mid = MathPlus.exp(MathPlus.times([0, useNegativeExponent ? -2n : 2n, acc], input));
             return MathPlus.divide(
                 useNegativeExponent ? MathPlus.minus(one, mid) : MathPlus.plus(mid, [0, -1n, acc]),
@@ -2762,7 +2779,8 @@
                 MathPlus.ln(
                     MathPlus.divide(
                         MathPlus.plus(one, input),
-                        Public.zeroCorrect(MathPlus.minus(one, input), one, input)
+                        // 按差值自身的噪声判零，保留精确输入与 1 之间的微小差值。
+                        Public.zeroCorrect(MathPlus.minus(one, input))
                     )
                 ),
                 [0, 2n, acc]
