@@ -84,6 +84,14 @@ console.log(MathPlus.abs(z).toString()); // "5"
 
 `valueOf()` 返回 `[[re.power,re.mantissa,re.acc], [im.power,im.mantissa,im.acc]]`，可交回构造器继续计算。元组含 `bigint`，不能直接用 `JSON.stringify` 序列化；它也不包含 `noiseMag`，不应当作完整误差状态快照。
 
+## 噪声状态与对象传递
+
+`noiseMag` 是绝对十进制噪声量级上界，`-Infinity` 表示当前没有记录到截断或舍入噪声；它与有效位数 `acc` 分开维护。输入未发生舍入时可保留 `-Infinity`，有限精度舍入和算术运算会更新噪声。加法因量级差过大而直接返回较大项时，也会将被舍弃项计入结果噪声。
+
+复制 `BigNumber` 或 `ComplexNumber` 实例会继承噪声；通过 `pow` 选项进行十进制缩放时，噪声量级相应平移。`ComplexNumber` 的 `noiseMag` 选项还接受 `[realNoise, imagNoise]`，分别指定两分量的噪声。
+
+`valueOf()` 和 `CalcTools.exec(..., { outputMode: 'mid' })` 的元组不保存噪声。从元组重建与直接复制对象可能产生不同的判零结果，尤其是由近似 π 得到的角度；需要保留误差传播时，应直接传递数值对象。字符串也只保留其文本表示，增加 `acc` 无法恢复已丢失的信息。
+
 ## 精度与显示
 
 核心默认计算精度为 220，输出策略为 `0.9`；界面初始化会应用用户保存的精度档位。需要稳定、可复现的示例时，显式指定精度和显示模式。

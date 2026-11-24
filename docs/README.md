@@ -32,3 +32,5 @@ console.log(value.toString()); // "7"
 ## 维护原则
 
 接口参数和返回结构以 `src/js/` 中的实现为准，计算测试从 `dist/Whalgebra.html` 抽取核心，因此修改时必须同步这两份代码。工具参数集中在工具手册，用例格式集中在测试手册，其他页面通过链接引用，避免多份说明逐渐失配。
+
+数值对象的 `noiseMag` 会影响后续判零和角度归约；继续计算时优先传递对象，`valueOf()` 和 `outputMode: 'mid'` 的元组仅保留数值与精度。具体约束见[数值构造器](./math_engine_and_constructors.md)和[公共归整工具](./configuration_and_utilities.md)。

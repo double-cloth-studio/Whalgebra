@@ -22,7 +22,7 @@ CalcConfig.setAccuracy(120, 30);
 CalcConfig.globalPrintMode = 'algebra';
 ```
 
-主线程 setter 在 Worker 已可用时异步同步配置；Worker 尚未创建时保留主线程状态，首次创建时读取快照。降低计算精度也会收紧已有绝对输出精度。单次计算优先使用调用参数，界面精度档位由 `PageConfig` 管理。
+主线程 setter 在 Worker 已就绪且未重启时异步同步配置；尚未创建、首次同步或重启期间仅更新主线程状态，由 `_restoreState()` 读取并核对最新快照。`WorkerTools.isReady` 包含当前轮环境同步已完成这一条件，详见[Worker 架构](./architecture_and_worker.md)。降低计算精度也会收紧已有绝对输出精度。单次计算优先使用调用参数，界面精度档位由 `PageConfig` 管理。
 
 ### 当前边界
 
@@ -91,3 +91,15 @@ console.log(info.needKh);        // true
 | `funcToString(list, mode, asX)` | 将系数还原为表达式，具体顺序取决于 mode |
 
 误差归整用于处理有限精度残差，不代表任意小数都应归零。调用时保留数值对象的精度与噪声信息，避免先转原生 Number 再转换回来。
+
+### 判零与输出归整
+
+`zeroCorrect` 先按各分量的 `noiseMag` 清理底噪，再比较实部、虚部和可选参考值的数量级。不传参考值时，精确的纯实小量可以保留；传入参考值会额外启用相对尺度判零，也可能清除精确小量。
+
+```javascript
+const tiny = new BigNumber("1E-100", { acc: 36 });
+console.log(Public.zeroCorrect(tiny).toString());    // "1E-100"
+console.log(Public.zeroCorrect(tiny, 1).toString()); // "0"
+```
+
+`idealizationToString` 接受单值或数组，数组逐项格式化并保留 `"error"`。其比例输出精度以每个数值对象的 `acc` 为基数，向下取整且至少为 1 位，绝对输出位数也不超过对象精度。精确小量、累计噪声与元组转换的区别见[数值构造器](./math_engine_and_constructors.md)。

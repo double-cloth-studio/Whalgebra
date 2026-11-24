@@ -12,6 +12,14 @@ node --test test/node/statistics.test.js
 
 `npm test` 覆盖工具链、服务器、路径边界、数学专项测试，并复用浏览器测试逻辑执行所有 `includeInAll: true` 的 JSON 测试集。计算核心从 **`dist/Whalgebra.html`** 抽取，在 Node vm 中运行；`WorkerTools` 被同步替身代替，**不覆盖真实 Worker、DOM 或界面交互**。仅修改 `src/` 不会改变这批计算测试的输入。
 
+专项测试包括：
+
+- `trigonometry.test.js`：36 / 220 位精度下的正负大角度（覆盖 `10^32` 至 `10^219` 中的代表值）、相位噪声判零、近似整周期及精确小角度。
+- `statistics.test.js`：全零因变量时的回归定义域、样本数量和参数唯一性。
+- `reverse_build.test.js`、`svg_compressor.test.js`、`server.test.js`：有效资源拆分、SVG 输出、目录清理边界和本地服务 API 约束。
+
+这批测试不直接验证 `WorkerTools.isReady` 的环境同步条件，也不验证实时预览的请求作废、浮层关闭顺序等界面行为；这些流程的人工检查见[界面与交互](../docs/ui_and_interaction.md#修改后的人工检查)。
+
 真实浏览器测试：运行 `npm start`，从工作台进入 `test/web/index.html`。控制台通过 iframe 加载发行版并使用真实 Worker，可单独运行测试集、定位失败用例及运行性能基准。UI 改动仍需人工检查受影响流程。
 
 ```text

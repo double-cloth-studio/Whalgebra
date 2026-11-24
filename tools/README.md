@@ -39,7 +39,11 @@ npm start -- --lan
 | `tools/web/reverse_build.html` | `POST /api/tools/reverse-build` |
 | `tools/web/svg_compressor.html` | `POST /api/tools/svg-compressor` |
 
-请求须同源，使用 `application/json`，请求体最多 1 MB。路径须位于项目内，Web 逆向构建仅允许输出到 `src` 或 `tmp`；Web SVG 工具的输入、输出和临时目录均限制在 `tmp`。更改静态服务目录不等于放宽这些路径限制。
+工具页通过 `GET /api/tools/status` 探测服务，成功响应为 `{"ok":true}`，不返回项目绝对路径。
+
+工具 POST 请求使用 `application/json`，请求体最多 1 MB；携带 `Origin` 时须与当前服务同源，无 `Origin` 的 CLI 请求也可调用。路径须位于项目内，Web 逆向构建仅允许输出到 `src`、`tmp` 或其子目录；Web SVG 工具的输入、输出和临时目录均限制在 `tmp` 内。更改静态服务目录不等于放宽这些路径限制。
+
+逆向构建请求字段为 `inputFile`、`outputDir`、`noDedent`、`force`；SVG 请求字段为 `inputDir`、`outputDir`、`tempDir`，省略时使用对应工具默认值。成功返回 `{ok:true,result,logs}`，失败返回 `{ok:false,code,error,logs}`（来源或媒体类型校验失败时无 `logs`）。跨源、非 JSON、逆向构建输出目录已存在且未允许覆盖时分别返回 403、415、409，其他工具错误返回 400。Web 调用没有交互式覆盖确认，覆盖已有逆向构建输出目录时需显式传入 `force: true`。
 
 ## 逆向构建
 

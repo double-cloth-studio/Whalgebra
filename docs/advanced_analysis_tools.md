@@ -90,6 +90,8 @@ console.log(stats.linear.regressionEquation); // "2[x]"
 
 各模型返回 `parameter`、`regressionEquation`、`R2` 和 `model`。定义域不满足、样本不足或方程组奇异时仍保留字段，以 `"error"` 占位。`bestModel` 按原始 y 尺度的 R² 比较选择；使用前仍需检查该模型的 `R2`，全部失败时不能把默认模型名视为拟合成功。
 
+全零因变量也需要满足各模型的定义域及参数唯一性要求，不会无条件生成零系数。即使能够返回方程 `"0"`，因 y 的总离差为零，`R2` 仍为 `"error"`；例如 x 为 `[1,2,3]`、y 为 `[0,0,0]` 时，线性模型可返回零系数，而指数模型仍不适用。
+
 ```javascript
 const best = stats[stats.bestModel];
 if (best.R2 !== 'error') {
@@ -121,4 +123,4 @@ const value = new ComplexNumber(mid.result);
 console.log(value.toString({ acc: 8 })); // "0.33333333"
 ```
 
-`outputMode: 'output'` 返回经过 `Public.idealizationToString` 归整的字符串；`'mid'` 返回实部、虚部的 `[power,bigintMantissa,acc]` 元组。元组保留当前数值精度，但不携带噪声追踪元数据，不能直接 JSON 序列化。
+`outputMode: 'output'` 返回经过 `Public.idealizationToString` 归整的字符串；`'mid'` 返回实部、虚部的 `[power,bigintMantissa,acc]` 元组。元组保留当前数值精度，但不携带噪声追踪元数据，不能直接 JSON 序列化。若要继续组合运算并保留误差传播，应使用 `MathPlus.calc` 返回的数值对象，详见[数值构造器](./math_engine_and_constructors.md#噪声状态与对象传递)。

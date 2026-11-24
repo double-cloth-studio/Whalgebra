@@ -50,6 +50,8 @@ Node 测试通过 `test/node/helpers/calc_core.js` 抽取发行版的配置与�
 
 测试集清单只在 `test/cases/test_suites.json` 维护。当前有 8 个计算测试集及 1 个单独的性能基准，性能基准不参与“运行全部”。配置优先级与用例示例见[测试手册](../test/README.md)。
 
+三角函数专项覆盖精确大角度、相位噪声、近似整周期及精确小角度；统计专项覆盖全零因变量下的定义域与参数唯一性。Worker 就绪状态、配置同步和预览取消仍需浏览器验证，不能由这些数值测试推断其已通过。
+
 ## 工具与发布
 
 - `npm run compress-svg`：优化 `tmp/input` 下 SVG，输出 CSS 与优化后的 SVG；运行前清空输出目录，使用前核对路径。
@@ -57,4 +59,4 @@ Node 测试通过 `test/node/helpers/calc_core.js` 抽取发行版的配置与�
 - `.github/workflows/ci.yml` 在匹配路径的 main 推送或 PR 中以 Node.js 20 运行 `npm test`，也支持手动触发。
 - `.github/workflows/deploy.yml` 在 main 的 `src/**` 或自身变更时部署 `src/`，也支持手动触发；不会自动逆向构建或更新安装包。
 
-修改文档通常不会触发现有 CI 路径过滤。文档维护应自行核对本地链接、命令、API 示例和对应实现。
+根目录 `README.md` 和 `docs/**` 不在 CI 路径过滤范围内；`tools/README.md`、`test/README.md` 则因所属目录而触发 CI。文档修改不会触发当前 Pages 部署。维护时应核对本地链接、命令、API 示例和对应实现，数值示例可复用 `test/node/helpers/calc_core.js` 在 Node 中验证；真实 Worker 和界面行为另在浏览器验证。
