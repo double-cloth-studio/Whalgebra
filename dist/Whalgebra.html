@@ -4500,37 +4500,71 @@
                         reflection = true;
                     }
 
-                    let mid = p[0];
-                    // Lanczos 级数 A_g(z)=p0+Σ(pk/(z+k))。
+                    // 仅 Lanczos 级数求和保留 calcAcc，抵抗各项正负相消。
+                    let sum = p[0];
                     for (let i = 1; i < p.length; i++) {
-                        mid = MathPlus.plus(
-                            mid,
+                        sum = MathPlus.plus(
+                            sum,
                             MathPlus.divide(p[i], MathPlus.plus(calcNum, new ComplexNumber(i, {
                                 acc: calcAcc
                             })))
                         );
                     }
 
-                    // 应用完整的兰佐斯公式。
-                    // Γ(z+1) = sqrt(2π) * (z + g + 1/2)^(z + 1/2) * e^-(z + g + 1/2) * A(z)
-                    // 这里已经将 sqrt(2π) 因子包含在了系数 p 中。
-                    let result = mid;
-                    mid = MathPlus.plus(calcNum, [-1, 5n, calcAcc]);
+                    // 后续乘方与反射改用动态 workAcc：基础保护位 10 + 指数放大补偿 (inputMag + 2)，且不超过 calcAcc。
+                    const inputMag = Math.max(
+                        0,
+                        BigNumber.getMag(calcNum.re),
+                        BigNumber.getMag(calcNum.im)
+                    );
+                    const workAcc = Math.min(calcAcc, acc + inputMag + 12);
+
+                    const workNum = new ComplexNumber(calcNum, {acc: workAcc});
+                    const workG = new BigNumber(g, {acc: workAcc});
+                    const workE = new BigNumber(CalcConfig.constants.e, {acc: workAcc});
+
+                    // 应用完整的兰佐斯公式：Γ(z+1) = ((z + g + 1/2) / e)^(z + 1/2) * A(z)
+                    let result = new ComplexNumber(sum, {acc: workAcc});
+                    const mid = MathPlus.plus(workNum, [-1, 5n, workAcc]);
                     result = MathPlus.times(
                         result,
                         MathPlus.pow(
-                            MathPlus.divide(MathPlus.plus(mid, g), CalcConfig.constants.e),
+                            MathPlus.divide(MathPlus.plus(mid, workG), workE),
                             mid
                         )
                     );
 
-                    // 如果需要，应用反射公式来获得最终结果。
+                    // 反射公式：对实部先按最近整数 k 归约，再用 workAcc 计算 sin(π(r + bi))，避免 440 位归约和极点相消。
                     if (reflection) {
-                        const highAccInput = new ComplexNumber(input, {acc: calcAcc});
-                        mid = MathPlus.times(highAccInput, CalcConfig.constants.pi);
+                        const workPi = new BigNumber(CalcConfig.constants.pi, {acc: workAcc});
+                        const workInput = new ComplexNumber(input, {acc: workAcc});
+                        const numerator = MathPlus.times(workInput, workPi);
+
+                        let reducedRe;
+                        let isOddK;
+                        if (workInput.re.power >= 0) {
+                            // 实部已是整数（负实整数已在函数入口拦截，此处虚部必然非零）。
+                            reducedRe = new BigNumber([0, 0n, workAcc]);
+                            isOddK = workInput.re.power === 0 && (workInput.re.mantissa & 1n) !== 0n;
+                        } else {
+                            const half = new BigNumber([-1, 5n, workAcc]);
+                            const nearestK = MathPlus.floor(MathPlus.realPlus(workInput.re, half)).re;
+                            reducedRe = MathPlus.realMinus(workInput.re, nearestK);
+                            isOddK = !nearestK.isZero() && nearestK.power === 0 && (nearestK.mantissa & 1n) !== 0n;
+                        }
+
+                        const sinArg = MathPlus.times(
+                            new ComplexNumber([reducedRe, workInput.im], {acc: workAcc}),
+                            workPi
+                        );
+                        let sinVal = MathPlus.sin(sinArg);
+                        if (isOddK) {
+                            sinVal = MathPlus.oppositeNumber(sinVal);
+                        }
+
                         result = MathPlus.divide(
-                            mid,
-                            MathPlus.times(MathPlus.sin(mid), result)
+                            numerator,
+                            MathPlus.times(sinVal, result)
                         );
                     }
 
