@@ -2479,20 +2479,30 @@
                         console.warn('[MathPlus] Unexpected loss of precision occurred in trigonometric calculations.');
                     }
                     const highPrecisionRe = new ComplexNumber(angle, {acc: highPrecisionAcc});
+                    const highPrecisionTwo = new BigNumber(2n, {acc: highPrecisionAcc});
+                    const highPrecisionPi = new BigNumber(CalcConfig.constants.pi, {acc: highPrecisionAcc});
+                    const twoPi = MathPlus.realTimes(highPrecisionTwo, highPrecisionPi);
                     const n = MathPlus.floor(MathPlus.times(highPrecisionRe, CalcConfig.constants.invTwoPi));
                     angle = highPrecisionRe.re;
                     if (!n.isZero()) {
                         reduced = true;
-                        angle = MathPlus.minus(highPrecisionRe, MathPlus.divide(n, CalcConfig.constants.invTwoPi)).re;
+                        angle = MathPlus.realMinus(angle, MathPlus.realTimes(n.re, twoPi));
+                    }
+
+                    // invTwoPi 的末位舍入可能令商相差一个周期；在高精度下把残余值校正回 [0, 2π)。
+                    while (angle.isNegative()) {
+                        reduced = true;
+                        angle = MathPlus.realPlus(angle, twoPi);
+                    }
+                    while (!MathPlus.realMinus(angle, twoPi).isNegative()) {
+                        reduced = true;
+                        angle = MathPlus.realMinus(angle, twoPi);
                     }
 
                     // 利用 cos(x) = cos(2π - x)，将 re 从 (π, 2π) 映射到 (0, π)
-                    if (MathPlus.minus(angle, CalcConfig.constants.pi).re.isPositive()) {
+                    if (MathPlus.realMinus(angle, highPrecisionPi).isPositive()) {
                         reduced = true;
-                        angle = MathPlus.minus(
-                            MathPlus.times([0, 2n, acc], CalcConfig.constants.pi),
-                            angle
-                        ).re;
+                        angle = MathPlus.realMinus(twoPi, angle);
 
                         // sin(2π - x) = -sin(x) -> 变号
                         // cos(2π - x) =  cos(x) -> 不变
@@ -2503,9 +2513,9 @@
                     }
 
                     // 利用 cos(x) = -cos(π - x)，将 re 从 [π/2, π] 映射到 [0, π/2]
-                    if (!MathPlus.minus(MathPlus.times(angle, [0, 2n, acc]), CalcConfig.constants.pi).re.isNegative()) {
+                    if (!MathPlus.realMinus(MathPlus.realTimes(angle, highPrecisionTwo), highPrecisionPi).isNegative()) {
                         reduced = true;
-                        angle = MathPlus.minus(CalcConfig.constants.pi, angle).re;
+                        angle = MathPlus.realMinus(highPrecisionPi, angle);
 
                         // sin(π - x) = sin(x)  -> 不变
                         // cos(π - x) = -cos(x) -> 变号
@@ -4282,21 +4292,43 @@
 
                 /**
                  * 计算 x 的反双曲余弦。
-                 * @alias arcosh - 该方法基于反双曲余弦的对数定义：arcosh(x) = ln(x + sqrt(x² - 1))。
+                 * @alias arcosh - 该方法基于反双曲余弦的主值定义：arcosh(x) = ln(x + sqrt(x - 1)sqrt(x + 1))。
                  * - 能够自动处理实数和复数输入。
                  * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数；返回
-                 *   `ln(x + sqrt(x² - 1))` 的主值。实数 `x >= 1` 时结果为非负实数，其他实数可得到复数。
+                 *   `ln(x + sqrt(x - 1)sqrt(x + 1))` 的主值。实数 `x >= 1` 时结果为非负实数，其他实数可得到复数。
                  * @returns {ComplexNumber} 代表 arcosh(x) 结果的 ComplexNumber 实例。
                  */
                 static arch(x) {
                     const input = new ComplexNumber(x);
                     const acc = input.acc;
+                    const one = new BigNumber(1n, {acc: acc});
+                    const minusOne = new BigNumber(-1n, {acc: acc});
+
+                    // x <= -1 时直接构造 ln(-x + sqrt(x² - 1)) + iπ，保证主值实部非负并避免相消。
+                    if (input.onlyReal && !MathPlus.realMinus(input.re, minusOne).isPositive()) {
+                        const squareMinusOne = MathPlus.realPlus(
+                            MathPlus.realTimes(input.re, input.re),
+                            minusOne
+                        );
+                        const realPart = MathPlus.ln(
+                            MathPlus.realPlus(
+                                MathPlus.oppositeNumber(input.re),
+                                MathPlus.sqrt(squareMinusOne).re
+                            )
+                        ).re;
+
+                        return new ComplexNumber([
+                            realPart,
+                            new BigNumber(CalcConfig.constants.pi, {acc: acc})
+                        ]);
+                    }
 
                     return MathPlus.ln(
                         MathPlus.plus(
                             input,
-                            MathPlus.sqrt(
-                                MathPlus.plus(MathPlus.times(input, input), [0, -1n, acc])
+                            MathPlus.times(
+                                MathPlus.sqrt(MathPlus.minus(input, one)),
+                                MathPlus.sqrt(MathPlus.plus(input, one))
                             )
                         )
                     );
