@@ -2660,21 +2660,33 @@
                         if (powerDifference > guardAcc) {
                             // 快路径：即使 mA 占满 reA.acc 位也追不上，O(1) 直接返回
                             if (powerDifference > reA.acc + guardAcc) {
-                                return new ComplexNumber(inputB, {acc: resultAcc});
+                                return new ComplexNumber(inputB, {
+                                    acc: resultAcc,
+                                    noiseMag: Math.max(combinedNoiseMag, reA.power + reA.acc - 1)
+                                });
                             }
                             const magA = BigNumber.getMag(reA);
                             const magB = BigNumber.getMag(reB);
                             if (magB - magA > guardAcc) {
-                                return new ComplexNumber(inputB, {acc: resultAcc});
+                                return new ComplexNumber(inputB, {
+                                    acc: resultAcc,
+                                    noiseMag: Math.max(combinedNoiseMag, magA)
+                                });
                             }
                         } else if (powerDifference < -guardAcc) {
                             if (-powerDifference > reB.acc + guardAcc) {
-                                return new ComplexNumber(inputA, {acc: resultAcc});
+                                return new ComplexNumber(inputA, {
+                                    acc: resultAcc,
+                                    noiseMag: Math.max(combinedNoiseMag, reB.power + reB.acc - 1)
+                                });
                             }
                             const magA = BigNumber.getMag(reA);
                             const magB = BigNumber.getMag(reB);
                             if (magA - magB > guardAcc) {
-                                return new ComplexNumber(inputA, {acc: resultAcc});
+                                return new ComplexNumber(inputA, {
+                                    acc: resultAcc,
+                                    noiseMag: Math.max(combinedNoiseMag, magB)
+                                });
                             }
                         }
 
