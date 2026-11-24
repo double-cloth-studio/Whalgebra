@@ -5736,7 +5736,7 @@
          * @returns {void}
          */
         static async exe() {
-            if (PageControlTools._inputSyncInProgress) {
+            if (PageControlTools.isInputSyncInProgress) {
                 return;
             }
             const currentMode = PageConfig.currentMode;
@@ -5809,10 +5809,16 @@
          */
         static delayCloseMainCover = HtmlTools.debounce(() => PageControlTools.clickMainCover(), 340);
 
-        /** @private @type {boolean} */
+        /**
+         * @private
+         * @type {boolean}
+         */
         static _inputSyncInProgress = false;
-        /** @private @type {number} */
-        static _inputSyncRequestId = 0;
+        /**
+         * @private
+         * @type {bigint}
+         */
+        static _inputSyncRequestId = 0n;
 
         /**
          * 阻止实例化静态页面控制器。
@@ -5821,6 +5827,16 @@
          */
         constructor() {
             throw new Error('[PageControlTools] PageControlTools is a static class and should not be instantiated.');
+        }
+
+        /**
+         * 判断主输入区内容是否正在异步同步至子屏幕。
+         *
+         * @readonly
+         * @type {boolean}
+         */
+        static get isInputSyncInProgress() {
+            return this._inputSyncInProgress;
         }
 
         /**

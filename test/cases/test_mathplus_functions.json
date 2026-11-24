@@ -1376,7 +1376,7 @@
   },
   {
     "description": [
-      "[fact:error] 超出阶乘范围限制"
+      "[fact:error] 超大阶乘"
     ],
     "function": "fact",
     "args": [
