@@ -513,12 +513,18 @@
                 throw new Error('[Public] The step size must be positive.');
             }
 
-            for (let i = start; !MathPlus.minus(i, end).re.isPositive(); i = MathPlus.plus(i, step)) {
+            let k = 0;
+            let i = start;
+            while (!MathPlus.minus(i, end).re.isPositive()) {
                 try {
                     result.push(func(i));
                 } catch {
                     result.push('error');
                 }
+
+                k++;
+                // 始终从起点计算当前采样值，避免连续累加导致误差漂移。
+                i = MathPlus.plus(start, MathPlus.times(step, k));
             }
             return result;
         }

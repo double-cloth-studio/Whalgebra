@@ -4392,20 +4392,18 @@
                  * 计算一个数的阶乘 (x!)。
                  * - 对于非负整数 n, n! = 1 * 2 * ... * n，并返回主值。
                  * - 对于非整数、负数和复数，此函数计算伽玛函数 Γ(x + 1)。
-                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 阶乘参数；非负整数走精确的
-                 *   BigInt 分治乘积，其他非极点值通过 `Γ(x + 1)` 延拓，负整数因伽玛极点而拒绝。
+                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 阶乘参数；不超过 5000 的非负整数
+                 *   走精确的 BigInt 分治乘积，更大的正整数和其他非极点值通过 `Γ(x + 1)` 近似计算。
                  * @returns {ComplexNumber} 代表 x! 结果的 ComplexNumber 实例。
-                 * @throws {Error} 如果输入为负整数，因为其阶乘未定义。
+                 * @throws {Error} 如果输入为负整数，或计算结果超出数值范围。
                  */
                 static fact(x) {
                     /**
                      * 使用分治法（二分求积）高效计算一个非负整数的阶乘。
                      * 这种方法对于计算极大的数（如 1000! 或更高）有显著的性能优势。
                      *
-                     * @param {bigint|number} num - 要精确求阶乘的非负整数；`number` 必须是安全整数并会转换为
-                     *   BigInt，负数、小数、非有限值和不安全整数均不进入递归乘积。
+                     * @param {bigint} num - 已通过非负性和计算范围校验的整数。
                      * @returns {bigint} n 的阶乘。
-                     * @throws {TypeError} 如果 n 不是一个非负整数。
                      */
                     function factorialOptimized(num) {
                         if (num === 0n || num === 1n) {
@@ -4435,9 +4433,6 @@
                                 }
                                 return res;
                             }
-                            if (end - start > 99999999n) {
-                                throw new Error('[MathPlus] mathematical error: The factorial exceeds the range limit.');
-                            }
 
                             // 分治
                             const mid = start + (end - start) / 2n;
@@ -4460,13 +4455,21 @@
                             throw new Error('[MathPlus] mathematical error: Negative integer factorial undefined.');
                         }
 
-                        const realNumber = re.mantissa * BigNumber.pow10(re.power);
-                        return new ComplexNumber(factorialOptimized(realNumber), {
-                            acc: acc
-                        });
+                        // 限制完整阶乘的计算量；更大的正整数使用下方的 Lanczos 近似。
+                        const maxFactorialInput = 100_000n;
+                        const maxFactorialMag = 5; // 与 maxFactorialInput 的十进制数量级保持一致
+                        // 先检查数量级，确保展开整数时只需很小的十次幂。
+                        if (BigNumber.getMag(re) <= maxFactorialMag) {
+                            const realNumber = re.mantissa * BigNumber.pow10(re.power);
+                            if (realNumber <= maxFactorialInput) {
+                                return new ComplexNumber(factorialOptimized(realNumber), {
+                                    acc: acc
+                                });
+                            }
+                        }
                     }
 
-                    // 非整数、负数和复数阶乘使用兰佐斯近似计算 Γ(x+1)。
+                    // 大正整数、非整数和复数阶乘使用兰佐斯近似计算 Γ(x+1)。
                     let option;
                     // 按目标精度选择最小够用的 Lanczos 系数集，避免无谓的大精度运算。
                     if (acc <= 40) {
@@ -13456,6 +13459,15 @@
                 });
 
                 /**
+                 * 阻止实例化静态输出管理器。
+                 *
+                 * @throws {Error} 始终抛出。
+                 */
+                constructor() {
+                    throw new Error('[PrintManager] PrintManager is a static class and should not be instantiated.');
+                }
+
+                /**
                  * 作废已启动的实时预览，并丢弃防抖队列中的待执行调用。
                  * Worker 取消或重启及计算状态由调用方处理。
                  *
@@ -13464,15 +13476,6 @@
                 static cancelMode0Preview() {
                     ++this._currentRequestId;
                     this.mode0ShowOnScreen.cancel();
-                }
-
-                /**
-                 * 阻止实例化静态输出管理器。
-                 *
-                 * @throws {Error} 始终抛出。
-                 */
-                constructor() {
-                    throw new Error('[PrintManager] PrintManager is a static class and should not be instantiated.');
                 }
 
                 /**
@@ -14350,6 +14353,15 @@
                 static _inputSyncRequestId = 0;
 
                 /**
+                 * 阻止实例化静态页面控制器。
+                 *
+                 * @throws {Error} 始终抛出。
+                 */
+                constructor() {
+                    throw new Error('[PageControlTools] PageControlTools is a static class and should not be instantiated.');
+                }
+
+                /**
                  * 使当前等待中的输入同步失效；模式切换时调用，防止旧结果跨界写回。
                  * @returns {void}
                  */
@@ -14359,15 +14371,6 @@
                         this._inputSyncInProgress = false;
                         HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
                     }
-                }
-
-                /**
-                 * 阻止实例化静态页面控制器。
-                 *
-                 * @throws {Error} 始终抛出。
-                 */
-                constructor() {
-                    throw new Error('[PageControlTools] PageControlTools is a static class and should not be instantiated.');
                 }
 
                 /**

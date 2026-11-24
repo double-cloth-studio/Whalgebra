@@ -584,6 +584,9 @@
             if (mode === PageConfig._currentMode && !initialize) {
                 return;
             }
+
+            // 使等待 Worker 的输入同步失效，禁止异步结果跨模式写回。
+            PageControlTools.invalidateInputSync();
             if (PageConfig._currentMode === '0' && mode !== '0') {
                 PrintManager.cancelMode0Preview();
                 if (PrintManager.mode0ScreenInCalc) {
@@ -699,6 +702,7 @@
 
             // 配置符号作为首选分支，后续才回退到 `[token]` 和单字符，避免数学词元被拆散。
             const symbolPattern = Object.keys(PageConfig.classNameConverterConfig)
+                .sort((a, b) => b.length - a.length)
                 .map(escape)
                 .join('|');
 
@@ -4917,6 +4921,15 @@
         });
 
         /**
+         * 阻止实例化静态输出管理器。
+         *
+         * @throws {Error} 始终抛出。
+         */
+        constructor() {
+            throw new Error('[PrintManager] PrintManager is a static class and should not be instantiated.');
+        }
+
+        /**
          * 作废已启动的实时预览，并丢弃防抖队列中的待执行调用。
          * Worker 取消或重启及计算状态由调用方处理。
          *
@@ -4925,15 +4938,6 @@
         static cancelMode0Preview() {
             ++this._currentRequestId;
             this.mode0ShowOnScreen.cancel();
-        }
-
-        /**
-         * 阻止实例化静态输出管理器。
-         *
-         * @throws {Error} 始终抛出。
-         */
-        constructor() {
-            throw new Error('[PrintManager] PrintManager is a static class and should not be instantiated.');
         }
 
         /**
@@ -5732,6 +5736,9 @@
          * @returns {void}
          */
         static async exe() {
+            if (PageControlTools._inputSyncInProgress) {
+                return;
+            }
             const currentMode = PageConfig.currentMode;
             // 非标准模式先把编辑区提交到当前子屏幕，本次点击不立即进入结果页。
             if (HtmlTools.getHtml('.InputTip') === undefined && currentMode !== '0') {
@@ -5802,6 +5809,11 @@
          */
         static delayCloseMainCover = HtmlTools.debounce(() => PageControlTools.clickMainCover(), 340);
 
+        /** @private @type {boolean} */
+        static _inputSyncInProgress = false;
+        /** @private @type {number} */
+        static _inputSyncRequestId = 0;
+
         /**
          * 阻止实例化静态页面控制器。
          *
@@ -5809,6 +5821,18 @@
          */
         constructor() {
             throw new Error('[PageControlTools] PageControlTools is a static class and should not be instantiated.');
+        }
+
+        /**
+         * 使当前等待中的输入同步失效；模式切换时调用，防止旧结果跨界写回。
+         * @returns {void}
+         */
+        static invalidateInputSync() {
+            this._inputSyncRequestId++;
+            if (this._inputSyncInProgress) {
+                this._inputSyncInProgress = false;
+                HtmlTools.getHtml('#load_cover').classList.add('NoDisplay');
+            }
         }
 
         /**
@@ -6328,6 +6352,7 @@
          * @returns {void}
          */
         static cancelPrint() {
+            this.invalidateInputSync();
             ++PrintManager.exeRequestId;
             PrintManager.cancelMode0Preview();
             WorkerTools.restart().catch((err) => {
@@ -6606,79 +6631,122 @@
          * @returns {Promise<void>} 此方法不返回任何值，其作用是直接修改 DOM。
          */
         static async syncInputToScreen(moveCursor = true) {
+            // 同一时刻只允许一次提交，连续按 Enter 不再重复派发或写入。
+            if (this._inputSyncInProgress) {
+                return;
+            }
+
             const currentMode = PageConfig.currentMode;
 
             if (currentMode === '0') {
                 return;
             }
 
-            const inputEl = HtmlTools.getHtml('#input');
-            const currentInputArray = HtmlTools.getClassList(inputEl, {ignoreSpace: true});
-            const currentInput = HtmlTools.htmlClassToText(currentInputArray);
-            let expr;
+            const requestId = ++this._inputSyncRequestId;
+            const currentSubMode = currentMode === '1'
+                                   ? [...PageConfig.subModes['1']]
+                                   : PageConfig.subModes[currentMode];
+            const target = currentMode === '1' ? null : HtmlTools.getCurrentSubscreenArea();
+            if (currentMode !== '1' && !target) {
+                throw new Error('[PageControlTools] There is no active area on the current screen.');
+            }
 
-            // 传入已保存的 f、g，使语法检查能正确解析自定义函数引用。
+            const loadCover = HtmlTools.getHtml('#load_cover');
+            this._inputSyncInProgress = true;
+            loadCover.classList.remove('NoDisplay');
+
             try {
-                const syntaxResult = await WorkerTools.exec(currentInput, {
-                    calcMode: 'syntaxCheck',
-                    f: HtmlTools.deleteIllegal(PageConfig.screenData['2_00']),
-                    g: HtmlTools.deleteIllegal(PageConfig.screenData['2_01'])
-                });
+                const inputEl = HtmlTools.getHtml('#input');
+                const currentInputArray = HtmlTools.getClassList(inputEl, {ignoreSpace: true});
+                const currentInput = HtmlTools.htmlClassToText(currentInputArray);
+                let expr;
 
-                expr = HtmlTools.textToHtmlClass(syntaxResult.expr);
-            } catch (e) {
-                // 保留原输入并加错误前缀，后续 DOM 渲染据此显示语法错误而不丢失用户内容。
-                expr = ['_syntax_error_', ...currentInputArray];
-            }
+                // 传入已保存的 f、g，使语法检查能正确解析自定义函数引用。
+                try {
+                    const syntaxResult = await WorkerTools.exec(currentInput, {
+                        calcMode: 'syntaxCheck',
+                        f: HtmlTools.deleteIllegal(PageConfig.screenData['2_00']),
+                        g: HtmlTools.deleteIllegal(PageConfig.screenData['2_01'])
+                    });
 
-            if (currentMode === '1') {
-                const [row, col] = PageConfig.subModes['1'];
-                const newVal = HtmlTools.htmlClassToText(expr);
-                const gridData = PageConfig.screenData['1'];
-                const lastIdx = gridData.length - 1;
-
-                // 预判写入后末行是否非空，决定合并追加空行（1 次 load）还是原地刷新（0 次 load）。
-                const lastRowX = (row === lastIdx && col === 0) ? newVal : gridData[lastIdx][0];
-                const lastRowY = (row === lastIdx && col === 1) ? newVal : gridData[lastIdx][1];
-                const needAppendEmptyRow = lastRowX.length !== 0 || lastRowY.length !== 0;
-
-                let addSucceed = true;
-                if (needAppendEmptyRow && gridData.length + 1 <= InputManager.MAX_STATISTICS_ROW) {
-                    const nextData = gridData.map((r) => [...r]);
-                    nextData[row][col] = newVal;
-                    nextData.push(['', '']);
-                    PageConfig.screenData = {'1': nextData};
-                } else {
-                    if (needAppendEmptyRow) {
-                        addSucceed = false;
+                    expr = HtmlTools.textToHtmlClass(syntaxResult.expr);
+                } catch (e) {
+                    // 取消或重启不属于语法错误，不应提交或清空原输入。
+                    if (e?.name === 'CancellationError' || e?.name === 'TerminationError') {
+                        return;
                     }
-                    PageConfig.screenData = {'1': [row, col, newVal]};
+                    // 保留原输入并加错误前缀，后续 DOM 渲染据此显示语法错误而不丢失用户内容。
+                    expr = ['_syntax_error_', ...currentInputArray];
                 }
 
-                if (moveCursor && addSucceed) {
-                    InputManager.moveCursor('down', true);
+                const latestSubMode = currentMode === '1'
+                                      ? PageConfig.subModes['1']
+                                      : PageConfig.subModes[currentMode];
+                const subModeChanged = currentMode === '1'
+                                       ? latestSubMode[0] !== currentSubMode[0] || latestSubMode[1] !== currentSubMode[1]
+                                       : latestSubMode !== currentSubMode;
+
+                if (requestId !== this._inputSyncRequestId ||
+                    PageConfig.currentMode !== currentMode ||
+                    subModeChanged) {
+                    return;
                 }
 
-                InputManager.ac();
-            } else {
-                const target = HtmlTools.getCurrentSubscreenArea();
-                if (!target) {
-                    throw new Error('[PageControlTools] There is no active area on the current screen.');
+                if (currentMode === '1') {
+                    const [row, col] = currentSubMode;
+                    const newVal = HtmlTools.htmlClassToText(expr);
+                    const gridData = PageConfig.screenData['1'];
+                    const lastIdx = gridData.length - 1;
+
+                    // 预判写入后末行是否非空，决定合并追加空行（1 次 load）还是原地刷新（0 次 load）。
+                    const lastRowX = (row === lastIdx && col === 0) ? newVal : gridData[lastIdx][0];
+                    const lastRowY = (row === lastIdx && col === 1) ? newVal : gridData[lastIdx][1];
+                    const needAppendEmptyRow = lastRowX.length !== 0 || lastRowY.length !== 0;
+
+                    let addSucceed = true;
+                    if (needAppendEmptyRow && gridData.length + 1 <= InputManager.MAX_STATISTICS_ROW) {
+                        const nextData = gridData.map((r) => [...r]);
+                        nextData[row][col] = newVal;
+                        nextData.push(['', '']);
+                        PageConfig.screenData = {'1': nextData};
+                    } else {
+                        if (needAppendEmptyRow) {
+                            addSucceed = false;
+                        }
+                        PageConfig.screenData = {'1': [row, col, newVal]};
+                    }
+
+                    if (moveCursor && addSucceed) {
+                        InputManager.moveCursor('down', true);
+                    }
+
+                    InputManager.ac();
+                } else {
+                    // 目标节点必须仍是当前活动子屏，避免旧异步结果写入已切换的区域。
+                    if (HtmlTools.getCurrentSubscreenArea() !== target) {
+                        return;
+                    }
+
+                    // 普通模式先重绘活动子屏，再从该 DOM 持久化规范化后的表达式。
+                    HtmlTools.appendDOMs(target, expr, {mode: 'replace'});
+                    InputManager.addSpace({area: target});
+                    PageConfig.syncScreenData();
+
+                    if (moveCursor && HtmlTools.getHtml(`#screen_${currentMode}`).children.length !== Number(PageConfig.subModes[currentMode]) + 1) {
+                        InputManager.moveCursor('right', true);
+                    }
+
+                    InputManager.ac();
                 }
 
-                // 普通模式先重绘活动子屏，再从该 DOM 持久化规范化后的表达式。
-                HtmlTools.appendDOMs(target, expr, {mode: 'replace'});
-                InputManager.addSpace({area: target});
-                PageConfig.syncScreenData();
-
-                if (moveCursor && HtmlTools.getHtml(`#screen_${currentMode}`).children.length !== Number(PageConfig.subModes[currentMode]) + 1) {
-                    InputManager.moveCursor('right', true);
+                HtmlTools.scrollToView();
+            } finally {
+                // 失效请求不能解锁或隐藏后续请求的加载遮罩。
+                if (requestId === this._inputSyncRequestId) {
+                    this._inputSyncInProgress = false;
+                    loadCover.classList.add('NoDisplay');
                 }
-
-                InputManager.ac();
             }
-
-            HtmlTools.scrollToView();
         }
     }
 

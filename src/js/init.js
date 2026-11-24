@@ -251,6 +251,15 @@ document.addEventListener('keydown', (event) => {
     const coverShown = !HtmlTools.getHtml('#main_cover').classList.contains('NoDisplay');
     const inputMode = HtmlTools.getHtml('#main').classList.contains('Input');
 
+    // 输入同步期间遮罩同样拦截物理键盘，Escape 仍可取消当前任务。
+    if (inputMode && !HtmlTools.getHtml('#load_cover').classList.contains('NoDisplay')) {
+        event.preventDefault();
+        if (key === 'Escape') {
+            return PageControlTools.cancelPrint();
+        }
+        return;
+    }
+
     // 按 UI 层级关闭模态遮罩或退出/取消结果页；Escape 在输入态不执行计算。
     if (key === 'Enter' || key === 'Escape') {
         if (coverShown) {

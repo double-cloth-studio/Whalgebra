@@ -957,29 +957,6 @@
         }
 
         /**
-         * (内部辅助方法) 计算一个 BigNumber 或 ComplexNumber 的相反数。
-         *
-         * @private
-         * @param {BigNumber|ComplexNumber|string|number} x - 需要取反的值；`BigNumber` 返回同类型新实例，
-         *   其余可转换输入统一返回 `ComplexNumber`，传入对象本身不会被修改。
-         * @returns {BigNumber|ComplexNumber} 输入值的相反数。
-         */
-        static _oppositeNumber(x) {
-            switch (Public.typeOf(x)) {
-                case 'bignumber':
-                    return new BigNumber(-x.mantissa, {pow: x.power, acc: x.acc, noiseMag: x.noiseMag});
-
-                case 'complexnumber':
-                    return new ComplexNumber([MathPlus._oppositeNumber(x.re), MathPlus._oppositeNumber(x.im)]);
-
-                default: {
-                    const input = new ComplexNumber(x);
-                    return MathPlus._oppositeNumber(input);
-                }
-            }
-        }
-
-        /**
          * 计算用户定义的 f(x) 或 g(x)，并保留相互引用的上下文。
          *
          * @private
@@ -1019,7 +996,7 @@
             let changeSign = 1n;
 
             if (angle.isNegative()) {
-                angle = MathPlus._oppositeNumber(angle);
+                angle = MathPlus.oppositeNumber(angle);
 
                 // sin(-x) = -sin(x) -> 变号 (1 * -1)
                 // cos(-x) =  cos(x) -> 不变 (-1 * -1 = 1)
@@ -1037,20 +1014,30 @@
                 console.warn('[MathPlus] Unexpected loss of precision occurred in trigonometric calculations.');
             }
             const highPrecisionRe = new ComplexNumber(angle, {acc: highPrecisionAcc});
+            const highPrecisionTwo = new BigNumber(2n, {acc: highPrecisionAcc});
+            const highPrecisionPi = new BigNumber(CalcConfig.constants.pi, {acc: highPrecisionAcc});
+            const twoPi = MathPlus.realTimes(highPrecisionTwo, highPrecisionPi);
             const n = MathPlus.floor(MathPlus.times(highPrecisionRe, CalcConfig.constants.invTwoPi));
             angle = highPrecisionRe.re;
             if (!n.isZero()) {
                 reduced = true;
-                angle = MathPlus.minus(highPrecisionRe, MathPlus.divide(n, CalcConfig.constants.invTwoPi)).re;
+                angle = MathPlus.realMinus(angle, MathPlus.realTimes(n.re, twoPi));
+            }
+
+            // invTwoPi 的末位舍入可能令商相差一个周期；在高精度下把残余值校正回 [0, 2π)。
+            while (angle.isNegative()) {
+                reduced = true;
+                angle = MathPlus.realPlus(angle, twoPi);
+            }
+            while (!MathPlus.realMinus(angle, twoPi).isNegative()) {
+                reduced = true;
+                angle = MathPlus.realMinus(angle, twoPi);
             }
 
             // 利用 cos(x) = cos(2π - x)，将 re 从 (π, 2π) 映射到 (0, π)
-            if (MathPlus.minus(angle, CalcConfig.constants.pi).re.isPositive()) {
+            if (MathPlus.realMinus(angle, highPrecisionPi).isPositive()) {
                 reduced = true;
-                angle = MathPlus.minus(
-                    MathPlus.times([0, 2n, acc], CalcConfig.constants.pi),
-                    angle
-                ).re;
+                angle = MathPlus.realMinus(twoPi, angle);
 
                 // sin(2π - x) = -sin(x) -> 变号
                 // cos(2π - x) =  cos(x) -> 不变
@@ -1061,9 +1048,9 @@
             }
 
             // 利用 cos(x) = -cos(π - x)，将 re 从 [π/2, π] 映射到 [0, π/2]
-            if (!MathPlus.minus(MathPlus.times(angle, [0, 2n, acc]), CalcConfig.constants.pi).re.isNegative()) {
+            if (!MathPlus.realMinus(MathPlus.realTimes(angle, highPrecisionTwo), highPrecisionPi).isNegative()) {
                 reduced = true;
-                angle = MathPlus.minus(CalcConfig.constants.pi, angle).re;
+                angle = MathPlus.realMinus(highPrecisionPi, angle);
 
                 // sin(π - x) = sin(x)  -> 不变
                 // cos(π - x) = -cos(x) -> 变号
@@ -1090,6 +1077,28 @@
             }
 
             return [angle, changeSign];
+        }
+
+        /**
+         * (内部辅助方法) 计算一个 BigNumber 或 ComplexNumber 的相反数。
+         *
+         * @param {BigNumber|ComplexNumber|string|number} x - 需要取反的值；`BigNumber` 返回同类型新实例，
+         *   其余可转换输入统一返回 `ComplexNumber`，传入对象本身不会被修改。
+         * @returns {BigNumber|ComplexNumber} 输入值的相反数。
+         */
+        static oppositeNumber(x) {
+            switch (Public.typeOf(x)) {
+                case 'bignumber':
+                    return new BigNumber(-x.mantissa, {pow: x.power, acc: x.acc, noiseMag: x.noiseMag});
+
+                case 'complexnumber':
+                    return new ComplexNumber([MathPlus.oppositeNumber(x.re), MathPlus.oppositeNumber(x.im)]);
+
+                default: {
+                    const input = new ComplexNumber(x);
+                    return MathPlus.oppositeNumber(input);
+                }
+            }
         }
 
         /**
@@ -1251,7 +1260,7 @@
          * @returns {BigNumber} 差。
          */
         static realMinus(a, b) {
-            return MathPlus.realPlus(a, MathPlus._oppositeNumber(b));
+            return MathPlus.realPlus(a, MathPlus.oppositeNumber(b));
         }
 
         /**
@@ -1323,7 +1332,7 @@
         static conj(x) {
             const input = new ComplexNumber(x);
 
-            return new ComplexNumber([input.re, MathPlus._oppositeNumber(input.im)]);
+            return new ComplexNumber([input.re, MathPlus.oppositeNumber(input.im)]);
         }
 
         /**
@@ -1343,7 +1352,7 @@
             const sinTheta = MathPlus.sin(inputB);
             const complexExponential = MathPlus.plus(
                 cosTheta,
-                [MathPlus._oppositeNumber(sinTheta.im), sinTheta.re]
+                [MathPlus.oppositeNumber(sinTheta.im), sinTheta.re]
             );
             const result = MathPlus.times(inputA, complexExponential);
             return new ComplexNumber(result, {acc: acc});
@@ -1722,7 +1731,7 @@
                     }
 
                     const isExponentNegative = reB.isNegative();
-                    const absB = isExponentNegative ? MathPlus._oppositeNumber(reB) : reB;
+                    const absB = isExponentNegative ? MathPlus.oppositeNumber(reB) : reB;
                     const isBEven = absB.power > 0 || (absB.mantissa & 1n) === 0n;
                     const log10B = _estimateLog10BigInt(absB.mantissa) + absB.power;
 
@@ -1842,10 +1851,10 @@
                 let absB = reB;
                 if (reB.isNegative()) {
                     isExponentNegative = true;
-                    absB = MathPlus._oppositeNumber(reB);
+                    absB = MathPlus.oppositeNumber(reB);
                 }
 
-                let result = MathPlus.pow(MathPlus._oppositeNumber(inputA), absB);
+                let result = MathPlus.pow(MathPlus.oppositeNumber(inputA), absB);
                 // 负底数小数幂按 (-a)^b = |a|^b(cos(bπ)+i·sin(bπ)) 选择实根或主值。
                 if (absB.power === -1 && absB.mantissa === 5n) {
                     // 负实数的 0.5 次幂走纯虚数分支，保持与主值方根解析连续并规避通用复数幂误差。
@@ -1858,7 +1867,7 @@
                     // 判断是否有实数解
                     if (mid.power === 0 && mid.mantissa % 2n !== 0n) {
                         // 有实数解
-                        result = MathPlus._oppositeNumber(result);
+                        result = MathPlus.oppositeNumber(result);
                     } else {
                         // 无实数解
                         const angle = MathPlus.times(absB, CalcConfig.constants.pi);
@@ -1905,7 +1914,7 @@
             const module = MathPlus.times(
                 MathPlus.pow(r, c),
                 MathPlus.exp(
-                    MathPlus._oppositeNumber(MathPlus.times(d, angle))
+                    MathPlus.oppositeNumber(MathPlus.times(d, angle))
                 )
             );
             const cosAngle = MathPlus.cos(resultAngle);
@@ -1960,7 +1969,7 @@
                 let absInput = re;
                 if (re.isNegative()) {
                     isBaseNegative = true;
-                    absInput = MathPlus._oppositeNumber(re);
+                    absInput = MathPlus.oppositeNumber(re);
                 }
 
                 // 十进制指数归约：|x| = scaled * 10^(2k)，使 scaled ∈ [1, 100)
@@ -2064,7 +2073,7 @@
                 let absInput = re;
                 if (re.isNegative()) {
                     isBaseNegative = true;
-                    absInput = MathPlus._oppositeNumber(re);
+                    absInput = MathPlus.oppositeNumber(re);
                 }
 
                 // 十进制指数归约：|x| = scaled * 10^(3k)，使 scaled ∈ [1, 1000)
@@ -2131,13 +2140,13 @@
                 // 如果迭代法收敛异常，回退到 pow 备用方法
                 if (useAlternative) {
                     const alt = MathPlus.pow(absInput, MathPlus.divide([0, 1n, acc], [0, 3n, acc]));
-                    return isBaseNegative ? MathPlus._oppositeNumber(alt) : alt;
+                    return isBaseNegative ? MathPlus.oppositeNumber(alt) : alt;
                 }
 
                 const finalReal = new BigNumber(result.re, {acc: acc, pow: k});
 
                 if (isBaseNegative) {
-                    return new ComplexNumber(MathPlus._oppositeNumber(finalReal));
+                    return new ComplexNumber(MathPlus.oppositeNumber(finalReal));
                 }
                 return new ComplexNumber(finalReal, {acc: acc});
             }
@@ -2454,7 +2463,7 @@
 
             // --- 输入为复数 ---
             // sin(z) = (e^(iz) - e^(-iz)) / (2i)
-            const mid = MathPlus.exp([MathPlus._oppositeNumber(workInput.im), workInput.re]);
+            const mid = MathPlus.exp([MathPlus.oppositeNumber(workInput.im), workInput.re]);
             return new ComplexNumber(MathPlus.divide(
                 MathPlus.minus(mid, MathPlus.divide([0, 1n, workAcc], mid)),
                 new ComplexNumber([0n, 2n], {acc: workAcc})
@@ -2497,13 +2506,13 @@
                     const lnTerm = MathPlus.ln(MathPlus.plus(re, term));
                     return new ComplexNumber([
                         piOver2.re,
-                        MathPlus._oppositeNumber(lnTerm).re
+                        MathPlus.oppositeNumber(lnTerm).re
                     ]);
                 } else { // x < -1
                     // arcsin(x) = -π/2 + i * ln(-x + sqrt(x² - 1))
-                    const lnTerm = MathPlus.ln(MathPlus.plus(MathPlus._oppositeNumber(re), term));
+                    const lnTerm = MathPlus.ln(MathPlus.plus(MathPlus.oppositeNumber(re), term));
                     return new ComplexNumber([
-                        MathPlus._oppositeNumber(piOver2).re,
+                        MathPlus.oppositeNumber(piOver2).re,
                         lnTerm.re
                     ]);
                 }
@@ -2605,7 +2614,7 @@
 
             // --- 输入为复数 ---
             // cos(z) = (e^(iz) + e^(-iz)) / 2
-            const mid = MathPlus.exp([MathPlus._oppositeNumber(workInput.im), workInput.re]);
+            const mid = MathPlus.exp([MathPlus.oppositeNumber(workInput.im), workInput.re]);
             return new ComplexNumber(MathPlus.divide(
                 MathPlus.plus(mid, MathPlus.divide([0, 1n, workAcc], mid)),
                 [0, 2n, workAcc]
@@ -2668,7 +2677,7 @@
                 let isNegative = false;
 
                 if (re.isNegative()) {
-                    re = MathPlus._oppositeNumber(re);
+                    re = MathPlus.oppositeNumber(re);
                     isNegative = true;
                 }
 
@@ -2722,7 +2731,7 @@
                 result = reciprocal ? MathPlus.minus(MathPlus.divide(CalcConfig.constants.pi, [0, 2n, workAcc]), result) : result;
                 // 如果初始 x < 0，应用 arctan(-x) = -arctan(x)。
                 if (isNegative) {
-                    return new ComplexNumber(MathPlus._oppositeNumber(result), {acc: acc});
+                    return new ComplexNumber(MathPlus.oppositeNumber(result), {acc: acc});
                 }
                 return new ComplexNumber(result, {acc: acc});
             }
@@ -2783,7 +2792,7 @@
 
             // 负实数利用奇函数性质，避免 x 与 sqrt(x² + 1) 相消。
             if (input.onlyReal && input.re.isNegative()) {
-                return MathPlus._oppositeNumber(MathPlus.arsh(MathPlus._oppositeNumber(input)));
+                return MathPlus.oppositeNumber(MathPlus.arsh(MathPlus.oppositeNumber(input)));
             }
 
             return MathPlus.ln(
@@ -2818,21 +2827,43 @@
 
         /**
          * 计算 x 的反双曲余弦。
-         * @alias arcosh - 该方法基于反双曲余弦的对数定义：arcosh(x) = ln(x + sqrt(x² - 1))。
+         * @alias arcosh - 该方法基于反双曲余弦的主值定义：arcosh(x) = ln(x + sqrt(x - 1)sqrt(x + 1))。
          * - 能够自动处理实数和复数输入。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数；返回
-         *   `ln(x + sqrt(x² - 1))` 的主值。实数 `x >= 1` 时结果为非负实数，其他实数可得到复数。
+         *   `ln(x + sqrt(x - 1)sqrt(x + 1))` 的主值。实数 `x >= 1` 时结果为非负实数，其他实数可得到复数。
          * @returns {ComplexNumber} 代表 arcosh(x) 结果的 ComplexNumber 实例。
          */
         static arch(x) {
             const input = new ComplexNumber(x);
             const acc = input.acc;
+            const one = new BigNumber(1n, {acc: acc});
+            const minusOne = new BigNumber(-1n, {acc: acc});
+
+            // x <= -1 时直接构造 ln(-x + sqrt(x² - 1)) + iπ，保证主值实部非负并避免相消。
+            if (input.onlyReal && !MathPlus.realMinus(input.re, minusOne).isPositive()) {
+                const squareMinusOne = MathPlus.realPlus(
+                    MathPlus.realTimes(input.re, input.re),
+                    minusOne
+                );
+                const realPart = MathPlus.ln(
+                    MathPlus.realPlus(
+                        MathPlus.oppositeNumber(input.re),
+                        MathPlus.sqrt(squareMinusOne).re
+                    )
+                ).re;
+
+                return new ComplexNumber([
+                    realPart,
+                    new BigNumber(CalcConfig.constants.pi, {acc: acc})
+                ]);
+            }
 
             return MathPlus.ln(
                 MathPlus.plus(
                     input,
-                    MathPlus.sqrt(
-                        MathPlus.plus(MathPlus.times(input, input), [0, -1n, acc])
+                    MathPlus.times(
+                        MathPlus.sqrt(MathPlus.minus(input, one)),
+                        MathPlus.sqrt(MathPlus.plus(input, one))
                     )
                 )
             );
@@ -2890,20 +2921,18 @@
          * 计算一个数的阶乘 (x!)。
          * - 对于非负整数 n, n! = 1 * 2 * ... * n，并返回主值。
          * - 对于非整数、负数和复数，此函数计算伽玛函数 Γ(x + 1)。
-         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 阶乘参数；非负整数走精确的
-         *   BigInt 分治乘积，其他非极点值通过 `Γ(x + 1)` 延拓，负整数因伽玛极点而拒绝。
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 阶乘参数；不超过 5000 的非负整数
+         *   走精确的 BigInt 分治乘积，更大的正整数和其他非极点值通过 `Γ(x + 1)` 近似计算。
          * @returns {ComplexNumber} 代表 x! 结果的 ComplexNumber 实例。
-         * @throws {Error} 如果输入为负整数，因为其阶乘未定义。
+         * @throws {Error} 如果输入为负整数，或计算结果超出数值范围。
          */
         static fact(x) {
             /**
              * 使用分治法（二分求积）高效计算一个非负整数的阶乘。
              * 这种方法对于计算极大的数（如 1000! 或更高）有显著的性能优势。
              *
-             * @param {bigint|number} num - 要精确求阶乘的非负整数；`number` 必须是安全整数并会转换为
-             *   BigInt，负数、小数、非有限值和不安全整数均不进入递归乘积。
+             * @param {bigint} num - 已通过非负性和计算范围校验的整数。
              * @returns {bigint} n 的阶乘。
-             * @throws {TypeError} 如果 n 不是一个非负整数。
              */
             function factorialOptimized(num) {
                 if (num === 0n || num === 1n) {
@@ -2933,9 +2962,6 @@
                         }
                         return res;
                     }
-                    if (end - start > 99999999n) {
-                        throw new Error('[MathPlus] mathematical error: The factorial exceeds the range limit.');
-                    }
 
                     // 分治
                     const mid = start + (end - start) / 2n;
@@ -2958,13 +2984,21 @@
                     throw new Error('[MathPlus] mathematical error: Negative integer factorial undefined.');
                 }
 
-                const realNumber = re.mantissa * BigNumber.pow10(re.power);
-                return new ComplexNumber(factorialOptimized(realNumber), {
-                    acc: acc
-                });
+                // 限制完整阶乘的计算量；更大的正整数使用下方的 Lanczos 近似。
+                const maxFactorialInput = 100_000n;
+                const maxFactorialMag = 5; // 与 maxFactorialInput 的十进制数量级保持一致
+                // 先检查数量级，确保展开整数时只需很小的十次幂。
+                if (BigNumber.getMag(re) <= maxFactorialMag) {
+                    const realNumber = re.mantissa * BigNumber.pow10(re.power);
+                    if (realNumber <= maxFactorialInput) {
+                        return new ComplexNumber(factorialOptimized(realNumber), {
+                            acc: acc
+                        });
+                    }
+                }
             }
 
-            // 非整数、负数和复数阶乘使用兰佐斯近似计算 Γ(x+1)。
+            // 大正整数、非整数和复数阶乘使用兰佐斯近似计算 Γ(x+1)。
             let option;
             // 按目标精度选择最小够用的 Lanczos 系数集，避免无谓的大精度运算。
             if (acc <= 40) {
@@ -2991,7 +3025,7 @@
             // 先在正半平面计算，再由 Γ(z)Γ(1-z)=π/sin(πz) 反射回原参数。
             let reflection = false;
             if (calcNum.re.isNegative()) {
-                calcNum = MathPlus._oppositeNumber(calcNum);
+                calcNum = MathPlus.oppositeNumber(calcNum);
                 reflection = true;
             }
 
@@ -3134,11 +3168,11 @@
             const re = input.re, im = input.im;
 
             if (input.onlyReal) {
-                return re.isNegative() ? new ComplexNumber(MathPlus._oppositeNumber(re)) : input;
+                return re.isNegative() ? new ComplexNumber(MathPlus.oppositeNumber(re)) : input;
             }
 
             if (input.re.isZero()) {
-                return im.isNegative() ? new ComplexNumber(MathPlus._oppositeNumber(im)) : new ComplexNumber(im);
+                return im.isNegative() ? new ComplexNumber(MathPlus.oppositeNumber(im)) : new ComplexNumber(im);
             }
 
             return MathPlus.sqrt(MathPlus.plus(MathPlus.times(re, re), MathPlus.times(im, im)));
@@ -3244,7 +3278,7 @@
                     case '|':
                         return 'abs';
                     case 'N':
-                        return '_oppositeNumber';
+                        return 'oppositeNumber';
                     case 'A':
                         return 'abs';
 
@@ -4199,106 +4233,6 @@
         }
 
         /**
-         * 使用带部分主元的高斯-若尔当消元法求解 Ax=b。
-         *
-         * @private
-         * @param {Array<Array<ComplexNumber|string|number>>} coefficients - 方程左侧的 `n × n` 系数矩阵；
-         *   每行必须恰有 `n` 项。算法会构造增广矩阵副本，不会原地消元传入数组。
-         * @param {Array<ComplexNumber|string|number>} constants - 方程右侧的长度为 `n` 的常数向量；
-         *   与系数矩阵行按索引对应，长度不符或主元为零表示无法得到唯一解。
-         * @returns {Array<ComplexNumber>} 长度为 `n` 的唯一解向量；第 `i` 项对应系数矩阵第 `i` 列的
-         *   未知量。返回的是消元后增广矩阵最后一列的新数组。
-         * @throws {Error} 矩阵不是方阵或不存在唯一解时抛出。
-         */
-        static _solveLinearEquation(coefficients, constants) {
-            const n = coefficients.length;
-
-            const augmentedMatrix = [];
-            let maxAbs = new ComplexNumber(0);
-            let onlyReal = true;
-            // 复制系数并附加常数列，构造增广矩阵，避免修改调用方传入的数组。
-            for (let i = 0; i < n; i++) {
-                if (coefficients[i].length !== n) {
-                    throw new Error('[StatisticsTools] The coefficient matrix must be a square matrix.');
-                }
-                const newRow = [];
-                for (let j = 0; j < n; j++) {
-                    const cell = new ComplexNumber(coefficients[i][j]);
-                    onlyReal = onlyReal && cell.onlyReal;
-                    const cellAbs = MathPlus.abs(cell);
-                    if (!cellAbs.isZero() && (maxAbs.isZero() || MathPlus.minus(cellAbs, maxAbs).re.isPositive())) {
-                        maxAbs = cellAbs;
-                    }
-                    newRow.push(cell);
-                }
-                const constant = new ComplexNumber(constants[i]);
-                onlyReal = onlyReal && constant.onlyReal;
-                newRow.push(constant);
-                augmentedMatrix.push(newRow);
-            }
-
-            if (maxAbs.isZero()) {
-                throw new Error('[StatisticsTools] The system of equations has no unique solution.');
-            }
-
-            // 运算函数只选择一次，三重循环内不再进行类型解析或复数装箱。
-            if (onlyReal) {
-                for (const row of augmentedMatrix) {
-                    for (let j = 0; j <= n; j++) {
-                        row[j] = row[j].re;
-                    }
-                }
-            }
-            const divide = onlyReal ? MathPlus.realDivide : MathPlus.divide;
-            const minus = onlyReal ? MathPlus.realMinus : MathPlus.minus;
-            const times = onlyReal ? MathPlus.realTimes : MathPlus.times;
-
-            for (let i = 0; i < n; i++) {
-                // 每列选取绝对值最大的主元并换行，减少除以极小数造成的误差放大。
-                let maxRow = i;
-                for (let k = i + 1; k < n; k++) {
-                    if (MathPlus.minus(MathPlus.abs(augmentedMatrix[k][i]), MathPlus.abs(augmentedMatrix[maxRow][i])).re.isPositive()) {
-                        maxRow = k;
-                    }
-                }
-
-                [augmentedMatrix[i], augmentedMatrix[maxRow]] = [augmentedMatrix[maxRow], augmentedMatrix[i]];
-
-                const pivot = augmentedMatrix[i][i];
-
-                if (pivot.isZero() || Public.zeroCorrect(pivot, maxAbs).isZero()) {
-                    // 主元为零或在相对精度阈值内近似为零，表示矩阵奇异，方程组没有唯一解。
-                    throw new Error('[StatisticsTools] The system of equations has no unique solution.');
-                }
-
-                // 主元行归一化，再消去该列的其他元素；结束时左侧矩阵成为单位矩阵。
-                for (let j = i; j < n + 1; j++) {
-                    augmentedMatrix[i][j] = divide(augmentedMatrix[i][j], pivot);
-                }
-
-                for (let k = 0; k < n; k++) {
-                    if (k !== i) {
-                        const factor = augmentedMatrix[k][i];
-
-                        for (let j = i; j < n + 1; j++) {
-                            augmentedMatrix[k][j] = minus(
-                                augmentedMatrix[k][j],
-                                times(factor, augmentedMatrix[i][j])
-                            );
-                        }
-                    }
-                }
-            }
-
-            const solution = new Array(n);
-            for (let i = 0; i < n; i++) {
-                solution[i] = onlyReal ? new ComplexNumber(augmentedMatrix[i][n]) : augmentedMatrix[i][n];
-            }
-
-            return solution;
-        }
-
-        /**
          * 使用 Householder QR 分解求解指定阶数的实数最小二乘多项式。
          *
          * @private
@@ -4336,7 +4270,7 @@
                     row.push(times(row[j - 1], x.re));
                 }
                 for (let j = 0; j < m; j++) {
-                    const abs = row[j].isNegative() ? MathPlus._oppositeNumber(row[j]) : row[j];
+                    const abs = row[j].isNegative() ? MathPlus.oppositeNumber(row[j]) : row[j];
                     if (minus(abs, columnScales[j]).isPositive()) {
                         columnScales[j] = abs;
                     }
@@ -4358,7 +4292,7 @@
 
                 // 对角元取与列首相反的符号，避免构造反射向量时发生相消；向量首项归一为 1。
                 const first = matrix[k][k];
-                const diagonal = first.isNegative() ? norm : MathPlus._oppositeNumber(norm);
+                const diagonal = first.isNegative() ? norm : MathPlus.oppositeNumber(norm);
                 const head = minus(first, diagonal);
                 const reflector = [new BigNumber(1)];
                 for (let i = k + 1; i < n; i++) {
@@ -4705,10 +4639,14 @@
                     },
                     ssTotB
                 );
-                const p0 = result.axb.parameter[0];
-                if (p0 !== 'error') {
-                    const mid = MathPlus.exp(p0);
-                    result.axb.parameter[0] = statesB.negative ? MathPlus.minus(0, mid) : mid;
+                try {
+                    const p0 = result.axb.parameter[0];
+                    if (p0 !== 'error') {
+                        const mid = MathPlus.exp(p0);
+                        result.axb.parameter[0] = statesB.negative ? MathPlus.minus(0, mid) : mid;
+                    }
+                } catch {
+                    result.axb = structuredClone(errorWith2parameter);
                 }
             }
             result.bestModel = this._findBestModel(result, 'axb');
@@ -4729,20 +4667,28 @@
                     ssTotB
                 );
                 const p0 = result.exp.parameter[0];
-                if (p0 !== 'error') {
-                    const midExp = MathPlus.exp(p0);
-                    result.exp.parameter[0] = statesB.negative ? MathPlus.minus(0, midExp) : midExp;
+                const p1 = result.exp.parameter[1];
+                try {
+                    if (p0 !== 'error') {
+                        const midExp = MathPlus.exp(p0);
+                        result.exp.parameter[0] = statesB.negative ? MathPlus.minus(0, midExp) : midExp;
+                    }
+                } catch {
+                    result.exp = structuredClone(errorWith2parameter);
                 }
 
-                const p1 = result.exp.parameter[1];
-                if (p1 !== 'error' && p0 !== 'error') {
-                    const midABX = MathPlus.exp(p1);
-                    result.abx = {
-                        parameter: [result.exp.parameter[0], midABX],
-                        R2: result.exp.R2
-                    };
-                } else {
+                if (result.exp.parameter[0] === 'error' || p1 === 'error') {
                     result.abx = structuredClone(errorWith2parameter);
+                } else {
+                    try {
+                        const midABX = MathPlus.exp(p1);
+                        result.abx = {
+                            parameter: [result.exp.parameter[0], midABX],
+                            R2: result.exp.R2
+                        };
+                    } catch {
+                        result.abx = structuredClone(errorWith2parameter);
+                    }
                 }
             }
             result.bestModel = this._findBestModel(result, 'exp');
