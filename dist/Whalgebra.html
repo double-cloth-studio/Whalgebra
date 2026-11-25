@@ -2408,6 +2408,11 @@
              * @class MathPlus
              */
             class MathPlus {
+                /** @private */
+                static _ExpressionSyntaxError = class extends SyntaxError {
+                    name = 'ExpressionSyntaxError';
+                };
+
                 /**
                  * 阻止实例化静态工具类。
                  *
@@ -5327,7 +5332,7 @@
                     }
 
                     if (expr === '') {
-                        throw new Error('[MathPlus] syntax error: Input is empty.');
+                        throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Input is empty.');
                     }
 
                     expr = expr.replaceAll('[cdot]', '').replaceAll('**', '^').replace(/\s/g, '');
@@ -5341,7 +5346,7 @@
                     //   5. 添加括号消除表达式歧义，如 2/3pi -> 2/(3&pi)。
                     let [output, input] = [[], Public.tokenizer(expr, {baseNumberMode: 'together'})];
                     if (input[0] === 'error') {
-                        throw new Error(`[MathPlus] syntax error: Illegal input (${input[1]}).`);
+                        throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${input[1]}).`);
                     }
 
                     let lastTokenInfo = {};
@@ -5365,14 +5370,14 @@
                             for (let j = 0; j < i; j++) {
                                 position += input[j].length;
                             }
-                            throw new Error(`[MathPlus] syntax error: Illegal input (${position}).`);
+                            throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${position}).`);
                         }
                         if (lastTokenInfo.parameters === 2 && lastTokenInfo.funcPlace === 'front' && currentPush !== '(') {
                             let position = 0;
                             for (let j = 0; j < i; j++) {
                                 position += input[j].length;
                             }
-                            throw new Error(`[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (${position}).`);
+                            throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (${position}).`);
                         }
 
                         // --- 括号信息记录 ---
@@ -5390,7 +5395,7 @@
                                     for (let j = 0; j < i; j++) {
                                         position += input[j].length;
                                     }
-                                    throw new Error(`[MathPlus] syntax error: Absolute value internal parentheses do not match (${position}).`);
+                                    throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Absolute value internal parentheses do not match (${position}).`);
                                 }
                             }
                             if (kh < minKh) {
@@ -5806,10 +5811,10 @@
                         const token = hasCommaMark ? rawToken.slice(0, -1) : rawToken;
                         const {funcPlace, parameters} = Public.getTokenInfo(token);
                         if (funcPlace === 'front' && parameters === 2 && !hasCommaMark) {
-                            throw new Error(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
+                            throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
                         }
                         if (depth < parameters) {
-                            throw new Error(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
+                            throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
                         }
                         depth += 1 - parameters;
                         const method = methods[token] ?? token.replace(/[\[\]]/g, '');
@@ -5858,7 +5863,7 @@
                                 emitOperator(operatorStack.pop());
                             }
                             if (operatorStack.length === 0) {
-                                throw new Error('[MathPlus] syntax error: The parentheses do not match.');
+                                throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
                             }
                             // 弹出并丢弃左括号 '('。
                             operatorStack.pop();
@@ -5868,7 +5873,7 @@
                             }
                             const subTopOfStack = Public.getTokenInfo(operatorStack[operatorStack.length - 2]);
                             if (operatorStack.length < 2 || !(subTopOfStack.funcPlace === 'front' && subTopOfStack.parameters === 2)) {
-                                throw new Error('[MathPlus] syntax error: Commas mismatch or incorrect position.');
+                                throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Commas mismatch or incorrect position.');
                             }
                             // 标记这个函数已经被一个逗号匹配。
                             operatorStack[operatorStack.length - 2] += '~';
@@ -5878,13 +5883,13 @@
                     while (operatorStack.length > 0) {
                         const operator = operatorStack.pop();
                         if (operator === '(') {
-                            throw new Error('[MathPlus] syntax error: The parentheses do not match.');
+                            throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
                         }
                         emitOperator(operator);
                     }
 
                     if (depth !== 1) {
-                        throw new Error('[MathPlus] syntax error: The final stack should have exactly one value.');
+                        throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The final stack should have exactly one value.');
                     }
 
                     return {expr: output, rpn};
@@ -6441,17 +6446,49 @@
 
                     try {
                         // R² 使用未变换的原始 y 值，并复用外部预计算的 SS_tot。
-                        result.R2 = StatisticsTools._calcR2(
+                        result.R2 = Public.zeroCorrect(StatisticsTools._calcR2(
                             listA,
                             originalListB,
-                            // 使用已求得的参数计算预测值
+                            // 使用已求得的参数计算预测值，并在比较模型前应用输出时的噪声校正。
                             (x) => func(x, result.parameter),
                             ssTot
-                        );
+                        ));
                     } catch {
                         result.R2 = 'error';
                     }
 
+                    return result;
+                }
+
+                /**
+                 * 在平移和缩放后的坐标中拟合二次曲线并计算 R²，最后将系数换回原坐标。
+                 * @private
+                 */
+                static _getQuadraticRegressionInfo(listA, listB, ssTot) {
+                    const origin = listA[0];
+                    const offsets = this._changeInner(listA, (x) => MathPlus.minus(x, origin));
+                    const {max: scale} = this._getMaxAndMin(this._getAbsList(offsets));
+                    const scaledA = scale.isZero()
+                                    ? offsets
+                                    : this._changeInner(offsets, (x) => MathPlus.divide(x, scale));
+                    const result = this._getRegressionInfo(scaledA, listB, 2, listB,
+                        (t, [a, b, c]) => MathPlus.plus(a, MathPlus.times(t, MathPlus.plus(b, MathPlus.times(t, c)))),
+                        ssTot
+                    );
+                    if (result.parameter[0] === 'error') {
+                        return result;
+                    }
+
+                    // 将 t = x / scale - origin / scale 代入。换算前清理拟合产生的系数底噪。
+                    const [a, b, c] = result.parameter.map((value) => Public.zeroCorrect(value));
+                    const shift = MathPlus.divide(MathPlus.minus(0, origin), scale);
+                    const cross = MathPlus.times(c, shift);
+                    const quadratic = MathPlus.divide(c, scale);
+                    result.parameter = [
+                        MathPlus.plus(a, MathPlus.times(shift, MathPlus.plus(b, cross))),
+                        MathPlus.divide(MathPlus.plus(b, MathPlus.times(2, cross)), scale),
+                        MathPlus.divide(quadratic, scale)
+                    ];
                     return result;
                 }
 
@@ -6612,13 +6649,7 @@
                         ssTotB
                     );
 
-                    result.square = this._getRegressionInfo(listA, listB, 2, listB,
-                        (x, coefficient) => MathPlus.plus(
-                            MathPlus.times(coefficient[2], MathPlus.times(x, x)),
-                            MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
-                        ),
-                        ssTotB
-                    );
+                    result.square = this._getQuadraticRegressionInfo(listA, listB, ssTotB);
                     result.bestModel = this._findBestModel(result, 'square');
 
                     // 对数模型 y=a+b·ln(x) 要求所有 x>0。
@@ -15812,11 +15843,14 @@
 
                             expr = HtmlTools.textToHtmlClass(syntaxResult.expr);
                         } catch (e) {
-                            // 取消或重启不属于语法错误，不应提交或清空原输入。
-                            if (e?.name === 'CancellationError' || e?.name === 'TerminationError') {
+                            if (e?.name !== 'ExpressionSyntaxError') {
+                                // Worker 失败时保留草稿、原单元格和选区，允许原地重试。
+                                if (e?.name !== 'CancellationError' && e?.name !== 'TerminationError') {
+                                    console.warn('[PageControlTools] Input validation failed:', e);
+                                }
                                 return;
                             }
-                            // 保留原输入并加错误前缀，后续 DOM 渲染据此显示语法错误而不丢失用户内容。
+                            // 只有解析器确认的语法错误才加标记并写回子屏幕。
                             expr = ['_syntax_error_', ...currentInputArray];
                         }
 
