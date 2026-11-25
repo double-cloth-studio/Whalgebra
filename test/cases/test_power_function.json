@@ -1498,6 +1498,68 @@
     },
     {
       "description": [
+        "[power:quadratic:small-root] 36 位精度下保留大正一次项对应的非零小根"
+      ],
+      "coeffs": [0, 0, 1, "1E20", -1],
+      "calcConfig": {
+        "globalCalcAccuracy": 36,
+        "outputAccuracy": 16
+      },
+      "expected": {
+        "equation": "[x]^2+(1E+20)[x]-1",
+        "range": ["-2.5E+39", "+inf"],
+        "increasingInterval": [["-5E+19", "+inf"]],
+        "decreasingInterval": [["-inf", "-5E+19"]],
+        "maximumPoint": [["null", "null"]],
+        "minimumPoint": [["-5E+19", "-2.5E+39"]],
+        "convexInterval": [["null", "null"]],
+        "concaveInterval": [["-inf", "+inf"]],
+        "inflectionPoint": [["null", "null"]],
+        "roots": ["-1E+20", "1E-20"]
+      }
+    },
+    {
+      "description": [
+        "[power:quadratic:small-root] 220 位精度下保留负首项且两根同号时的非零小根"
+      ],
+      "coeffs": [0, 0, -2, "-2E120", -2],
+      "calcConfig": {
+        "globalCalcAccuracy": 220,
+        "outputAccuracy": 16
+      },
+      "expected": {
+        "equation": "-2[x]^2+(-2E+120)[x]-2",
+        "range": ["-inf", "5E+239"],
+        "decreasingInterval": [["-5E+119", "+inf"]],
+        "increasingInterval": [["-inf", "-5E+119"]],
+        "minimumPoint": [["null", "null"]],
+        "maximumPoint": [["-5E+119", "5E+239"]],
+        "concaveInterval": [["null", "null"]],
+        "convexInterval": [["-inf", "+inf"]],
+        "inflectionPoint": [["null", "null"]],
+        "roots": ["-1E+120", "-1E-120"]
+      }
+    },
+    {
+      "description": [
+        "[power:quadratic:zero-root] 常数项为零时保留真实零根并按升序返回"
+      ],
+      "coeffs": [0, 0, -2, 8, 0],
+      "expected": {
+        "equation": "-2[x]^2+8[x]",
+        "range": ["-inf", "8"],
+        "decreasingInterval": [["2", "+inf"]],
+        "increasingInterval": [["-inf", "2"]],
+        "minimumPoint": [["null", "null"]],
+        "maximumPoint": [["2", "8"]],
+        "concaveInterval": [["null", "null"]],
+        "convexInterval": [["-inf", "+inf"]],
+        "inflectionPoint": [["null", "null"]],
+        "roots": ["0", "4"]
+      }
+    },
+    {
+      "description": [
         "[power:linear:increasing] 一次函数 d>0；覆盖 a=b=c=0、d>0 的一次函数分支。；用于确认全实数递增、无极值、无凹凸和 _solveX1 单根输出。"
       ],
       "coeffs": [

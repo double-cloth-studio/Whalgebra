@@ -1426,13 +1426,26 @@
   },
   {
     "description": [
-      "[fact] 负非整数反射公式"
+      "[fact] 负实部递推区间的端点"
     ],
     "function": "fact",
     "args": [
       "-0.5"
     ],
     "expected": "1.77245385090551602729816748334114518279754945612238712821380778985291128459103218137495065673854466541622682362428257066623615286572442260252509370960278706846203769865310512284992517302895082622893"
+  },
+  {
+    "description": [
+      "[fact] 实部小于 -0.5 时仍使用反射公式"
+    ],
+    "function": "fact",
+    "args": [
+      "-0.50001"
+    ],
+    "calcConfig": {
+      "outputAccuracy": 16
+    },
+    "expected": "1.77248865399361"
   },
   {
     "description": [
@@ -1461,6 +1474,72 @@
     "function": "gamma",
     "args": [
       "0"
+    ],
+    "expected": {
+      "error": "[MathPlus] mathematical error: Negative integer factorial undefined."
+    }
+  },
+  {
+    "description": [
+      "[gamma] 36 位精度下的极小正实数"
+    ],
+    "function": "gamma",
+    "args": [
+      "1E-50"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 16
+    },
+    "expected": "1E+50"
+  },
+  {
+    "description": [
+      "[gamma] 220 位精度下的极小负实数"
+    ],
+    "function": "gamma",
+    "args": [
+      "-1E-250"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 16
+    },
+    "expected": "-1E+250"
+  },
+  {
+    "description": [
+      "[gamma] 接近零的递推分支保留有效数字"
+    ],
+    "function": "gamma",
+    "args": [
+      "0.09999"
+    ],
+    "calcConfig": {
+      "outputAccuracy": 16
+    },
+    "expected": "9.514499463341153"
+  },
+  {
+    "description": [
+      "[gamma] 递推区间外的端点保持原有结果"
+    ],
+    "function": "gamma",
+    "args": [
+      "0.1"
+    ],
+    "calcConfig": {
+      "outputAccuracy": 16
+    },
+    "expected": "9.513507698668732"
+  },
+  {
+    "description": [
+      "[gamma:error] 负整数仍是伽玛函数的极点"
+    ],
+    "function": "gamma",
+    "args": [
+      "-1"
     ],
     "expected": {
       "error": "[MathPlus] mathematical error: Negative integer factorial undefined."
