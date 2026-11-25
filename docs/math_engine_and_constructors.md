@@ -54,7 +54,9 @@ console.log(normalized); // "2[cdot](3+4)"
 new BigNumber(x, { acc, pow: 0, noiseMag });
 ```
 
-内部表示为 `mantissa × 10^power`，其中 `mantissa` 为 `bigint`、`power` 为安全整数，`acc` 为有效位数，`noiseMag` 跟踪舍入噪声量级。支持十进制/科学记数法字符串、有限 `number`、`bigint`、已有实例和 `[power, mantissa, acc]` 元组。
+内部表示为 `mantissa × 10^power`，其中 `mantissa` 为 `bigint`、`power` 为安全整数，`acc` 为有效位数，`noiseMag` 跟踪舍入噪声量级。支持十进制/科学记数法字符串、有限 `number`、`bigint`、已有实例、`[power, mantissa, acc?]` 元组和 `{ power, mantissa, acc }` 对象。元组和普通对象的整数尾数会转换为 `bigint`，按目标精度舍入并移除尾随零。
+
+科学记数法的指数只接受可带正负号的整数。字符串舍入后的数量级低于 `CalcConfig.MIN_INPUT_EXPONENT` 时按零处理。
 
 ```javascript
 const a = new BigNumber("12345678901234567890.125", { acc: 30 });
