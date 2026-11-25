@@ -5420,21 +5420,21 @@
                             addKh = currentPush === '(' ? kh - 1 : kh;
                         }
 
-                        if ( // 解决为隐式乘法添加的另一半括号
-                            tempBracketIdx !== -1 && (
-                                (
-                                    tokenInfo.class === 'func' &&
-                                    tokenInfo.priority > orderOfInvisibleTimes &&
-                                    kh === addKh
-                                ) ||
-                                // 避免循环末尾需要在循环结束后重新处理
-                                i + 1 === input.length
-                            )
-                        ) {
-                            if (tokenInfo.priority >= orderOfTimes || i + 1 === input.length) {
+                        // 解决为隐式乘法添加的另一半括号
+                        const hitBoundary =
+                            (tokenInfo.class === 'func' && tokenInfo.priority > orderOfInvisibleTimes && kh === addKh) ||
+                            (currentPush === ')' && kh < addKh) ||
+                            (currentPush === ',' && kh === addKh);
+
+                        if (tempBracketIdx !== -1 && (hitBoundary || i + 1 === input.length)) {
+                            const needClose = hitBoundary
+                                              ? (currentPush === ')' || currentPush === ',' || tokenInfo.priority >= orderOfTimes)
+                                              : true;
+
+                            if (needClose) {
                                 // 目前 token 优先级低于显式乘法，或已到达表达式末尾，需要补全括号
                                 openAfter1[tempBracketIdx] = (openAfter1[tempBracketIdx] || 0) + 1;
-                                if (i + 1 === input.length) {
+                                if (i + 1 === input.length && !hitBoundary) {
                                     output.push(currentPush);
                                     currentPush = ')';
                                 } else {
