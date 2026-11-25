@@ -125,17 +125,15 @@ document.addEventListener('click', (event) => {
             return;
         }
 
-        if (/Data[XY]/.test(targetClass)) {
+        if (target.classList.contains('DataX') || target.classList.contains('DataY')) {
+            const row = Number(target.parentElement?.getAttribute('data-statistics-row') || NaN);
+            if (!Number.isInteger(row) || row < 0 || row >= PageConfig.screenData['1'].length) {
+                return;
+            }
+
             PageControlTools.hideExplain();
-
-            const children = target.parentElement.children;
-            const name = [];
-
-            const classList = HtmlTools.getClassList(children[0].children[0]);
-            name.push(classList ? Number(classList.join('').replace(/_/g, '')) - 1 : 0);
-            name.push(target.classList.contains('DataX') ? 0 : 1);
-
-            PageConfig.subModes = {'default': name};
+            const column = target.classList.contains('DataX') ? 0 : 1;
+            PageConfig.subModes = {'default': [row, column]};
             PageControlTools.syncScreenToInput();
             return;
         }
@@ -390,7 +388,7 @@ window.addEventListener('load', () => {
             throw new Error('[GLOBAL] Invalid screenData structure.');
         }
 
-        // 校验完整的存储记录，并在脱离页面的片段中准备各子屏幕的节点。
+        // 校验所有已保存的字段并准备子屏节点，缺失字段由 setter 保留初始值。
         const fields = [];
         for (const [key, value] of Object.entries(data)) {
             if (!Object.hasOwn(PageConfig.screenData, key)) {
@@ -448,6 +446,7 @@ window.addEventListener('load', () => {
                 throw new Error('[GLOBAL] Invalid subModes field.');
             }
         }
+        // 只合并已保存的子模式，缺失模式沿用初始选项。
         PageConfig.subModes = data;
     });
 

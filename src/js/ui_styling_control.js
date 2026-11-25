@@ -195,7 +195,7 @@
 
                                 // 在第二帧才从虚拟滚动查询节点，避免给已被回收/卸载的旧节点加类。
                                 InputManager.statisticsRenderer.applyToItem(targetRow, (el) => {
-                                    targetEl = el.children[targetCol + 1] ?? null;
+                                    targetEl = el.querySelector(targetCol === 0 ? ':scope > .DataX' : ':scope > .DataY');
                                 });
 
                                 // 清除所有旧高亮（getHtml(..., -1) 返回实时 HTMLCollection，需先转静态数组）。
@@ -4701,6 +4701,7 @@
             }
         ) {
             const insert = document.createElement('div');
+            insert.dataset.statisticsRow = String(index);
             const currentMode = PageConfig.subModes['1'];
             const isCurrent = index === currentMode[0];
 
