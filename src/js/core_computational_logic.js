@@ -1470,7 +1470,7 @@
 
             const noiseA = reA.noiseMag ?? -Infinity;
             const noiseB = reB.noiseMag ?? -Infinity;
-            const propagatedNoise = resultMantissa === 0n ? -Infinity : Math.max(
+            const propagatedNoise = (reA.isZero() || reB.isZero()) ? -Infinity : Math.max(
                 noiseA === -Infinity ? -Infinity : noiseA + BigNumber.getMag(reB),
                 noiseB === -Infinity ? -Infinity : noiseB + BigNumber.getMag(reA),
                 noiseA === -Infinity || noiseB === -Infinity ? -Infinity : noiseA + noiseB
