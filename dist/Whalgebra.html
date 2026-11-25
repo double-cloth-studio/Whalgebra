@@ -2699,11 +2699,12 @@
                     const power = Math.min(a.power, b.power);
                     const shiftA = powerA - BigInt(power);
                     const shiftB = powerB - BigInt(power);
-                    const divisor = absB * BigNumber.pow10(Number(shiftB));
+                    // 数量级较小的被除数已提前处理；仅在 shiftB > 0 时对齐除数，位数最多为 lenA。
+                    const divisor = shiftB === 0n ? absB : absB * BigNumber.pow10(Number(shiftB));
                     let remainder;
                     let quotientMag = -Infinity;
 
-                    if (shiftA > BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
+                    if (shiftA > 0n) {
                         remainder = MathPlus._modScale(absA, shiftA, divisor);
                         if (b.noiseMag !== -Infinity && remainder !== 0n) {
                             // 仅在传播除数噪声时精确确定商的数量级，无需构造完整商。
@@ -2716,13 +2717,14 @@
                             ]) > 0n) {
                                 mag++;
                             }
-                            quotientMag = Number(mag);
+                            quotientMag = mag < 0n ? -Infinity : Number(mag);
                         }
                     } else {
-                        const dividend = absA * BigNumber.pow10(Number(shiftA));
-                        remainder = dividend % divisor;
-                        const quotient = dividend / divisor + (oppositeSigns && remainder !== 0n ? 1n : 0n);
-                        quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
+                        remainder = absA % divisor;
+                        if (b.noiseMag !== -Infinity && remainder !== 0n) {
+                            const quotient = absA / divisor + (oppositeSigns ? 1n : 0n);
+                            quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
+                        }
                     }
 
                     if (remainder === 0n) {
@@ -2741,7 +2743,7 @@
                 }
 
                 /**
-                 * 将尾数按十进制指数缩放后取余，大指数用模快速幂。
+                 * 用模快速幂计算缩放后的余数，避免展开十进制幂。
                  * @private
                  * @param {bigint} mantissa - 待缩放的尾数。
                  * @param {bigint} shift - 非负十进制指数。
@@ -2749,10 +2751,6 @@
                  * @returns {bigint} 缩放后的余数。
                  */
                 static _modScale(mantissa, shift, modulus) {
-                    if (shift <= BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
-                        return (mantissa * BigNumber.pow10(Number(shift))) % modulus;
-                    }
-
                     let result = mantissa % modulus;
                     let base = 10n % modulus;
                     while (shift > 0n && result !== 0n) {
