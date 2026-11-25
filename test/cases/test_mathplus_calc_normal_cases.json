@@ -1126,5 +1126,201 @@
       "result": "1.4142136[toPolar]0.78539816",
       "expr": "1+[i]"
     }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 近似大整周期在幂、乘法及常量间传播相位噪声"
+    ],
+    "coeffs": [
+      "sin(10^35*[pi])",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "sin(10^35*[pi])"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 负大整周期归约"
+    ],
+    "coeffs": [
+      "sin(-10^35*[pi])",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "sin(-10^35*[pi])"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 常量除法传播噪声并归零"
+    ],
+    "coeffs": [
+      "cos([pi]/2)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "cos([pi]/2)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 零点附近可分辨的小余弦不能与 1 比较归零"
+    ],
+    "coeffs": [
+      "cos([pi]/2+1E-30)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "-1E-30",
+      "expr": "cos([pi]/2+1E-30)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 零点另一侧保留小余弦及符号"
+    ],
+    "coeffs": [
+      "cos([pi]/2-1E-30)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "1E-30",
+      "expr": "cos([pi]/2-1E-30)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 整周期加可分辨余角"
+    ],
+    "coeffs": [
+      "sin(2*[pi]+1E-30)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "1E-30",
+      "expr": "sin(2*[pi]+1E-30)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 负整周期加可分辨余角"
+    ],
+    "coeffs": [
+      "sin(-2*[pi]-1E-30)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "-1E-30",
+      "expr": "sin(-2*[pi]-1E-30)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 幂下溢保护通过表达式入口执行"
+    ],
+    "coeffs": [
+      "10^(-1E1000)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "10^(-1E1000)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 大负奇数指数保留奇偶性"
+    ],
+    "coeffs": [
+      "(-1)^(-999999999999999999999)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "-1",
+      "expr": "(-1)^(-999999999999999999999)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 巨大实数平方根先缩放"
+    ],
+    "coeffs": [
+      "sqrt(4E1000)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "2E+500",
+      "expr": "sqrt(4E1000)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 微小负实数立方根先缩放"
+    ],
+    "coeffs": [
+      "cbrt(-8E-1500)",
+      60,
+      25
+    ],
+    "expected": {
+      "result": "-2E-500",
+      "expr": "cbrt(-8E-1500)"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] outputAcc=0 使用完整计算精度"
+    ],
+    "coeffs": [
+      "1/7",
+      36,
+      0
+    ],
+    "expected": {
+      "result": "0.142857142857142857142857142857142857",
+      "expr": "1/7"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] outputAcc 为负使用完整计算精度"
+    ],
+    "coeffs": [
+      "1/7",
+      36,
+      -1
+    ],
+    "expected": {
+      "result": "0.142857142857142857142857142857142857",
+      "expr": "1/7"
+    }
+  },
+  {
+    "description": [
+      "[normal:november-regression] 精确大角度通过表达式入口保留相位"
+    ],
+    "coeffs": [
+      "sin(1E35)",
+      36,
+      25
+    ],
+    "expected": {
+      "result": "0.9575238006716051573380273",
+      "expr": "sin(1E35)"
+    }
   }
 ]

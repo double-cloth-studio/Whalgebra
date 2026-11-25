@@ -1766,6 +1766,290 @@
       "expected": {
         "error": "[PowerFunctionTools] Complex number appear in the input."
       }
+    },
+    {
+      "description": [
+        "[power:cubic:double-root-order] 单根与二重根分别位于两侧：x^3-3x+2"
+      ],
+      "coeffs": [
+        0,
+        1,
+        0,
+        -3,
+        2
+      ],
+      "expected": {
+        "equation": "[x]^3-3[x]+2",
+        "range": [
+          "-inf",
+          "+inf"
+        ],
+        "increasingInterval": [
+          [
+            "-inf",
+            "-1"
+          ],
+          [
+            "1",
+            "+inf"
+          ]
+        ],
+        "decreasingInterval": [
+          [
+            "-1",
+            "1"
+          ]
+        ],
+        "maximumPoint": [
+          [
+            "-1",
+            "4"
+          ]
+        ],
+        "minimumPoint": [
+          [
+            "1",
+            "0"
+          ]
+        ],
+        "convexInterval": [
+          [
+            "-inf",
+            "0"
+          ]
+        ],
+        "concaveInterval": [
+          [
+            "0",
+            "+inf"
+          ]
+        ],
+        "inflectionPoint": [
+          [
+            "0",
+            "2"
+          ]
+        ],
+        "roots": [
+          "-2",
+          "1"
+        ]
+      }
+    },
+    {
+      "description": [
+        "[power:quartic:stationary-inflection] 三重根去重及导数二重根，保留驻点拐点：(x+3)(x-1)^3"
+      ],
+      "coeffs": [
+        1,
+        0,
+        -6,
+        8,
+        -3
+      ],
+      "expected": {
+        "equation": "[x]^4-6[x]^2+8[x]-3",
+        "range": [
+          "-27",
+          "+inf"
+        ],
+        "increasingInterval": [
+          [
+            "-2",
+            "+inf"
+          ]
+        ],
+        "decreasingInterval": [
+          [
+            "-inf",
+            "-2"
+          ]
+        ],
+        "maximumPoint": [
+          [
+            "null",
+            "null"
+          ]
+        ],
+        "minimumPoint": [
+          [
+            "-2",
+            "-27"
+          ]
+        ],
+        "convexInterval": [
+          [
+            "-1",
+            "1"
+          ]
+        ],
+        "concaveInterval": [
+          [
+            "-inf",
+            "-1"
+          ],
+          [
+            "1",
+            "+inf"
+          ]
+        ],
+        "inflectionPoint": [
+          [
+            "-1",
+            "-16"
+          ],
+          [
+            "1",
+            "0"
+          ]
+        ],
+        "roots": [
+          "-3",
+          "1"
+        ]
+      }
+    },
+    {
+      "description": [
+        "[power:cubic:double-root-order] 单根与二重根分别位于两侧：x^3-3x-2"
+      ],
+      "coeffs": [
+        0,
+        1,
+        0,
+        -3,
+        -2
+      ],
+      "expected": {
+        "equation": "[x]^3-3[x]-2",
+        "range": [
+          "-inf",
+          "+inf"
+        ],
+        "increasingInterval": [
+          [
+            "-inf",
+            "-1"
+          ],
+          [
+            "1",
+            "+inf"
+          ]
+        ],
+        "decreasingInterval": [
+          [
+            "-1",
+            "1"
+          ]
+        ],
+        "maximumPoint": [
+          [
+            "-1",
+            "0"
+          ]
+        ],
+        "minimumPoint": [
+          [
+            "1",
+            "-4"
+          ]
+        ],
+        "convexInterval": [
+          [
+            "-inf",
+            "0"
+          ]
+        ],
+        "concaveInterval": [
+          [
+            "0",
+            "+inf"
+          ]
+        ],
+        "inflectionPoint": [
+          [
+            "0",
+            "-2"
+          ]
+        ],
+        "roots": [
+          "2",
+          "-1"
+        ]
+      }
+    },
+    {
+      "description": [
+        "[power:quartic:stationary-inflection] 三重根去重及导数二重根，保留驻点拐点：(x-3)(x+1)^3"
+      ],
+      "coeffs": [
+        1,
+        0,
+        -6,
+        -8,
+        -3
+      ],
+      "expected": {
+        "equation": "[x]^4-6[x]^2-8[x]-3",
+        "range": [
+          "-27",
+          "+inf"
+        ],
+        "increasingInterval": [
+          [
+            "2",
+            "+inf"
+          ]
+        ],
+        "decreasingInterval": [
+          [
+            "-inf",
+            "2"
+          ]
+        ],
+        "maximumPoint": [
+          [
+            "null",
+            "null"
+          ]
+        ],
+        "minimumPoint": [
+          [
+            "2",
+            "-27"
+          ]
+        ],
+        "convexInterval": [
+          [
+            "-1",
+            "1"
+          ]
+        ],
+        "concaveInterval": [
+          [
+            "-inf",
+            "-1"
+          ],
+          [
+            "1",
+            "+inf"
+          ]
+        ],
+        "inflectionPoint": [
+          [
+            "-1",
+            "0"
+          ],
+          [
+            "1",
+            "-16"
+          ]
+        ],
+        "roots": [
+          "3",
+          "-1"
+        ]
+      }
     }
   ]
 }

@@ -235,6 +235,84 @@
       "expected": {
         "error": "[radicalFunctionTools] n can only be a positive integer."
       }
+    },
+    {
+      "description": [
+        "[radical:zero-radicand] 零的 1 次根仅返回一个零，不展开多值公式或枚举"
+      ],
+      "coeffs": [
+        "0",
+        "1"
+      ],
+      "expected": {
+        "z": "0",
+        "n": "1",
+        "formula": "0",
+        "kRange": [
+          "0",
+          "0"
+        ],
+        "numericalResults": [
+          "0"
+        ],
+        "overflow": false
+      }
+    },
+    {
+      "description": [
+        "[radical:zero-radicand] 零的 1001 次根仅返回一个零，不展开多值公式或枚举"
+      ],
+      "coeffs": [
+        "0",
+        "1001"
+      ],
+      "expected": {
+        "z": "0",
+        "n": "1001",
+        "formula": "0",
+        "kRange": [
+          "0",
+          "0"
+        ],
+        "numericalResults": [
+          "0"
+        ],
+        "overflow": false
+      }
+    },
+    {
+      "description": [
+        "[radical:zero-radicand] 零的 1E1000 次根仅返回一个零，不展开多值公式或枚举"
+      ],
+      "coeffs": [
+        "0",
+        "1E1000"
+      ],
+      "expected": {
+        "z": "0",
+        "n": "1E+1000",
+        "formula": "0",
+        "kRange": [
+          "0",
+          "0"
+        ],
+        "numericalResults": [
+          "0"
+        ],
+        "overflow": false
+      }
+    },
+    {
+      "description": [
+        "[radical:zero-invalid-index] 被开方数为零仍需验证根指数"
+      ],
+      "coeffs": [
+        "0",
+        "0"
+      ],
+      "expected": {
+        "error": "[radicalFunctionTools] n can only be a positive integer."
+      }
     }
   ]
 }

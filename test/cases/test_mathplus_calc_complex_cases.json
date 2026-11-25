@@ -160,5 +160,56 @@
       "result": "39.8892071288094566579784204205828129435173549007047985934195099359018967051175395373111335019592188486554823629847615430304012764728852058810080894435824807063148032603065428385848302331206863751848",
       "expr": "3[cdot][pi]+2[cdot]sin(3)+2![cdot]sin(3)+2![cdot]2+2![cdot](2)[cdot](2)[cdot][pi]+[e][cdot](2)[cdot]sin(3)"
     }
+  },
+  {
+    "description": [
+      "[complex:noise-chain] 复数乘法经纯实数路径保留周期噪声"
+    ],
+    "coeffs": [
+      "sin((1+[i])*(1-[i])*[pi])",
+      60,
+      25,
+      "calc",
+      "output",
+      "sin([x])"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "sin((1+[i])*(1-[i])*[pi])"
+    }
+  },
+  {
+    "description": [
+      "[complex:noise-chain] 自定义函数传参保留相位噪声"
+    ],
+    "coeffs": [
+      "f(10^35*[pi])",
+      60,
+      25,
+      "calc",
+      "output",
+      "sin([x])"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "f(10^35*[pi])"
+    }
+  },
+  {
+    "description": [
+      "[complex:noise-chain] e 的复数幂委派 exp 并传播常量噪声"
+    ],
+    "coeffs": [
+      "[e]^([pi]*[i])+1",
+      60,
+      25,
+      "calc",
+      "output",
+      "sin([x])"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "[e]^([pi]*[i])+1"
+    }
   }
 ]

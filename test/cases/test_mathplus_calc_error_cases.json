@@ -368,5 +368,70 @@
     "expected": {
       "error": "[MathPlus] input error: Function g is undefined or cyclically called."
     }
+  },
+  {
+    "description": [
+      "[error:november-regression] 10^(1E1000)"
+    ],
+    "coeffs": [
+      "10^(1E1000)",
+      60,
+      25
+    ],
+    "expected": {
+      "error": "[MathPlus] mathematical error: Result of power is too large to compute safely."
+    }
+  },
+  {
+    "description": [
+      "[error:november-regression] 0.5^(-1E1000)"
+    ],
+    "coeffs": [
+      "0.5^(-1E1000)",
+      60,
+      25
+    ],
+    "expected": {
+      "error": "[MathPlus] mathematical error: Result of power is too large to compute safely."
+    }
+  },
+  {
+    "description": [
+      "[error:november-regression] (-100001)!"
+    ],
+    "coeffs": [
+      "(-100001)!",
+      60,
+      25
+    ],
+    "expected": {
+      "error": "[MathPlus] mathematical error: Negative integer factorial undefined."
+    }
+  },
+  {
+    "description": [
+      "[error:november-regression] log(1,2)"
+    ],
+    "coeffs": [
+      "log(1,2)",
+      60,
+      25
+    ],
+    "expected": {
+      "error": "[MathPlus] mathematical error: Division by zero."
+    }
+  },
+  {
+    "description": [
+      "[error:november-regression] arth(1)"
+    ],
+    "coeffs": [
+      "arth(1)",
+      60,
+      25
+    ],
+    "expected": {
+      "error": "[MathPlus] mathematical error: Division by zero."
+    }
   }
 ]

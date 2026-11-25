@@ -1210,6 +1210,1221 @@
       "expected": {
         "error": "[StatisticsTools] Complex number appear in the inputB."
       }
+    },
+    {
+      "description": [
+        "[statistics:zero-y-domain] 全零 y：正数常量 x 不满足参数唯一性",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          2,
+          2,
+          2
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "2",
+        "sumA": "6",
+        "sum2A": "12",
+        "populationStandardDeviationA": "0",
+        "sampleStandardDeviationA": "0",
+        "maxA": "2",
+        "minA": "2",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "0",
+        "populationStandardDeviationB": "0",
+        "sampleStandardDeviationB": "0",
+        "maxB": "0",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "0",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "error",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "error",
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:zero-y-domain] 全零 y：负数常量 x 不满足参数唯一性",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          -2,
+          -2,
+          -2
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "-2",
+        "sumA": "-6",
+        "sum2A": "12",
+        "populationStandardDeviationA": "0",
+        "sampleStandardDeviationA": "0",
+        "maxA": "-2",
+        "minA": "-2",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "0",
+        "populationStandardDeviationB": "0",
+        "sampleStandardDeviationB": "0",
+        "maxB": "0",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "0",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "error",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "error",
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:zero-y-domain] 全零 y：全零 x 不满足参数唯一性",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "0",
+        "sumA": "0",
+        "sum2A": "0",
+        "populationStandardDeviationA": "0",
+        "sampleStandardDeviationA": "0",
+        "maxA": "0",
+        "minA": "0",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "0",
+        "populationStandardDeviationB": "0",
+        "sampleStandardDeviationB": "0",
+        "maxB": "0",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "0",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "error",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "error",
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:zero-y-domain] 全零 y：重复样本仅两个不同 x，二次模型秩不足",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          1,
+          1,
+          2,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "4",
+        "averageA": "1.5",
+        "sumA": "6",
+        "sum2A": "10",
+        "populationStandardDeviationA": "0.5",
+        "sampleStandardDeviationA": "0.57735026918962576451",
+        "maxA": "2",
+        "minA": "1",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "0",
+        "populationStandardDeviationB": "0",
+        "sampleStandardDeviationB": "0",
+        "maxB": "0",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "0",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "error",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "error",
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:zero-y-domain] 全零 y：两点不足以拟合二次模型",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          1,
+          2
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "2",
+        "averageA": "1.5",
+        "sumA": "3",
+        "sum2A": "5",
+        "populationStandardDeviationA": "0.5",
+        "sampleStandardDeviationA": "0.7071067811865475244",
+        "maxA": "2",
+        "minA": "1",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "0",
+        "populationStandardDeviationB": "0",
+        "sampleStandardDeviationB": "0",
+        "maxB": "0",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "0",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "error",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "error",
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:zero-y-domain] 全零 y：含零负数 x 排除对数与倒数模型",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          -1,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "0",
+        "sumA": "0",
+        "sum2A": "2",
+        "populationStandardDeviationA": "0.81649658092772603273",
+        "sampleStandardDeviationA": "1",
+        "maxA": "1",
+        "minA": "-1",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "0",
+        "populationStandardDeviationB": "0",
+        "sampleStandardDeviationB": "0",
+        "maxB": "0",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "0",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "error",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "0",
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:zero-y-domain] 全零 y：负数 x 保留倒数模型并排除对数模型",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          -3,
+          -2,
+          -1
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "-2",
+        "sumA": "-6",
+        "sum2A": "14",
+        "populationStandardDeviationA": "0.81649658092772603273",
+        "sampleStandardDeviationA": "1",
+        "maxA": "-1",
+        "minA": "-3",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "0",
+        "populationStandardDeviationB": "0",
+        "sampleStandardDeviationB": "0",
+        "maxB": "0",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "0",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "error",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "0",
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "0",
+            "0"
+          ],
+          "regressionEquation": "0",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:qr-column-scale] 对称 x 尺度 1 的精确线性关系，覆盖 QR 列缩放",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          "-1",
+          "0",
+          "1"
+        ],
+        [
+          -2,
+          0,
+          2
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "0",
+        "sumA": "0",
+        "sum2A": "2",
+        "populationStandardDeviationA": "0.81649658092772603273",
+        "sampleStandardDeviationA": "1",
+        "maxA": "1",
+        "minA": "-1",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "8",
+        "populationStandardDeviationB": "1.6329931618554520655",
+        "sampleStandardDeviationB": "2",
+        "maxB": "2",
+        "minB": "-2",
+        "dotAB": "4",
+        "dotA2B": "0",
+        "totalCovariance": "1.3333333333333333333",
+        "sampleCovariance": "2",
+        "r": "1",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "0",
+            "2"
+          ],
+          "regressionEquation": "2[x]",
+          "R2": "1",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "0",
+            "2",
+            "0"
+          ],
+          "regressionEquation": "2[x]",
+          "R2": "1",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:qr-column-scale] 对称 x 尺度 1E100 的精确线性关系，覆盖 QR 列缩放",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          "-1E100",
+          "0",
+          "1E100"
+        ],
+        [
+          -2,
+          0,
+          2
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "0",
+        "sumA": "0",
+        "sum2A": "2E+200",
+        "populationStandardDeviationA": "8.1649658092772603273E+99",
+        "sampleStandardDeviationA": "1E+100",
+        "maxA": "1E+100",
+        "minA": "-1E+100",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "8",
+        "populationStandardDeviationB": "1.6329931618554520655",
+        "sampleStandardDeviationB": "2",
+        "maxB": "2",
+        "minB": "-2",
+        "dotAB": "4E+100",
+        "dotA2B": "0",
+        "totalCovariance": "1.3333333333333333333E+100",
+        "sampleCovariance": "2E+100",
+        "r": "1",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "0",
+            "2E-100"
+          ],
+          "regressionEquation": "(2E-100)[x]",
+          "R2": "1",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "0",
+            "2E-100",
+            "0"
+          ],
+          "regressionEquation": "(2E-100)[x]",
+          "R2": "1",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:qr-column-scale] 对称 x 尺度 1E-100 的精确线性关系，覆盖 QR 列缩放",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          "-1E-100",
+          "0",
+          "1E-100"
+        ],
+        [
+          -2,
+          0,
+          2
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "3",
+        "averageA": "0",
+        "sumA": "0",
+        "sum2A": "2E-200",
+        "populationStandardDeviationA": "8.1649658092772603273E-101",
+        "sampleStandardDeviationA": "1E-100",
+        "maxA": "1E-100",
+        "minA": "-1E-100",
+        "averageB": "0",
+        "sumB": "0",
+        "sum2B": "8",
+        "populationStandardDeviationB": "1.6329931618554520655",
+        "sampleStandardDeviationB": "2",
+        "maxB": "2",
+        "minB": "-2",
+        "dotAB": "4E-100",
+        "dotA2B": "0",
+        "totalCovariance": "1.3333333333333333333E-100",
+        "sampleCovariance": "2E-100",
+        "r": "1",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": [
+            "0",
+            "2E+100"
+          ],
+          "regressionEquation": "(2E+100)[x]",
+          "R2": "1",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "0",
+            "2E+100",
+            "0"
+          ],
+          "regressionEquation": "(2E+100)[x]",
+          "R2": "1",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:qr-quadratic] y=x^2 的正交设计矩阵恢复二次项且线性 R2 为零",
+        "统计量按均值、中心矩和协方差定义独立计算；回归期望来自已知精确关系或零因变量下的定义域、样本数与设计矩阵秩。"
+      ],
+      "coeffs": [
+        [
+          -2,
+          -1,
+          0,
+          1,
+          2
+        ],
+        [
+          4,
+          1,
+          0,
+          1,
+          4
+        ]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "5",
+        "averageA": "0",
+        "sumA": "0",
+        "sum2A": "10",
+        "populationStandardDeviationA": "1.4142135623730950488",
+        "sampleStandardDeviationA": "1.581138830084189666",
+        "maxA": "2",
+        "minA": "-2",
+        "averageB": "2",
+        "sumB": "10",
+        "sum2B": "34",
+        "populationStandardDeviationB": "1.673320053068151096",
+        "sampleStandardDeviationB": "1.8708286933869706928",
+        "maxB": "4",
+        "minB": "0",
+        "dotAB": "0",
+        "dotA2B": "34",
+        "totalCovariance": "0",
+        "sampleCovariance": "0",
+        "r": "0",
+        "bestModel": "square",
+        "linear": {
+          "parameter": [
+            "2",
+            "0"
+          ],
+          "regressionEquation": "2",
+          "R2": "0",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": [
+            "0",
+            "0",
+            "1"
+          ],
+          "regressionEquation": "[x]^2",
+          "R2": "1",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": [
+            "error",
+            "error"
+          ],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
+        "[statistics:error:empty] 空数据应在统计和回归之前拒绝"
+      ],
+      "coeffs": [
+        [],
+        []
+      ],
+      "expected": {
+        "error": "[StatisticsTools] Input data cannot be empty."
+      }
     }
   ]
 }

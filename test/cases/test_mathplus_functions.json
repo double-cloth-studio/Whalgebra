@@ -1704,5 +1704,1318 @@
       "result": "3",
       "expr": "[x]+1"
     }
+  },
+  {
+    "function": "sin",
+    "args": [
+      "1E35"
+    ],
+    "description": [
+      "[sin:large-exact:36] 36 位精度下的精确 1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "0.9575238006716051573380273"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "1E35"
+    ],
+    "description": [
+      "[cos:large-exact:36] 36 位精度下的精确 1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "0.2883542459326794009417896"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "-1E35"
+    ],
+    "description": [
+      "[sin:large-exact:36] 36 位精度下的精确 -1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.9575238006716051573380273"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "-1E35"
+    ],
+    "description": [
+      "[cos:large-exact:36] 36 位精度下的精确 -1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "0.2883542459326794009417896"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "1E219"
+    ],
+    "description": [
+      "[sin:large-exact:36] 36 位精度下的精确 1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "0.6362530038512481009094074"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "1E219"
+    ],
+    "description": [
+      "[cos:large-exact:36] 36 位精度下的精确 1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.7714804696751977202783663"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "-1E219"
+    ],
+    "description": [
+      "[sin:large-exact:36] 36 位精度下的精确 -1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.6362530038512481009094074"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "-1E219"
+    ],
+    "description": [
+      "[cos:large-exact:36] 36 位精度下的精确 -1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.7714804696751977202783663"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "1E35"
+    ],
+    "description": [
+      "[sin:large-exact:220] 220 位精度下的精确 1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "0.9575238006716051573380273"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "1E35"
+    ],
+    "description": [
+      "[cos:large-exact:220] 220 位精度下的精确 1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "0.2883542459326794009417896"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "-1E35"
+    ],
+    "description": [
+      "[sin:large-exact:220] 220 位精度下的精确 -1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.9575238006716051573380273"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "-1E35"
+    ],
+    "description": [
+      "[cos:large-exact:220] 220 位精度下的精确 -1E35 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "0.2883542459326794009417896"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "1E219"
+    ],
+    "description": [
+      "[sin:large-exact:220] 220 位精度下的精确 1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "0.6362530038512481009094074"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "1E219"
+    ],
+    "description": [
+      "[cos:large-exact:220] 220 位精度下的精确 1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.7714804696751977202783663"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "-1E219"
+    ],
+    "description": [
+      "[sin:large-exact:220] 220 位精度下的精确 -1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.6362530038512481009094074"
+  },
+  {
+    "function": "cos",
+    "args": [
+      "-1E219"
+    ],
+    "description": [
+      "[cos:large-exact:220] 220 位精度下的精确 -1E219 保留非零相位",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.7714804696751977202783663"
+  },
+  {
+    "function": "sqrt",
+    "args": [
+      "4E1000"
+    ],
+    "description": [
+      "[sqrt:november-regression] 极端量级、微小差值或复数主值：4E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2E+500"
+  },
+  {
+    "function": "sqrt",
+    "args": [
+      "4E-1000"
+    ],
+    "description": [
+      "[sqrt:november-regression] 极端量级、微小差值或复数主值：4E-1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2E-500"
+  },
+  {
+    "function": "sqrt",
+    "args": [
+      "-4E1000"
+    ],
+    "description": [
+      "[sqrt:november-regression] 极端量级、微小差值或复数主值：-4E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2E+500*[i]"
+  },
+  {
+    "function": "cbrt",
+    "args": [
+      "8E1500"
+    ],
+    "description": [
+      "[cbrt:november-regression] 极端量级、微小差值或复数主值：8E1500",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2E+500"
+  },
+  {
+    "function": "cbrt",
+    "args": [
+      "-8E1500"
+    ],
+    "description": [
+      "[cbrt:november-regression] 极端量级、微小差值或复数主值：-8E1500",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-2E+500"
+  },
+  {
+    "function": "cbrt",
+    "args": [
+      "8E-1500"
+    ],
+    "description": [
+      "[cbrt:november-regression] 极端量级、微小差值或复数主值：8E-1500",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2E-500"
+  },
+  {
+    "function": "sin",
+    "args": [
+      "1E-100"
+    ],
+    "description": [
+      "[sin:november-regression] 极端量级、微小差值或复数主值：1E-100",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1E-100"
+  },
+  {
+    "function": "arctan",
+    "args": [
+      "1E-100"
+    ],
+    "description": [
+      "[arctan:november-regression] 极端量级、微小差值或复数主值：1E-100",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1E-100"
+  },
+  {
+    "function": "ln",
+    "args": [
+      "1.000000000000000000000000000001"
+    ],
+    "description": [
+      "[ln:november-regression] 极端量级、微小差值或复数主值：1.000000000000000000000000000001",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1E-30"
+  },
+  {
+    "function": "th",
+    "args": [
+      "1E10"
+    ],
+    "description": [
+      "[th:november-regression] 极端量级、微小差值或复数主值：1E10",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1"
+  },
+  {
+    "function": "th",
+    "args": [
+      "-1E10"
+    ],
+    "description": [
+      "[th:november-regression] 极端量级、微小差值或复数主值：-1E10",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-1"
+  },
+  {
+    "function": "th",
+    "args": [
+      "1E10+[i]"
+    ],
+    "description": [
+      "[th:november-regression] 极端量级、微小差值或复数主值：1E10+[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1"
+  },
+  {
+    "function": "th",
+    "args": [
+      "-1E10+[i]"
+    ],
+    "description": [
+      "[th:november-regression] 极端量级、微小差值或复数主值：-1E10+[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-1"
+  },
+  {
+    "function": "arsh",
+    "args": [
+      "-1E100"
+    ],
+    "description": [
+      "[arsh:november-regression] 极端量级、微小差值或复数主值：-1E100",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-230.9516564799645137112164"
+  },
+  {
+    "function": "arch",
+    "args": [
+      "-2"
+    ],
+    "description": [
+      "[arch:november-regression] 极端量级、微小差值或复数主值：-2",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1.316957896924816708625046+3.141592653589793238462643[i]"
+  },
+  {
+    "function": "arch",
+    "args": [
+      "-1"
+    ],
+    "description": [
+      "[arch:november-regression] 极端量级、微小差值或复数主值：-1",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "3.141592653589793238462643[i]"
+  },
+  {
+    "function": "arch",
+    "args": [
+      "-1E100"
+    ],
+    "description": [
+      "[arch:november-regression] 极端量级、微小差值或复数主值：-1E100",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "230.9516564799645137112164+3.141592653589793238462643[i]"
+  },
+  {
+    "function": "arch",
+    "args": [
+      "1-2[i]"
+    ],
+    "description": [
+      "[arch:november-regression] 极端量级、微小差值或复数主值：1-2[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1.528570919480998161272456-1.143717740402420493750675[i]"
+  },
+  {
+    "function": "arch",
+    "args": [
+      "1+2[i]"
+    ],
+    "description": [
+      "[arch:november-regression] 极端量级、微小差值或复数主值：1+2[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1.528570919480998161272456+1.143717740402420493750675[i]"
+  },
+  {
+    "function": "arth",
+    "args": [
+      "0.999999999999999999999999999999"
+    ],
+    "description": [
+      "[arth:november-regression] 极端量级、微小差值或复数主值：0.999999999999999999999999999999",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "34.88534998519065791497849"
+  },
+  {
+    "function": "arth",
+    "args": [
+      "-0.999999999999999999999999999999"
+    ],
+    "description": [
+      "[arth:november-regression] 极端量级、微小差值或复数主值：-0.999999999999999999999999999999",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-34.88534998519065791497849"
+  },
+  {
+    "function": "log",
+    "args": [
+      "1.000000000000000000000000000001",
+      "2"
+    ],
+    "description": [
+      "[log:near-one] 接近 1 的精确合法底数不能被判为除零",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "6.931471805599453094172321E+29"
+  },
+  {
+    "function": "log",
+    "args": [
+      "0.999999999999999999999999999999",
+      "2"
+    ],
+    "description": [
+      "[log:below-one] 略小于 1 的精确合法底数保留负对数",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-6.931471805599453094172321E+29"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:36] 36 位 Lanczos 系数与反射公式：0.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 30
+    },
+    "expected": "0.886226925452758013649083741671"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-10.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:36] 36 位 Lanczos 系数与反射公式：-10.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 30
+    },
+    "expected": "0.00000277212791157510213205870459158"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-2+0.125[i]"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:36] 36 位 Lanczos 系数与反射公式：-2+0.125[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 36,
+      "outputAccuracy": 30
+    },
+    "expected": "-0.415024877667894295656586762398+7.82637748864094070957934380482[i]"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:60] 60 位 Lanczos 系数与反射公式：0.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 50
+    },
+    "expected": "0.88622692545275801364908374167057259139877472806119"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-10.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:60] 60 位 Lanczos 系数与反射公式：-10.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 50
+    },
+    "expected": "0.0000027721279115751021320587045915768024616665918541487"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-2+0.125[i]"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:60] 60 位 Lanczos 系数与反射公式：-2+0.125[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 50
+    },
+    "expected": "-0.41502487766789429565658676239819583348613691073564+7.8263774886409407095793438048151577599685299093159[i]"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:120] 120 位 Lanczos 系数与反射公式：0.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 120,
+      "outputAccuracy": 100
+    },
+    "expected": "0.8862269254527580136490837416705725913987747280611935641069038949264556422955160906874753283692723327"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-10.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:120] 120 位 Lanczos 系数与反射公式：-10.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 120,
+      "outputAccuracy": 100
+    },
+    "expected": "0.000002772127911575102132058704591576802461666591854148717038862126562516535798293694156973171647372265753"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-2+0.125[i]"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:120] 120 位 Lanczos 系数与反射公式：-2+0.125[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 120,
+      "outputAccuracy": 100
+    },
+    "expected": "-0.4150248776678942956565867623981958334861369107356434016410246601474161465242214323932925020849399209+7.82637748864094070957934380481515775996852990931592277296186087612397100361430077386783697519969325[i]"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:220] 220 位 Lanczos 系数与反射公式：0.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 190
+    },
+    "expected": "0.8862269254527580136490837416705725913987747280611935641069038949264556422955160906874753283692723327081134118121412853331180764328622113012625468548013935342310188493265525614249625865144754"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-10.5"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:220] 220 位 Lanczos 系数与反射公式：-10.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 190
+    },
+    "expected": "0.000002772127911575102132058704591576802461666591854148717038862126562516535798293694156973171647372265753412915513781429902684901874159936778040574562781763210925229075252875824471058236381485954"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-2+0.125[i]"
+    ],
+    "description": [
+      "[fact:dynamic-work-acc:220] 220 位 Lanczos 系数与反射公式：-2+0.125[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 220,
+      "outputAccuracy": 190
+    },
+    "expected": "-0.4150248776678942956565867623981958334861369107356434016410246601474161465242214323932925020849399208684531522280701964751366140133922657179381130557146077747451724061224016209619495065692261+7.826377488640940709579343804815157759968529909315922772961860876123971003614300773867836975199693249920966794018329938557572981034533123939089961950277154825206844418078485825698248273741337[i]"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-0.99999999999999999999"
+    ],
+    "description": [
+      "[fact:reflection] 极点两侧和最近整数奇偶归约：-0.99999999999999999999",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "9.999999999999999999942278E+19"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-1.00000000000000000001"
+    ],
+    "description": [
+      "[fact:reflection] 极点两侧和最近整数奇偶归约：-1.00000000000000000001",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-1.000000000000000000005772E+20"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-2.00000000000000000001"
+    ],
+    "description": [
+      "[fact:reflection] 极点两侧和最近整数奇偶归约：-2.00000000000000000001",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "9.999999999999999999957722E+19"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-2.5"
+    ],
+    "description": [
+      "[fact:reflection] 极点两侧和最近整数奇偶归约：-2.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2.363271801207354703064223"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-3.5"
+    ],
+    "description": [
+      "[fact:reflection] 极点两侧和最近整数奇偶归约：-3.5",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.9453087204829418812256893"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:lanczos-boundary:40] 40 位精度跨越 Lanczos 系数集选择边界",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 40,
+      "outputAccuracy": 30
+    },
+    "expected": "0.886226925452758013649083741671"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:lanczos-boundary:41] 41 位精度跨越 Lanczos 系数集选择边界",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 41,
+      "outputAccuracy": 31
+    },
+    "expected": "0.8862269254527580136490837416706"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:lanczos-boundary:75] 75 位精度跨越 Lanczos 系数集选择边界",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 75,
+      "outputAccuracy": 65
+    },
+    "expected": "0.88622692545275801364908374167057259139877472806119356410690389493"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:lanczos-boundary:76] 76 位精度跨越 Lanczos 系数集选择边界",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 76,
+      "outputAccuracy": 66
+    },
+    "expected": "0.886226925452758013649083741670572591398774728061193564106903894926"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:lanczos-boundary:155] 155 位精度跨越 Lanczos 系数集选择边界",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 155,
+      "outputAccuracy": 145
+    },
+    "expected": "0.8862269254527580136490837416705725913987747280611935641069038949264556422955160906874753283692723327081134118121412853331180764328622113012625469"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "0.5"
+    ],
+    "description": [
+      "[fact:lanczos-boundary:156] 156 位精度跨越 Lanczos 系数集选择边界",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 156,
+      "outputAccuracy": 146
+    },
+    "expected": "0.88622692545275801364908374167057259139877472806119356410690389492645564229551609068747532836927233270811341181214128533311807643286221130126254685"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "100+100[i]"
+    ],
+    "description": [
+      "[fact:complex-reflection] 复数规模保护和负整数实部的奇偶反射：100+100[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-9.346708009464565073933035E+138+2.627217103401758883711529E+138*[i]"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-100.125+0.25[i]"
+    ],
+    "description": [
+      "[fact:complex-reflection] 复数规模保护和负整数实部的奇偶反射：-100.125+0.25[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-1.105500545709366605617183E-156+1.661829336995417669388664E-156*[i]"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "-3+0.125[i]"
+    ],
+    "description": [
+      "[fact:complex-reflection] 复数规模保护和负整数实部的奇偶反射：-3+0.125[i]",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "0.4503276429985136012477738-3.885043266633063254711686[i]"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "1000"
+    ],
+    "description": [
+      "[fact:integer-boundary] 1000! 覆盖分治求积上限及 Lanczos 大整数路径",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "4.023872600770937735437024E+2567"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "100000"
+    ],
+    "description": [
+      "[fact:integer-boundary] 100000! 覆盖分治求积上限及 Lanczos 大整数路径",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2.824229407960347874293422E+456573"
+  },
+  {
+    "function": "fact",
+    "args": [
+      "100001"
+    ],
+    "description": [
+      "[fact:integer-boundary] 100001! 覆盖分治求积上限及 Lanczos 大整数路径",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2.824257650254427477772165E+456578"
+  },
+  {
+    "function": "gamma",
+    "args": [
+      "100002"
+    ],
+    "description": [
+      "[gamma:large-integer] 大正整数通过阶乘入口计算",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2.824257650254427477772165E+456578"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "2",
+      "40000"
+    ],
+    "description": [
+      "[pow:fast-path] 完整数值快速幂、负指数或接近 1 的底数：2^40000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1.584260372573078680059736E+12041"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "2",
+      "-40000"
+    ],
+    "description": [
+      "[pow:fast-path] 完整数值快速幂、负指数或接近 1 的底数：2^-40000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "6.312093752467270350888225E-12042"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "1.00000000000000000001",
+      "1E20"
+    ],
+    "description": [
+      "[pow:fast-path] 完整数值快速幂、负指数或接近 1 的底数：1.00000000000000000001^1E20",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "2.718281828459045235346696"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "0.99999999999999999999",
+      "1E20"
+    ],
+    "description": [
+      "[pow:fast-path] 完整数值快速幂、负指数或接近 1 的底数：0.99999999999999999999^1E20",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "0.3678794411714423215936844"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "1",
+      "1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：1^1E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "-1",
+      "1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：-1^1E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "1"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "-1",
+      "-999999999999999999999"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：-1^-999999999999999999999",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-1"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "10",
+      "1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：10^1E1000"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": {
+      "error": "[MathPlus] mathematical error: Result of power is too large to compute safely."
+    }
+  },
+  {
+    "function": "pow",
+    "args": [
+      "10",
+      "-1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：10^-1E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "0"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "0.1",
+      "1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：0.1^1E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "0"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "0.1",
+      "-1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：0.1^-1E1000"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": {
+      "error": "[MathPlus] mathematical error: Result of power is too large to compute safely."
+    }
+  },
+  {
+    "function": "pow",
+    "args": [
+      "2",
+      "1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：2^1E1000"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": {
+      "error": "[MathPlus] mathematical error: Result of power is too large to compute safely."
+    }
+  },
+  {
+    "function": "pow",
+    "args": [
+      "2",
+      "-1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：2^-1E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "0"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "0.5",
+      "1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：0.5^1E1000",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "0"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "0.5",
+      "-1E1000"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：0.5^-1E1000"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": {
+      "error": "[MathPlus] mathematical error: Result of power is too large to compute safely."
+    }
+  },
+  {
+    "function": "pow",
+    "args": [
+      "-10",
+      "3"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：-10^3",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-1000"
+  },
+  {
+    "function": "pow",
+    "args": [
+      "-10",
+      "-3"
+    ],
+    "description": [
+      "[pow:scale-guard] 巨大指数前置保护与特殊底数：-10^-3",
+      "数值期望由 mpmath 1.3.0 在 600 位十进制精度下独立计算，再按本用例 outputAccuracy 舍入；巨大指数特殊分支按数学恒等式及溢出约定断言。"
+    ],
+    "calcConfig": {
+      "globalCalcAccuracy": 60,
+      "outputAccuracy": 25
+    },
+    "expected": "-0.001"
   }
 ]

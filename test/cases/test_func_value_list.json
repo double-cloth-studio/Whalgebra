@@ -6288,6 +6288,188 @@
       "expected": {
         "error": "[FuncValueListTools] Step size less than or equal to 0."
       }
+    },
+    {
+      "description": [
+        "[value-list:blank-f] 空白 f 不求值，g 继续生成"
+      ],
+      "coeffs": [
+        "  ",
+        "[x]^2",
+        0,
+        1,
+        2
+      ],
+      "expected": {
+        "varList": [
+          "0",
+          "1",
+          "2"
+        ],
+        "f": [
+          "error",
+          "error",
+          "error"
+        ],
+        "g": [
+          "0",
+          "1",
+          "4"
+        ]
+      }
+    },
+    {
+      "description": [
+        "[value-list:missing-g] g 为 null 时每行标记 error，f 继续生成"
+      ],
+      "coeffs": [
+        "[x]+1",
+        null,
+        0,
+        1,
+        2
+      ],
+      "expected": {
+        "varList": [
+          "0",
+          "1",
+          "2"
+        ],
+        "f": [
+          "1",
+          "2",
+          "3"
+        ],
+        "g": [
+          "error",
+          "error",
+          "error"
+        ]
+      }
+    },
+    {
+      "description": [
+        "[value-list:both-empty] 两个函数均缺失仍生成相同自变量行"
+      ],
+      "coeffs": [
+        "",
+        null,
+        0,
+        1,
+        1
+      ],
+      "expected": {
+        "varList": [
+          "0",
+          "1"
+        ],
+        "f": [
+          "error",
+          "error"
+        ],
+        "g": [
+          "error",
+          "error"
+        ]
+      }
+    },
+    {
+      "description": [
+        "[value-list:decimal-endpoint] 十进制步长包含终点，正负区间越过零"
+      ],
+      "coeffs": [
+        "[x]",
+        "-[x]",
+        "-0.3",
+        "0.1",
+        "0.3"
+      ],
+      "expected": {
+        "varList": [
+          "-0.3",
+          "-0.2",
+          "-0.1",
+          "0",
+          "0.1",
+          "0.2",
+          "0.3"
+        ],
+        "f": [
+          "-0.3",
+          "-0.2",
+          "-0.1",
+          "0",
+          "0.1",
+          "0.2",
+          "0.3"
+        ],
+        "g": [
+          "0.3",
+          "0.2",
+          "0.1",
+          "0",
+          "-0.1",
+          "-0.2",
+          "-0.3"
+        ]
+      }
+    },
+    {
+      "description": [
+        "[value-list:rounding-drift] 低精度下以 start+k*step 采样，避免连续加 0.6 后累计漂移"
+      ],
+      "coeffs": [
+        "[x]",
+        "1",
+        "10000",
+        "0.6",
+        "10006"
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 5,
+        "outputAccuracy": 5
+      },
+      "expected": {
+        "varList": [
+          "10000",
+          "10001",
+          "10001",
+          "10002",
+          "10002",
+          "10003",
+          "10004",
+          "10004",
+          "10005",
+          "10005",
+          "10006"
+        ],
+        "f": [
+          "10000",
+          "10001",
+          "10001",
+          "10002",
+          "10002",
+          "10003",
+          "10004",
+          "10004",
+          "10005",
+          "10005",
+          "10006"
+        ],
+        "g": [
+          "1",
+          "1",
+          "1",
+          "1",
+          "1",
+          "1",
+          "1",
+          "1",
+          "1",
+          "1",
+          "1"
+        ]
+      }
     }
   ]
 }
