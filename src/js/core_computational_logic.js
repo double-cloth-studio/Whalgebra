@@ -2389,10 +2389,53 @@
         }
 
         /**
+         * 在输入的工作精度下同时计算实数双曲正弦和双曲余弦。
+         * @private
+         * @param {BigNumber} x - 实数自变量。
+         * @returns {[BigNumber, BigNumber]} 依次为 sinh(x) 和 cosh(x)。
+         */
+        static _realSinhCosh(x) {
+            const acc = x.acc;
+            const one = new BigNumber(1n, {acc});
+            const mag = BigNumber.getMag(x);
+            // 由 |x| < 10^(mag+1) 可知，极小时平方修正低于工作精度，也无需构造可能下溢的 x²。
+            if (2 * (mag + 1) <= -acc) {
+                return [x, one];
+            }
+
+            if (mag < -1) {
+                const square = MathPlus.realTimes(x, x);
+                const minMag = mag - acc - 1;
+                let sinh = x;
+                let term = x;
+                let i = 1;
+                // 相邻项同号，每次至少缩小两个数量级，按 sinh 的相对精度停止。
+                while (BigNumber.getMag(term) > minMag) {
+                    term = MathPlus.realDivide(
+                        MathPlus.realTimes(term, square),
+                        new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {acc})
+                    );
+                    sinh = MathPlus.realPlus(sinh, term);
+                    i++;
+                }
+                const cosh = MathPlus.sqrt(MathPlus.realPlus(one, MathPlus.realTimes(sinh, sinh))).re;
+                return [sinh, cosh];
+            }
+
+            const negative = x.isNegative();
+            const exp = MathPlus.exp(negative ? MathPlus.oppositeNumber(x) : x).re;
+            const inverse = MathPlus.realDivide(one, exp);
+            const half = new BigNumber(5n, {pow: -1, acc});
+            const sinh = MathPlus.realTimes(half, MathPlus.realMinus(exp, inverse));
+            const cosh = MathPlus.realTimes(half, MathPlus.realPlus(exp, inverse));
+            return [negative ? MathPlus.oppositeNumber(sinh) : sinh, cosh];
+        }
+
+        /**
          * 计算一个数的正弦。
          * - 该方法能够处理实数和复数输入，并返回主值。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 以弧度表示的实数或复数角；
-         *   实数先按周期与象限归约以保持精度，复数按指数恒等式计算。
+         *   实数先按周期与象限归约，复数分别计算实部和虚部。
          * @returns {ComplexNumber} 代表 sin(x) 结果的 ComplexNumber 实例。
          */
         static sin(x) {
@@ -2461,13 +2504,12 @@
                 }));
             }
 
-            // --- 输入为复数 ---
-            // sin(z) = (e^(iz) - e^(-iz)) / (2i)
-            const mid = MathPlus.exp([MathPlus.oppositeNumber(workInput.im), workInput.re]);
-            return new ComplexNumber(MathPlus.divide(
-                MathPlus.minus(mid, MathPlus.divide([0, 1n, workAcc], mid)),
-                new ComplexNumber([0n, 2n], {acc: workAcc})
-            ), {acc: acc});
+            // sin(a+bi) = sin(a)cosh(b) + i cos(a)sinh(b)。
+            const [sinh, cosh] = MathPlus._realSinhCosh(workInput.im);
+            return new ComplexNumber([
+                MathPlus.realTimes(MathPlus.sin(workInput.re).re, cosh),
+                MathPlus.realTimes(MathPlus.cos(workInput.re).re, sinh)
+            ], {acc});
         }
 
         /**
@@ -2536,9 +2578,9 @@
         /**
          * 计算 x 的余弦。
          * - 对于实数，使用范围缩减和泰勒级数进行高精度计算，并返回主值。
-         * - 对于复数 z，使用欧拉公式 cos(z) = (e^(iz) + e^(-iz)) / 2 进行计算。
+         * - 对于复数 a+bi，使用 cos(a)cosh(b) - i sin(a)sinh(b)。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 以弧度表示的实数或复数角；
-         *   实数使用范围缩减，复数使用欧拉公式，输入精度决定级数停止阈值。
+         *   实数使用范围缩减，复数分别计算实部和虚部，输入精度决定级数停止阈值。
          * @returns {ComplexNumber} 代表 cos(x) 结果的 ComplexNumber 实例。
          * @throws {Error} 如果内部计算未能收敛。
          */
@@ -2612,13 +2654,12 @@
                 return Public.zeroCorrect(res);
             }
 
-            // --- 输入为复数 ---
-            // cos(z) = (e^(iz) + e^(-iz)) / 2
-            const mid = MathPlus.exp([MathPlus.oppositeNumber(workInput.im), workInput.re]);
-            return new ComplexNumber(MathPlus.divide(
-                MathPlus.plus(mid, MathPlus.divide([0, 1n, workAcc], mid)),
-                [0, 2n, workAcc]
-            ), {acc: acc});
+            // cos(a+bi) = cos(a)cosh(b) - i sin(a)sinh(b)。
+            const [sinh, cosh] = MathPlus._realSinhCosh(workInput.im);
+            return new ComplexNumber([
+                MathPlus.realTimes(MathPlus.cos(workInput.re).re, cosh),
+                MathPlus.oppositeNumber(MathPlus.realTimes(MathPlus.sin(workInput.re).re, sinh))
+            ], {acc});
         }
 
         /**
@@ -2761,21 +2802,24 @@
 
         /**
          * 计算 x 的双曲正弦。
-         * - 该方法基于双曲正弦的指数定义：sinh(x) = (e^x - e^-x) / 2。
-         * - 能够自动处理实数和复数输入。
-         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数自变量；按
-         *   `(exp(x) - exp(-x)) / 2` 计算，较大实部可能触发指数结果规模保护。
+         * - 对于复数 a+bi，使用 sinh(a)cos(b) + i cosh(a)sin(b)。
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数自变量；
+         *   较大实部可能触发指数结果规模保护。
          * @returns {ComplexNumber} 代表 sinh(x) 结果的 ComplexNumber 实例。
          */
         static sh(x) {
             const input = new ComplexNumber(x);
             const acc = input.acc;
-            const mid = MathPlus.exp(input);
+            const workInput = new ComplexNumber(input, {acc: acc + 6});
+            const [sinh, cosh] = MathPlus._realSinhCosh(workInput.re);
 
-            return MathPlus.divide(
-                MathPlus.minus(mid, MathPlus.divide([0, 1n, acc], mid)),
-                [0, 2n, acc]
-            );
+            if (input.onlyReal) {
+                return new ComplexNumber(sinh, {acc});
+            }
+            return new ComplexNumber([
+                MathPlus.realTimes(sinh, MathPlus.cos(workInput.im).re),
+                MathPlus.realTimes(cosh, MathPlus.sin(workInput.im).re)
+            ], {acc});
         }
 
         /**
@@ -2807,22 +2851,25 @@
 
         /**
          * 计算 x 的双曲余弦。
-         * - 该方法基于双曲余弦的指数定义：cosh(x) = (e^x + e^-x) / 2。
-         * - 能够自动处理实数和复数输入。
+         * - 对于复数 a+bi，使用 cosh(a)cos(b) + i sinh(a)sin(b)。
          * @alias cosh
-         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数自变量；按
-         *   `(exp(x) + exp(-x)) / 2` 计算，结果遵循复指数的周期性。
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 实数或复数自变量；
+         *   较大实部可能触发指数结果规模保护。
          * @returns {ComplexNumber} 代表 cosh(x) 结果的 ComplexNumber 实例。
          */
         static ch(x) {
             const input = new ComplexNumber(x);
             const acc = input.acc;
-            const mid = MathPlus.exp(input);
+            const workInput = new ComplexNumber(input, {acc: acc + 6});
+            const [sinh, cosh] = MathPlus._realSinhCosh(workInput.re);
 
-            return MathPlus.divide(
-                MathPlus.plus(mid, MathPlus.divide([0, 1n, acc], mid)),
-                [0, 2n, acc]
-            );
+            if (input.onlyReal) {
+                return new ComplexNumber(cosh, {acc});
+            }
+            return new ComplexNumber([
+                MathPlus.realTimes(cosh, MathPlus.cos(workInput.im).re),
+                MathPlus.realTimes(sinh, MathPlus.sin(workInput.im).re)
+            ], {acc});
         }
 
         /**
