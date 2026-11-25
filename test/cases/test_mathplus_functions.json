@@ -2200,6 +2200,38 @@
     }
   },
   {
+    "description": [
+      "[calc] 绝对值末尾的隐式乘法分母在竖线前闭合"
+    ],
+    "function": "calc",
+    "args": [
+      "|1/2[x]|",
+      {
+        "unknown": "-2"
+      }
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "|1/(2[cdot][x])|"
+    }
+  },
+  {
+    "description": [
+      "[calc] 绝对值后的加法保持在隐式乘法分母之外"
+    ],
+    "function": "calc",
+    "args": [
+      "|1/2[x]|+1",
+      {
+        "unknown": "-2"
+      }
+    ],
+    "expected": {
+      "result": "1.25",
+      "expr": "|1/(2[cdot][x])|+1"
+    }
+  },
+  {
     "function": "sin",
     "args": [
       "1E35"

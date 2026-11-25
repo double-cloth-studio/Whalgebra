@@ -5343,6 +5343,7 @@
                         const currentToken = input[i];
                         const tokenInfo = Public.getTokenInfo(currentToken);
                         let currentPush = currentToken;
+                        let closesAbsoluteValue = false;
 
                         if (tokenInfo.isPrivate) {
                             // 像 'log' 这样的二元前缀函数后面必须跟 '('。
@@ -5433,7 +5434,7 @@
                                 !['front', 'middle'].includes(lastTokenInfo.funcPlace) &&
                                 !['(', ','].includes(lastTokenInfo.token)
                             ) {
-                                output.push('|');
+                                closesAbsoluteValue = true;
                                 currentPush = ')';
                                 kh -= 1;
                                 absKhStack.pop();
@@ -5508,6 +5509,10 @@
                             tempBracketIdx = -1;
                         }
 
+                        // 绝对值内的隐式乘法先补全右括号，再写入闭合竖线。
+                        if (closesAbsoluteValue) {
+                            output.push('|');
+                        }
                         if (i + 1 !== input.length) {
                             lastTokenInfo = Public.getTokenInfo(currentPush);
                         } else {
@@ -8767,9 +8772,13 @@
                     try {
                         this._ensureWorker();
 
-                        // 等待当前环境同步；等待期间若发生重启，继续等待新一轮同步。
+                        // 等待取消探测及环境同步，避免向即将重启的 Worker 派发新任务。
                         let initPromise;
                         do {
+                            if (this._cancelPromise) {
+                                // 探测错误由取消调用方处理，派发仍以当前重启和同步状态为准。
+                                await this._cancelPromise.catch(() => {});
+                            }
                             if (this._restartPromise) {
                                 try {
                                     await this._restartPromise;
@@ -8785,7 +8794,7 @@
                                     throw error;
                                 }
                             });
-                        } while (this._restartPromise || initPromise !== this._initPromise);
+                        } while (this._cancelPromise || this._restartPromise || initPromise !== this._initPromise);
 
                         if (cancellable && cancelId !== this._cancelId) {
                             const error = new Error('[WorkerTools] Task was cancelled before dispatch.');
@@ -11881,21 +11890,20 @@
                     this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
                     this._syncContainerSize();
 
+                    // 恢复视口后再执行定位，使 nearest 基于暂停前的锚点判断可见性。
+                    const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
+                    const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
+                    const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
+                    this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
+
                     this._awaitingVisible = false;
                     this._bindEvents();
                     const pendingScroll = this._takePendingScroll();
                     if (pendingScroll) {
                         const {index, behavior, block} = pendingScroll;
                         this.scrollToIndex(index, {behavior, block});
-                        if (!this._isSmoothScrolling) {
-                            this._render();
-                            this._scheduleRender();
-                        }
-                    } else {
-                        const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
-                        const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
-                        const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
-                        this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
+                    }
+                    if (!this._isSmoothScrolling) {
                         this._render();
                         this._scheduleRender();
                     }

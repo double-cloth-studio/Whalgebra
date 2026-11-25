@@ -2782,21 +2782,20 @@
             this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
             this._syncContainerSize();
 
+            // 恢复视口后再执行定位，使 nearest 基于暂停前的锚点判断可见性。
+            const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
+            const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
+            const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
+            this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
+
             this._awaitingVisible = false;
             this._bindEvents();
             const pendingScroll = this._takePendingScroll();
             if (pendingScroll) {
                 const {index, behavior, block} = pendingScroll;
                 this.scrollToIndex(index, {behavior, block});
-                if (!this._isSmoothScrolling) {
-                    this._render();
-                    this._scheduleRender();
-                }
-            } else {
-                const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
-                const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
-                const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
-                this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
+            }
+            if (!this._isSmoothScrolling) {
                 this._render();
                 this._scheduleRender();
             }

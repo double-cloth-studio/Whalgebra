@@ -3865,6 +3865,7 @@
                 const currentToken = input[i];
                 const tokenInfo = Public.getTokenInfo(currentToken);
                 let currentPush = currentToken;
+                let closesAbsoluteValue = false;
 
                 if (tokenInfo.isPrivate) {
                     // 像 'log' 这样的二元前缀函数后面必须跟 '('。
@@ -3955,7 +3956,7 @@
                         !['front', 'middle'].includes(lastTokenInfo.funcPlace) &&
                         !['(', ','].includes(lastTokenInfo.token)
                     ) {
-                        output.push('|');
+                        closesAbsoluteValue = true;
                         currentPush = ')';
                         kh -= 1;
                         absKhStack.pop();
@@ -4030,6 +4031,10 @@
                     tempBracketIdx = -1;
                 }
 
+                // 绝对值内的隐式乘法先补全右括号，再写入闭合竖线。
+                if (closesAbsoluteValue) {
+                    output.push('|');
+                }
                 if (i + 1 !== input.length) {
                     lastTokenInfo = Public.getTokenInfo(currentPush);
                 } else {

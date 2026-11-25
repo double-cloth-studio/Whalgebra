@@ -65,6 +65,39 @@ export async function runLifecycleRegressions() {
         check(table.f[0] === '5' && table.g[0] === '4', '取消后的数表计算失败');
     });
 
+    await run('取消探测超时后向新 Worker 派发计算', async () => {
+        const worker = WorkerTools._mathWorker;
+        const oldThread = worker._worker;
+        const exec = worker.exec;
+        let dispatchedToOldThread = false;
+        worker.exec = async function (name, options) {
+            if (name === 'getCalcAccuracy') {
+                // 让新请求先进入派发流程，再模拟阻塞的 Worker 未响应探测。
+                await afterFrames(2);
+                const error = new Error('注入的取消探测超时');
+                error.name = 'TimeoutError';
+                throw error;
+            }
+            if (name === 'exec' && this._worker === oldThread) {
+                dispatchedToOldThread = true;
+            }
+            return exec.call(this, name, options);
+        };
+        try {
+            const oldRequest = WorkerTools.exec('1+1');
+            const cancellation = WorkerTools.cancelWorker();
+            const newRequest = WorkerTools.exec('2+3');
+            const [old, cancelled, fresh] = await Promise.allSettled([oldRequest, cancellation, newRequest]);
+            check(old.reason?.name === 'CancellationError', '取消前的请求未作废');
+            check(!dispatchedToOldThread, '取消窗口内把新请求派发给了旧 Worker');
+            check(cancelled.status === 'fulfilled' && worker._worker !== oldThread && WorkerTools.isReady,
+                '探测超时后 Worker 未恢复');
+            check(String(fresh.value?.result) === '5', '重启后的新请求未返回正确结果');
+        } finally {
+            worker.exec = exec;
+        }
+    });
+
     await run('重启失败不再次重启，取消等待同一次失败', async () => {
         const worker = WorkerTools._mathWorker;
         const restart = worker.restart;
@@ -162,6 +195,22 @@ export async function runLifecycleRegressions() {
             container.style.display = '';
             await afterFrames();
             check(container.scrollTop === 3900, '底部定位失败，scrollTop=' + container.scrollTop);
+        } finally { dispose(); }
+    });
+
+    await run('恢复后最近定位保留已可见行的原位置', async () => {
+        const {container, list, dispose} = makeList();
+        try {
+            container.scrollTop = 1205;
+            list.pause();
+            container.style.display = 'none';
+            list.resume();
+            list.scrollToIndex(62, {block: 'nearest'});
+            container.style.display = '';
+            container.scrollTop = 0;
+            await afterFrames();
+            check(container.scrollTop === 1205 && list.getMetrics().pendingScrollQueue.length === 0,
+                '已可见的行改变了恢复位置，scrollTop=' + container.scrollTop);
         } finally { dispose(); }
     });
 

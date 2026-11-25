@@ -916,9 +916,13 @@
                     try {
                         this._ensureWorker();
 
-                        // 等待当前环境同步；等待期间若发生重启，继续等待新一轮同步。
+                        // 等待取消探测及环境同步，避免向即将重启的 Worker 派发新任务。
                         let initPromise;
                         do {
+                            if (this._cancelPromise) {
+                                // 探测错误由取消调用方处理，派发仍以当前重启和同步状态为准。
+                                await this._cancelPromise.catch(() => {});
+                            }
                             if (this._restartPromise) {
                                 try {
                                     await this._restartPromise;
@@ -934,7 +938,7 @@
                                     throw error;
                                 }
                             });
-                        } while (this._restartPromise || initPromise !== this._initPromise);
+                        } while (this._cancelPromise || this._restartPromise || initPromise !== this._initPromise);
 
                         if (cancellable && cancelId !== this._cancelId) {
                             const error = new Error('[WorkerTools] Task was cancelled before dispatch.');
