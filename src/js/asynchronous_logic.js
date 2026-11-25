@@ -34,47 +34,58 @@
                 _nextTaskId = 0n;
 
                 /**
-                 * 用于重启 Worker 的原始配置。
-                 * @type {{callableFunctions: Object<string, Function>,
-                 *   dependencies?: Array<{name: string, value: *}>, injectCancelSignal?: boolean}|null}
+                 * 构造时注册的可调用函数名。
+                 * @type {Set<string>}
                  * @private
                  */
-                _config = null;
+                _callableNames;
 
                 /**
                  * 首次初始化后缓存的 Worker 脚本。
-                 * @type {string|null}
+                 * @type {string}
                  * @private
                  */
-                _workerCode = null;
+                _workerCode;
 
                 /**
                  * 创建并初始化 Worker。
-                 * @param {object} config - 创建脚本所需的完整配置；构造器会保存它以供 `restart()` 重用，
-                 *   因此调用后不应再原地修改其中的函数表或依赖数组。
+                 * @param {object} config - 创建脚本所需的完整配置；构造时固化脚本及可调用函数名。
                  * @param {Object<string, Function>} config.callableFunctions - 暴露给主线程调用的函数映射；键是
-                 *   `exec()` 使用的公开名称，值必须是可序列化的函数。Worker 会在原位置参数末尾追加
+                 *   `exec()` 使用的公开名称，值必须是可序列化的函数。启用取消信号时，Worker 在原位置参数末尾追加
                  *   `{isCancelled:function():boolean, throwIfCancelled:function():void}`：前者查询任务取消状态，
                  *   后者在已取消时抛出 `CancellationError`，长循环可在安全检查点主动调用。
                  * @param {Array<{name: string, value: *}>} [config.dependencies=[]] - 按顺序注入 Worker 顶层作用域的
                  *   依赖；`name` 必须是合法且不冲突的 JavaScript 标识符，`value` 可为受支持的类、函数、
                  *   BigInt、数组或普通对象，但不能包含循环引用、DOM 节点或闭包捕获的外部状态。
+                 * @param {boolean} [config.injectCancelSignal=false] - 是否追加取消信号。
                  * @throws {Error} 配置或函数定义无效时抛出。
                  */
                 constructor(config) {
                     if (!config || typeof config !== 'object' || Array.isArray(config)) {
                         throw new Error('[SyncWorker] config must be a non-null object.');
                     }
-                    if (!config.callableFunctions || typeof config.callableFunctions !== 'object' || Array.isArray(config.callableFunctions) || Object.keys(config.callableFunctions).length === 0) {
+                    const {callableFunctions, dependencies = [], injectCancelSignal = false} = config;
+                    if (!callableFunctions || typeof callableFunctions !== 'object' || Array.isArray(callableFunctions)) {
                         throw new Error('[SyncWorker] callableFunctions must be a non-empty object.');
                     }
-                    for (const [name, func] of Object.entries(config.callableFunctions)) {
+                    const functions = Object.entries(callableFunctions);
+                    if (functions.length === 0) {
+                        throw new Error('[SyncWorker] callableFunctions must be a non-empty object.');
+                    }
+                    for (const [name, func] of functions) {
                         if (typeof func !== 'function') {
                             throw new Error(`[SyncWorker] callableFunctions['${name}'] must be a function.`);
                         }
                     }
-                    this._config = config;
-                    // 保存原始配置，使同一实例可以在终止后重新生成等价 Worker。
+                    if (!Array.isArray(dependencies)) {
+                        throw new Error('[SyncWorker] dependencies must be an array.');
+                    }
+                    if (typeof injectCancelSignal !== 'boolean') {
+                        throw new Error('[SyncWorker] injectCancelSignal must be a boolean.');
+                    }
+
+                    this._callableNames = new Set(functions.map(([name]) => name));
+                    this._workerCode = this._generateWorkerCode(functions, dependencies, injectCancelSignal);
                     this._init();
                 }
 
@@ -105,22 +116,8 @@
                  * @returns {void}
                  */
                 _init() {
-                    const {callableFunctions, dependencies = [], injectCancelSignal = false} = this._config;
-                    if (!Array.isArray(dependencies)) {
-                        throw new Error('[SyncWorker] dependencies must be an array.');
-                    }
-                    if (typeof injectCancelSignal !== 'boolean') {
-                        throw new Error('[SyncWorker] injectCancelSignal must be a boolean.');
-                    }
-
-                    // 缓存脚本，避免重启时受外部配置变更影响。
-                    const workerCode = this._workerCode ??= this._generateWorkerCode(
-                        callableFunctions,
-                        dependencies,
-                        injectCancelSignal
-                    );
                     // Blob URL 把动态生成的源码交给 Worker；创建失败或终止时必须撤销 URL。
-                    const blob = new Blob([workerCode], {type: 'application/javascript'});
+                    const blob = new Blob([this._workerCode], {type: 'application/javascript'});
                     const workerUrl = URL.createObjectURL(blob);
 
                     try {
@@ -231,7 +228,7 @@
                 /**
                  * 将函数和依赖项序列化为 Worker 脚本。
                  *
-                 * @param {Object<string, Function>} funcs - 名称到函数实现的映射；名称成为 Worker 消息协议中的
+                 * @param {Array<[string, Function]>} funcs - 函数名与实现的条目；名称成为 Worker 消息协议中的
                  *   `functionName`，实现会被转换为源码，不能依赖未列入 `deps` 的词法闭包。
                  * @param {Array<{name: string, value: *}>} deps - 顶层依赖声明，按数组顺序生成源码；后项可引用
                  *   已生成的前项。名称重复、非法或值不可序列化时应在创建 Worker 前失败。
@@ -432,7 +429,7 @@
     /* Store all callable functions in an object inside the Worker for searching by name. */
     const availableFunctions = Object.create(null);
 `;
-                    for (const [key, func] of Object.entries(funcs)) {
+                    for (const [key, func] of funcs) {
                         try {
                             code += `    availableFunctions[${JSON.stringify(key)}] = ${serializeFunction(func, false)};\n`;
                         } catch (e) {
@@ -650,7 +647,7 @@
                         throw new Error('[SyncWorker] functionName must be a non-empty string.');
                     }
 
-                    if (!Object.hasOwn(this._config.callableFunctions, functionName)) {
+                    if (!this._callableNames.has(functionName)) {
                         const error = new Error(`The function '${functionName}' is not defined in the Worker.`);
                         error.name = 'FunctionNotFoundError';
                         throw error;
@@ -911,6 +908,7 @@
                  * @param {boolean} [options.cancellable=true] - 配置同步设为 false，避免被业务软取消丢弃。
                  * @returns {Promise<T>} 目标 Worker 方法的原始结果；Worker 意外终止或任务超时会触发重启，
                  *   恢复后仍以本次错误拒绝；业务计算错误和主动终止、取消直接以原错误拒绝。
+                 *   等待中的重启失败时，以该错误拒绝本次任务。
                  */
                 static async _dispatch(funcName, args = [], {cancellable = true} = {}) {
                     const cancelId = this._cancelId;
@@ -921,12 +919,17 @@
                         let initPromise;
                         do {
                             if (this._restartPromise) {
-                                await this._restartPromise;
+                                try {
+                                    await this._restartPromise;
+                                } catch (error) {
+                                    // 直接拒绝本次调用，避免等待同一次重启的请求再次发起恢复。
+                                    return Promise.reject(error);
+                                }
                             }
                             initPromise = this._initPromise;
                             await initPromise.catch(error => {
                                 // 旧同步的失败由新一轮同步接替；当前同步失败交给外层恢复逻辑。
-                                if (initPromise === this._initPromise) {
+                                if (!this._restartPromise && initPromise === this._initPromise) {
                                     throw error;
                                 }
                             });
@@ -1045,15 +1048,18 @@
                  * 软取消所有正在执行或等待派发的业务任务，保留环境初始化。
                  * 若 Worker 在宽限期内仍无法响应轻量查询，再重启以中断同步长计算。
                  *
-                 * @returns {Promise<void>} Worker 恢复响应或完成重启后解析。
+                 * @returns {Promise<void>} 就绪的 Worker 恢复响应或当前重启完成后解析；首次同步期间仅作废旧任务。
                  */
                 static async cancelWorker() {
                     this._cancelId = Symbol();
+                    if (this._restartPromise) {
+                        return this._restartPromise;
+                    }
                     if (!this._mathWorker || this._mathWorker.isTerminated) {
                         return;
                     }
 
-                    if (this._restartPromise || this._readyStateId !== this._stateId) {
+                    if (this._readyStateId !== this._stateId) {
                         return;
                     }
 

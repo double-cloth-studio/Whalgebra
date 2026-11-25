@@ -1849,6 +1849,7 @@
             this._resumeRAF = null;
             this._resumeRO = null;
             this._resumeFallbackTimer = null;
+            this._awaitingVisible = false;
             this._measured = false;
             this._needsRemeasure = false;
             this._remeasurePending = false;
@@ -1856,9 +1857,9 @@
             this._rendering = false;
 
             /**
-             * PAUSED 状态下排队等待的 scrollToIndex 调用记录。
+             * 暂停和等待恢复期间排队的滚动定位请求。
              *
-             * @type {Array<{index: number, behavior: string}>}
+             * @type {Array<{index: number, behavior: string, block: string}>}
              */
             this._pendingScrollQueue = [];
         }
@@ -2141,6 +2142,13 @@
                 // 测量期间固定 `overflowY`，避免容器宽度变化影响折行。
                 this.container.style.overflowY = willHaveScrollbar ? 'scroll' : 'hidden';
 
+                // 准备样本时保留旧窗口，渲染回调抛错后仍可继续滚动。
+                const sampleCount = Math.min(VirtualScroll._MEASURE_SAMPLES, this.totalCount);
+                for (let i = 0; i < sampleCount; i++) {
+                    const result = this.renderItem(i, this.data);
+                    tempEls.push(this._nodePool.toElement(result, true));
+                }
+
                 this._unbindScroll();
                 this._recycleRenderedNodes();
                 this.container.replaceChildren();
@@ -2156,13 +2164,8 @@
                     return;
                 }
 
-                const sampleCount = Math.min(VirtualScroll._MEASURE_SAMPLES, this.totalCount);
-
-                for (let i = 0; i < sampleCount; i++) {
-                    const result = this.renderItem(i, this.data);
-                    const el = this._nodePool.toElement(result, true);
+                for (const el of tempEls) {
                     this.container.appendChild(el);
-                    tempEls.push(el);
                 }
 
                 void this.container.offsetHeight;
@@ -2411,6 +2414,15 @@
                 const newW = this.container.clientWidth;
                 const newH = this.container.clientHeight;
 
+                if (this._awaitingVisible) {
+                    // 无 ResizeObserver 时，轮询超时后仍可由窗口 resize 恢复。
+                    if (!this._resumeRO && this._resumeRAF === null && this._resumeFallbackTimer === null &&
+                        newW > 0 && newH > 0) {
+                        this._resumeWithRemeasure();
+                    }
+                    return;
+                }
+
                 // 隐藏或瞬态零尺寸时不测量，保留标记以便恢复到相同尺寸时也能重测。
                 if (newW <= 0 || newH <= 0) {
                     if (this._remeasureOnResize) {
@@ -2619,6 +2631,11 @@
                     } else if (this._needsRemeasure) {
                         console.warn('[VirtualScroll] Item height is still 0 after 6 measurements; waiting for the next resize.');
                     }
+                } catch (error) {
+                    console.error('[VirtualScroll] Failed to remeasure item height:', error);
+                    if (this._sm.is(VirtualScroll.State.RUNNING) && !this._awaitingVisible) {
+                        this._bindScroll();
+                    }
                 } finally {
                     this._remeasurePending = this._remeasureRAF !== null;
                 }
@@ -2632,14 +2649,12 @@
          *
          * @private
          *
-         * @param {{index: number, behavior: string, block?: string} | null} pendingScroll
-         *   暂停期间最后一次 scrollToIndex 请求。
          * @returns {void}
          */
-        _resumeWithRemeasure(pendingScroll = null) {
+        _resumeWithRemeasure() {
             this._cancelAllRAF();
-            this._cancelSmoothScrollSilent();
             this._unbindScroll();
+            this._awaitingVisible = true;
 
             if (this.container.clientWidth <= 0 || this.container.clientHeight <= 0) {
                 // 容器恢复非零后，等待最多 6 帧确认布局尺寸稳定，再执行重测。
@@ -2672,7 +2687,7 @@
 
                         // 稳定期又被重新隐藏，退回被动等待。
                         if (width <= 0 || height <= 0) {
-                            this._resumeWithRemeasure(pendingScroll);
+                            this._resumeWithRemeasure();
                             return;
                         }
 
@@ -2684,7 +2699,7 @@
                             return;
                         }
 
-                        this._resumeWithRemeasure(pendingScroll);
+                        this._resumeWithRemeasure();
                     };
 
                     this._resumeRAF = requestAnimationFrame(step);
@@ -2744,48 +2759,48 @@
                 return;
             }
 
-            this._pendingScrollQueue = [];
-
             const savedAnchorIndex = this._anchorIndex;
             const savedAnchorRatio = this._anchorRatio;
 
-            // 不再提前 reset _heightMapper，保留已有高度供 _doMeasure 准确预判滚动条显隐。
-            this._doMeasure();
-            this._measured = true;
+            let measurementFailed = false;
+            try {
+                this._doMeasure();
+                this._measured = true;
+            } catch (error) {
+                // 采样失败时沿用已有行高和窗口，后续尺寸变化时可以再次重测。
+                measurementFailed = true;
+                console.error('[VirtualScroll] Failed to remeasure item height on resume:', error);
+            }
 
             this._syncContainerSize();
             this._calcBufferSize(true);
-
-            this._buildDOM();
+            if (!measurementFailed) {
+                this._buildDOM();
+            }
 
             const clientHeight = this.container.clientHeight;
             this._heightMapper.update(this.totalCount, this.itemHeight, clientHeight);
             this._syncContainerSize();
 
+            this._awaitingVisible = false;
+            this._bindEvents();
+            const pendingScroll = this._takePendingScroll();
             if (pendingScroll) {
                 const {index, behavior, block} = pendingScroll;
                 this.scrollToIndex(index, {behavior, block});
-                this._bindEvents();
-                if (this._needsRemeasure) {
-                    this._scheduleRemeasure();
-                }
-
                 if (!this._isSmoothScrolling) {
                     this._render();
                     this._scheduleRender();
                 }
-                return;
+            } else {
+                const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
+                const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
+                const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
+                this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
+                this._render();
+                this._scheduleRender();
             }
-
-            const exactVirtScroll = (savedAnchorIndex + savedAnchorRatio) * this.itemHeight;
-            const maxVirt = Math.max(0, this._heightMapper.virtualHeight - clientHeight);
-            const clampedVirt = Math.min(Math.max(0, exactVirtScroll), maxVirt);
-            this.container.scrollTop = this._heightMapper.virtualToPhysical(clampedVirt);
-
-            this._bindEvents();
-            this._render();
-            this._scheduleRender();
-            if (this._needsRemeasure) {
+            if (!measurementFailed && this._needsRemeasure) {
                 this._scheduleRemeasure();
             }
         }
@@ -2842,6 +2857,7 @@
          * @returns {void}
          */
         _cancelResumeRAF() {
+            this._awaitingVisible = false;
             if (this._resumeRAF !== null) {
                 cancelAnimationFrame(this._resumeRAF);
                 this._resumeRAF = null;
@@ -3381,7 +3397,7 @@
             const normalizedLength = this._normalizeLength(length, 'load');
 
             try {
-                const wasPaused = this._sm.is(VirtualScroll.State.PAUSED);
+                const wasPaused = this._sm.is(VirtualScroll.State.PAUSED) || this._awaitingVisible;
                 const wasMeasured = this._measured;
 
                 this._unbindScroll();
@@ -3557,7 +3573,9 @@
                 return;
             }
 
-            this._updateAnchor();
+            if (!this._awaitingVisible) {
+                this._updateAnchor();
+            }
             this._unbindScroll();
             this._cancelAllRAF();
             this._sm.transition(VirtualScroll.State.PAUSED);
@@ -3566,12 +3584,12 @@
         /**
          * 从暂停状态恢复虚拟滚动。
          * - 仅在 `PAUSED` 状态下有效，其他状态下只打印警告。
-         * - 若暂停期间有排队的 `scrollToIndex()` 请求，恢复后将执行最后一条，
+         * - 暂停及等待容器恢复可测量期间的滚动请求会排队，恢复后执行最后一条，
          *   其余请求被丢弃（打印警告）。
          *
          * @param {object} [options={}] - 恢复时的测量策略。
-         * @param {boolean} [options.remeasure=true] - 是否在重新绑定滚动监听后测量当前行高；`true`
-         *   会先保存最后一条排队定位请求，待测量完成后再执行，`false` 直接复用暂停前的行高。
+         * @param {boolean} [options.remeasure=true] - 是否重新测量当前行高；`true` 等待重测后再定位，
+         *   `false` 直接复用暂停前的行高。
          * @throws {Error} 实例已销毁时抛出。
          * @returns {void}
          */
@@ -3584,30 +3602,13 @@
             }
 
             this._sm.transition(VirtualScroll.State.RUNNING);
-            this._bindScroll();
-
-            let pendingScroll = null;
-
-            if (this._pendingScrollQueue.length > 0) {
-                if (this._pendingScrollQueue.length > 1) {
-                    console.warn(
-                        `[VirtualScroll] ${this._pendingScrollQueue.length - 1} scrollToIndex() ` +
-                        'call(s) were dropped while PAUSED (only the last one is applied).'
-                    );
-                }
-
-                // 多次定位只保留最后意图，避免恢复后连续动画到已经过时的位置。
-                pendingScroll = this._pendingScrollQueue.at(-1);
-            }
-
-            // 恢复时重新测量行高。
             if (remeasure && this.container && this.totalCount > 0) {
-                this._resumeWithRemeasure(pendingScroll);
+                this._resumeWithRemeasure();
                 return;
             }
 
-            this._pendingScrollQueue = [];
-
+            this._bindScroll();
+            const pendingScroll = this._takePendingScroll();
             if (pendingScroll) {
                 const {index, behavior, block} = pendingScroll;
                 this.scrollToIndex(index, {behavior, block});
@@ -3619,6 +3620,22 @@
             }
 
             this._forceRender();
+        }
+
+        /**
+         * 取出最新的排队定位请求，并清空队列。
+         * @private
+         * @returns {{index: number, behavior: string, block: string}|undefined}
+         */
+        _takePendingScroll() {
+            const queue = this._pendingScrollQueue;
+            this._pendingScrollQueue = [];
+            if (queue.length > 1) {
+                console.warn(
+                    `[VirtualScroll] ${queue.length - 1} queued scroll request(s) were dropped; only the last one is applied.`
+                );
+            }
+            return queue.at(-1);
         }
 
         /**
@@ -3687,8 +3704,8 @@
             const normalizedIndex = Number.isFinite(numericIndex) ? Math.trunc(numericIndex) : 0;
             const i = Math.max(0, Math.min(normalizedIndex, this.totalCount - 1));
 
-            // 暂停期间容器尺寸可能无效，只记录逻辑索引，恢复后再换算物理位置。
-            if (this._sm.is(VirtualScroll.State.PAUSED)) {
+            // 暂停和恢复期间只记录逻辑索引，待容器可测量后再换算物理位置。
+            if (this._sm.is(VirtualScroll.State.PAUSED) || this._awaitingVisible) {
                 this._pendingScrollQueue.push({index: i, behavior, block});
                 return;
             }
@@ -3778,7 +3795,7 @@
                 return;
             }
 
-            if (this._sm.is(VirtualScroll.State.PAUSED)) {
+            if (this._sm.is(VirtualScroll.State.PAUSED) || this._awaitingVisible) {
                 this._pendingScrollQueue.push({
                     index: this.totalCount - 1,
                     behavior,
@@ -3847,7 +3864,7 @@
                 wrapperCount: this._nodePool.wrapperCount,
                 userElemCount: this._nodePool.userElemCount,
 
-                spacerTop: this._spacerTop ? parseFloat(this._spacerTop.style.height) : 0,
+                spacerTop: parseFloat(this._spacerTop?.style.height) || parseFloat(this._spacerTop?.style.marginTop) || 0,
                 spacerBottom: this._spacerBottom ? parseFloat(this._spacerBottom.style.height) : 0,
 
                 pendingScrollQueue: Object.freeze(
