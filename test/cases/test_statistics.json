@@ -2416,6 +2416,85 @@
     },
     {
       "description": [
+        "[statistics:abx-negative-scientific] 指数回归直接用乘号连接负科学记数系数与幂项",
+        "样本满足 y = -1.5E-12 * 2^x，同时检查线性回归中负科学记数系数和常数项的拼接。"
+      ],
+      "coeffs": [
+        [0, 1],
+        ["-1.5E-12", "-3E-12"]
+      ],
+      "calcConfig": {
+        "globalCalcAccuracy": 60,
+        "outputAccuracy": 20
+      },
+      "expected": {
+        "n": "2",
+        "averageA": "0.5",
+        "averageB": "-2.25E-12",
+        "sumA": "1",
+        "sumB": "-4.5E-12",
+        "sum2A": "1",
+        "sum2B": "1.125E-23",
+        "populationStandardDeviationA": "0.5",
+        "populationStandardDeviationB": "7.5E-13",
+        "sampleStandardDeviationA": "0.7071067811865475244",
+        "sampleStandardDeviationB": "1.0606601717798212866E-12",
+        "maxA": "1",
+        "maxB": "-1.5E-12",
+        "minA": "0",
+        "minB": "-3E-12",
+        "dotAB": "-3E-12",
+        "dotA2B": "-3E-12",
+        "totalCovariance": "-3.75E-13",
+        "sampleCovariance": "-7.5E-13",
+        "r": "-1",
+        "bestModel": "linear",
+        "linear": {
+          "parameter": ["-1.5E-12", "-1.5E-12"],
+          "regressionEquation": "-(1.5E-12)[x]-1.5E-12",
+          "R2": "1",
+          "model": "linear"
+        },
+        "square": {
+          "parameter": ["error", "error", "error"],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "square"
+        },
+        "ln": {
+          "parameter": ["error", "error"],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "ln"
+        },
+        "axb": {
+          "parameter": ["error", "error"],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "axb"
+        },
+        "exp": {
+          "parameter": ["-1.5E-12", "0.69314718055994530942"],
+          "regressionEquation": "-(1.5E-12)exp(0.69314718055994530942[x])",
+          "R2": "1",
+          "model": "exp"
+        },
+        "abx": {
+          "parameter": ["-1.5E-12", "2"],
+          "regressionEquation": "-1.5E-12*2^[x]",
+          "R2": "1",
+          "model": "abx"
+        },
+        "reciprocal": {
+          "parameter": ["error", "error"],
+          "regressionEquation": "error",
+          "R2": "error",
+          "model": "reciprocal"
+        }
+      }
+    },
+    {
+      "description": [
         "[statistics:error:empty] 空数据应在统计和回归之前拒绝"
       ],
       "coeffs": [

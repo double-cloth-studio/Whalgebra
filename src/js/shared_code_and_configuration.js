@@ -346,6 +346,8 @@
             }
         }
 
+        static _NEG_SCIENTIFIC_REGEX = /^-\d+(?:\.\d+)?E[+-]\d+$/;
+
         /**
          * 仅拼装已经格式化的系数字符串，避免各模型重复解析和修正系数。
          *
@@ -360,7 +362,7 @@
             for (let i = strList.length - 1; i >= 0; i--) {
                 const currentCoefficient = strList[i];
                 if (currentCoefficient !== '0') {
-                    const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(currentCoefficient);
+                    const negativeScientific = Public._NEG_SCIENTIFIC_REGEX.test(currentCoefficient);
                     if (firstNoneZero && !negativeScientific && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
                         result += '+';
                     }
@@ -451,7 +453,7 @@
                     if (a === '-1') {
                         result += '-';
                     } else if (a !== '1') {
-                        result += a.includes('E') ? `(${a})*` : `${a}*`;
+                        result += a.includes('E') && !Public._NEG_SCIENTIFIC_REGEX.test(a) ? `(${a})*` : `${a}*`;
                     }
                     if (/[+\-E]|\[toPolar]/.test(b)) {
                         result += `(${b})^${asX}`;
@@ -481,7 +483,7 @@
                     }
                     result += b.includes('E') ? `(${b})/${asX}` : `${b}/${asX}`;
                     if (a !== '0') {
-                        const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(a);
+                        const negativeScientific = Public._NEG_SCIENTIFIC_REGEX.test(a);
                         if (!negativeScientific && (a[0] !== '-' || a.includes('E'))) {
                             result += '+';
                         }

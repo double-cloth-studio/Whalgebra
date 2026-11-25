@@ -357,6 +357,8 @@
                     }
                 }
 
+                static _NEG_SCIENTIFIC_REGEX = /^-\d+(?:\.\d+)?E[+-]\d+$/;
+
                 /**
                  * 仅拼装已经格式化的系数字符串，避免各模型重复解析和修正系数。
                  *
@@ -371,7 +373,7 @@
                     for (let i = strList.length - 1; i >= 0; i--) {
                         const currentCoefficient = strList[i];
                         if (currentCoefficient !== '0') {
-                            const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(currentCoefficient);
+                            const negativeScientific = Public._NEG_SCIENTIFIC_REGEX.test(currentCoefficient);
                             if (firstNoneZero && !negativeScientific && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
                                 result += '+';
                             }
@@ -462,7 +464,7 @@
                             if (a === '-1') {
                                 result += '-';
                             } else if (a !== '1') {
-                                result += a.includes('E') ? `(${a})*` : `${a}*`;
+                                result += a.includes('E') && !Public._NEG_SCIENTIFIC_REGEX.test(a) ? `(${a})*` : `${a}*`;
                             }
                             if (/[+\-E]|\[toPolar]/.test(b)) {
                                 result += `(${b})^${asX}`;
@@ -492,7 +494,7 @@
                             }
                             result += b.includes('E') ? `(${b})/${asX}` : `${b}/${asX}`;
                             if (a !== '0') {
-                                const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(a);
+                                const negativeScientific = Public._NEG_SCIENTIFIC_REGEX.test(a);
                                 if (!negativeScientific && (a[0] !== '-' || a.includes('E'))) {
                                     result += '+';
                                 }
@@ -9209,12 +9211,12 @@
                     '4': '0'
                 };
 
-                static subModeOptions = {
-                    '2_0': ['0', '1'],
-                    '2_1': ['0', '1', '2'],
-                    '3': ['0', '1', '2', '3', '4'],
-                    '4': ['0', '1']
-                };
+                static subModeOptions = Object.freeze({
+                    '2_0': Object.freeze(['0', '1']),
+                    '2_1': Object.freeze(['0', '1', '2']),
+                    '3': Object.freeze(['0', '1', '2', '3', '4']),
+                    '4': Object.freeze(['0', '1'])
+                });
 
                 /**
                  * 获取存储每个主计算器模式下当前选定子模式的对象。
@@ -16118,7 +16120,8 @@
             "use strict";
 
             // macOS 的 Option 组合键可能产生死键或特殊字符，使用物理键位识别数学符号。
-            const altInput = event.altKey && /^Key([EIX])$/.exec(event.code)?.[1].toLowerCase();
+            const altLetter = event.altKey ? /^Key([A-Z])$/.exec(event.code)?.[1].toLowerCase() : null;
+            const altInput = altLetter && TokenConfig.codeNumbers.has(`[${altLetter}]`) ? altLetter : null;
             const key = altInput || event.key;
 
             // 除配置中的数学符号输入外，Alt 组合键交由浏览器处理。

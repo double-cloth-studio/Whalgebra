@@ -218,7 +218,8 @@ document.addEventListener('keydown', (event) => {
     "use strict";
 
     // macOS 的 Option 组合键可能产生死键或特殊字符，使用物理键位识别数学符号。
-    const altInput = event.altKey && /^Key([EIX])$/.exec(event.code)?.[1].toLowerCase();
+    const altLetter = event.altKey ? /^Key([A-Z])$/.exec(event.code)?.[1].toLowerCase() : null;
+    const altInput = altLetter && TokenConfig.codeNumbers.has(`[${altLetter}]`) ? altLetter : null;
     const key = altInput || event.key;
 
     // 除配置中的数学符号输入外，Alt 组合键交由浏览器处理。
