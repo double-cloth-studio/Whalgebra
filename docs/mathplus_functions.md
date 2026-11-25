@@ -6,7 +6,7 @@
 
 示例可在 `src/index.html` 或 `dist/Whalgebra.html` 的开发者控制台运行。MathPlus 是静态工具类，不能用 `new MathPlus()` 实例化。
 
-`dist/Whalgebra.html` 的 MathPlus 会复用精度匹配的已有复数实例。纯实输入在四则运算和开方等迭代的实数计算中直接使用 `BigNumber`。例如，非负实数的 `abs` 和纯实整数的 `floor`、`ceil` 可以直接返回传入的复数实例。调用方应把数值实例当作只读值使用。
+MathPlus 会复用精度匹配的已有复数实例。纯实输入在四则运算和开方等迭代的实数计算中直接使用 `BigNumber`。例如，非负实数的 `abs` 和纯实整数的 `floor`、`ceil` 可以直接返回传入的复数实例。调用方应把数值实例当作只读值使用。
 
 ```javascript
 // 表达式入口：返回 [数值对象, 规范化表达式]

@@ -263,7 +263,7 @@
          * @returns {ComplexNumber} 修正后的值；无法修正时返回原值。
          */
         static integerCorrect(n) {
-            const input = new ComplexNumber(n);
+            const input = n instanceof ComplexNumber ? n : new ComplexNumber(n);
             if (input.re.power >= 0 && input.im.isZero()) {
                 return input;
             }

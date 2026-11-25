@@ -126,8 +126,8 @@ const r = CalcTools.exec("1/3", { calcAcc: 60, outputAcc: 8 });
 console.log(r.result); // "0.33333333"
 
 const mid = CalcTools.exec("1/3", { calcAcc: 30, outputMode: 'mid' });
-const value = new ComplexNumber(mid.result);
+const value = new ComplexNumber(mid.result, { noiseMag: mid.noiseMag });
 console.log(value.toString({ acc: 8 })); // "0.33333333"
 ```
 
-`outputMode: 'output'` 返回经过 `Public.idealizationToString` 归整的字符串。`'mid'` 的 `result` 由实部和虚部的 `[power,bigintMantissa,acc]` 元组组成，支持结构化克隆。使用 `dist/Whalgebra.html` 时，`'mid'` 响应还包含 `noiseMag` 数组，可用 `new ComplexNumber(mid.result, { noiseMag: mid.noiseMag })` 恢复噪声状态。详见[数值构造器](./math_engine_and_constructors.md#噪声状态与对象传递)。
+`outputMode: 'output'` 返回经过 `Public.idealizationToString` 归整的字符串。`'mid'` 的 `result` 由实部和虚部的 `[power,bigintMantissa,acc]` 元组组成，支持结构化克隆。响应还包含两分量的 `noiseMag` 数组，可按上例恢复噪声状态。详见[数值构造器](./math_engine_and_constructors.md#噪声状态与对象传递)。

@@ -65,7 +65,7 @@ console.log(new BigNumber("3.14159265").toString({ acc: 5 })); // "3.1416"
 
 常用实例方法：`isZero()`、`isPositive()`、`isNegative()`、`toString()`、`valueOf()`。数量级通过静态方法 `BigNumber.getMag(value)` 获取，零返回 `-Infinity`；`BigNumber.decimalLengthBigInt(n)` 返回整数绝对值的十进制位数（零为 1），`BigNumber.pow10(n)` 返回非负整数次的 `10n` 幂。
 
-`dist/Whalgebra.html` 中的 `BigNumber.approximateConstant(tuple, acc)` 从内部元组构造实数。它以元组原始指数减一作为初始 `noiseMag`，构造时再计入目标精度造成的舍入噪声。
+`BigNumber.approximateConstant(tuple, acc)` 从内部元组构造实数。它以元组原始指数减一作为初始 `noiseMag`，构造时再计入目标精度造成的舍入噪声。
 
 `toString({ acc, mode })` 的 `mode` 可取 `auto`、`normal`、`scientific`。`valueOf()` **返回内部元组，不是原生 Number**；请通过 `MathPlus` 运算，不要使用 JavaScript 的 `+` 等操作符组合这些对象。高精度输入优先用字符串或 `bigint`，已经在原生浮点计算中损失的位数无法恢复。
 
@@ -92,7 +92,7 @@ console.log(MathPlus.abs(z).toString()); // "5"
 
 复制 `BigNumber` 或 `ComplexNumber` 实例会继承噪声；通过 `pow` 选项进行十进制缩放时，噪声量级相应平移。`ComplexNumber` 的 `noiseMag` 选项还接受 `[realNoise, imagNoise]`，分别指定两分量的噪声。
 
-在 `dist/Whalgebra.html` 中，内置近似常量、乘方快路径和级数截断都会记录噪声。零分量仍统一使用 `-Infinity`。只从 `valueOf()` 的元组重建会丢失这些信息，尤其会影响近似 π 的整数倍角度归约。需要跨 Worker 传递数值时，`CalcTools.exec(..., { outputMode: 'mid' })` 和对应的 `WorkerTools.exec` 会同时返回 `result` 元组和 `noiseMag` 数组，可用 `new ComplexNumber(result, { noiseMag })` 恢复。字符串只保留文本表示，提高 `acc` 无法恢复已经丢失的信息。
+内置近似常量、乘方快路径和级数截断都会记录噪声。零分量统一使用 `-Infinity`。只从 `valueOf()` 的元组重建会丢失这些信息，尤其会影响近似 π 的整数倍角度归约。需要跨 Worker 传递数值时，`CalcTools.exec(..., { outputMode: 'mid' })` 和对应的 `WorkerTools.exec` 会同时返回 `result` 元组和 `noiseMag` 数组，可用 `new ComplexNumber(result, { noiseMag })` 恢复。字符串只保留文本表示，提高 `acc` 无法恢复已经丢失的信息。
 
 ## 精度与显示
 

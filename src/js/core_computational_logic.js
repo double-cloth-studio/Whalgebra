@@ -81,6 +81,7 @@
                         throw new Error('[BigNumber] Input error: Power too large or too small');
                     }
                     this.power = mantissa === 0n ? 0 : power;
+                    /** @type {bigint} */
                     this.mantissa = mantissa;
                     this.acc = finalAcc;
                     this.noiseMag = mantissa === 0n ? -Infinity : finalNoiseMag;
@@ -224,6 +225,16 @@
          */
         get [Symbol.toStringTag]() {
             return 'BigNumber';
+        }
+
+        /**
+         * 将有限位近似常量转为实数，并保留存储末位引入的噪声。
+         * @param {[number, bigint] | [number, bigint, number]} tuple - 常量的内部元组。
+         * @param {number} [acc] - 目标有效位数。
+         * @returns {BigNumber}
+         */
+        static approximateConstant(tuple, acc) {
+            return new BigNumber(tuple, {acc, noiseMag: tuple[0] - 1});
         }
 
         /**
@@ -692,6 +703,10 @@
          * @throws {Error} 输入类型或格式无效时抛出。
          */
         constructor(x, {acc, pow = 0, noiseMag} = {}) {
+            const hasComponentNoise = Array.isArray(noiseMag);
+            const noiseR = hasComponentNoise ? noiseMag[0] : noiseMag;
+            const noiseI = hasComponentNoise ? noiseMag[1] : noiseMag;
+
             switch (Public.typeOf(x)) {
                 case 'array': {
                     // 长度为 2: [real, imag]
@@ -701,8 +716,6 @@
                         throw new Error('[ComplexNumber] Input error: Array length must be 2 or 3.');
                     }
                     if (len === 2) {
-                        const noiseR = Array.isArray(noiseMag) ? noiseMag[0] : noiseMag;
-                        const noiseI = Array.isArray(noiseMag) ? noiseMag[1] : noiseMag;
                         let r = new BigNumber(x[0], {acc: acc, pow: pow, noiseMag: noiseR});
                         let i = new BigNumber(x[1], {acc: acc, pow: pow, noiseMag: noiseI});
 
@@ -719,7 +732,7 @@
                         this.re = r;
                         this.im = i;
                     } else {
-                        this.re = new BigNumber(x, {acc: acc, pow: pow, noiseMag: noiseMag});
+                        this.re = new BigNumber(x, {acc: acc, pow: pow, noiseMag: noiseR});
                         this.im = new BigNumber([0, 0n, this.re.acc]);
                     }
                     break;
@@ -729,7 +742,7 @@
                     this.re = new BigNumber(x, {
                         acc: acc,
                         pow: pow,
-                        noiseMag: Array.isArray(noiseMag) ? noiseMag[0] : noiseMag
+                        noiseMag: noiseR
                     });
                     this.im = new BigNumber([0, 0n, this.re.acc]);
                     break;
@@ -737,8 +750,6 @@
                 case 'complexnumber':
                 case 'object': {
                     const realAccuracy = acc ?? x.acc;
-                    const noiseR = Array.isArray(noiseMag) ? noiseMag[0] : noiseMag;
-                    const noiseI = Array.isArray(noiseMag) ? noiseMag[1] : noiseMag;
                     this.re = new BigNumber(x.re, {acc: realAccuracy, pow: pow, noiseMag: noiseR});
                     this.im = new BigNumber(x.im, {acc: realAccuracy, pow: pow, noiseMag: noiseI});
                     break;
@@ -750,8 +761,6 @@
                     }
 
                     const ParseComplex = ComplexNumber._parseComplex(x);
-                    const noiseR = Array.isArray(noiseMag) ? noiseMag[0] : noiseMag;
-                    const noiseI = Array.isArray(noiseMag) ? noiseMag[1] : noiseMag;
                     this.re = new BigNumber(ParseComplex.re, {acc: acc, pow: pow, noiseMag: noiseR});
                     this.im = new BigNumber(ParseComplex.im, {acc: acc, pow: pow, noiseMag: noiseI});
                     break;
@@ -759,7 +768,7 @@
 
                 case 'number':
                 case 'bigint':
-                    this.re = new BigNumber(x, {acc: acc, pow: pow, noiseMag: noiseMag});
+                    this.re = new BigNumber(x, {acc: acc, pow: pow, noiseMag: noiseR});
                     this.im = new BigNumber([0, 0n, this.re.acc]);
                     break;
 
@@ -940,6 +949,28 @@
         }
 
         /**
+         * 解析复数输入；已有实例仅在需要统一或变更分量精度时重新构造。
+         * @private
+         */
+        static _complexInput(x, acc) {
+            if (x instanceof ComplexNumber) {
+                acc ??= x.acc;
+                if (x.re.acc === acc && x.im.acc === acc) {
+                    return x;
+                }
+            }
+            return new ComplexNumber(x, {acc});
+        }
+
+        /**
+         * 合并新增的噪声上界，并复用无需更新的实数实例。
+         * @private
+         */
+        static _withNoise(value, noiseMag) {
+            return noiseMag > value.noiseMag ? new BigNumber(value, {noiseMag}) : value;
+        }
+
+        /**
          * 复用不可变数值实例；仅在入口解析外部输入，纯实数不装箱为复数。
          * @private
          * @param {*} x - 与公开算术接口相同的输入。
@@ -952,7 +983,8 @@
             if (typeof x === 'number' || typeof x === 'bigint' || (Array.isArray(x) && x.length === 3)) {
                 return new BigNumber(x);
             }
-            const input = x instanceof ComplexNumber ? x : new ComplexNumber(x);
+            const parsed = x instanceof ComplexNumber ? x : new ComplexNumber(x);
+            const input = MathPlus._complexInput(parsed);
             return input.onlyReal ? input.re : input;
         }
 
@@ -982,14 +1014,15 @@
          *
          * @private
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} angle - 以弧度表示的纯实角度；
-         *   会转换为 `ComplexNumber` 并利用周期归约，非零虚部不适用于此实数快速路径。
+         *   使用其实部进行周期归约，调用方负责分派非实数输入。
          * @param {'sin'|'cos'} name - 选择需要保留的象限符号规则；只接受 `sin` 或 `cos`。
          * @returns {[BigNumber, 1n|-1n]} 二元组：第 0 项是落在 `[0, π/2]` 的纯实弧度值，
          *   第 1 项是依据原角度象限和 `name` 得到的符号乘子；调用方将级数结果乘以该因子复原。
          * @throws {Error} 角度过大而无法保证精度时抛出。
          */
         static _toLessThanHalfPi(angle, name) {
-            angle = new ComplexNumber(angle).re;
+            const input = MathPlus._arithmeticInput(angle);
+            angle = input instanceof BigNumber ? input : input.re;
             const acc = angle.acc;
 
             const typeFactor = name === 'sin' ? 1n : -1n;
@@ -1013,12 +1046,13 @@
                 }
                 console.warn('[MathPlus] Unexpected loss of precision occurred in trigonometric calculations.');
             }
-            const highPrecisionRe = new ComplexNumber(angle, {acc: highPrecisionAcc});
+            const highPrecisionRe = new BigNumber(angle, {acc: highPrecisionAcc});
             const highPrecisionTwo = new BigNumber(2n, {acc: highPrecisionAcc});
-            const highPrecisionPi = new BigNumber(CalcConfig.constants.pi, {acc: highPrecisionAcc});
+            const highPrecisionPi = BigNumber.approximateConstant(CalcConfig.constants.pi, highPrecisionAcc);
             const twoPi = MathPlus.realTimes(highPrecisionTwo, highPrecisionPi);
-            const n = MathPlus.floor(MathPlus.times(highPrecisionRe, CalcConfig.constants.invTwoPi));
-            angle = highPrecisionRe.re;
+            const inversePeriod = BigNumber.approximateConstant(CalcConfig.constants.invTwoPi, highPrecisionAcc);
+            const n = MathPlus.floor(MathPlus.realTimes(highPrecisionRe, inversePeriod));
+            angle = highPrecisionRe;
             if (!n.isZero()) {
                 reduced = true;
                 angle = MathPlus.realMinus(angle, MathPlus.realTimes(n.re, twoPi));
@@ -1088,10 +1122,15 @@
         static _realSinhCosh(x) {
             const acc = x.acc;
             const one = new BigNumber(1n, {acc});
+            if (x.isZero()) {
+                return [x, one];
+            }
+
             const mag = BigNumber.getMag(x);
             // 由 |x| < 10^(mag+1) 可知，极小时平方修正低于工作精度，也无需构造可能下溢的 x²。
             if (2 * (mag + 1) <= -acc) {
-                return [x, one];
+                const maxMag = Math.max(mag, x.noiseMag) + 1;
+                return [MathPlus._withNoise(x, 3 * maxMag), MathPlus._withNoise(one, 2 * maxMag)];
             }
 
             if (mag < -1) {
@@ -1124,6 +1163,206 @@
         }
 
         /**
+         * 纯实数取模，保留余数的符号和噪声。
+         * @private
+         * @param {BigNumber} a - 被除数。
+         * @param {BigNumber} b - 非零除数。
+         * @param {number} acc - 结果精度。
+         * @returns {BigNumber} 实数余数。
+         */
+        static _realMod(a, b, acc) {
+            if (a.isZero()) {
+                return new BigNumber(0n, {acc});
+            }
+
+            const oppositeSigns = a.isNegative() !== b.isNegative();
+            const absA = a.isNegative() ? -a.mantissa : a.mantissa;
+            const absB = b.isNegative() ? -b.mantissa : b.mantissa;
+            const lenA = BigNumber.decimalLengthBigInt(absA);
+            const lenB = BigNumber.decimalLengthBigInt(absB);
+            const powerA = BigInt(a.power);
+            const powerB = BigInt(b.power);
+
+            const magB = powerB + BigInt(lenB - 1);
+            const magDiff = powerA + BigInt(lenA - 1) - magB;
+            const effectiveDigits = Math.max(1, Math.floor(0.9 * acc), acc - 8);
+            const margin = Math.min(4, Math.max(0, acc - effectiveDigits));
+            const edgeMargin = Math.min(2, margin);
+            const divisorIsReliable = b.noiseMag === -Infinity || b.noiseMag + margin < Number(magB);
+
+            const noiseForQuotient = (quotientMag) => Math.max(
+                a.noiseMag,
+                quotientMag === -Infinity || b.noiseMag === -Infinity ? -Infinity : quotientMag + b.noiseMag
+            );
+            const nearUpperEdge = (distance, quotientMag) => {
+                const noise = noiseForQuotient(quotientMag);
+                if (!Number.isFinite(noise) || !divisorIsReliable) {
+                    return false;
+                }
+                const tolerancePower = BigInt(Math.floor(noise + edgeMargin)) + 1n;
+                // 容差至少比除数低两个数量级，以免把正常余数吸附为零。
+                if (tolerancePower > magB - 2n) {
+                    return false;
+                }
+
+                return MathPlus._modSign([...distance, [-1n, tolerancePower]]) < 0n;
+            };
+
+            if (magDiff < 0n) {
+                if (oppositeSigns) {
+                    if (nearUpperEdge([[absA, powerA]], 0)) {
+                        return new BigNumber(0n, {acc});
+                    }
+                    return MathPlus._modWithTail(b.mantissa, b.power, a.mantissa, a.power, acc, noiseForQuotient(0));
+                }
+                if (nearUpperEdge([[absB, powerB], [-absA, powerA]], 0)) {
+                    return new BigNumber(0n, {acc});
+                }
+                return new BigNumber(a, {acc});
+            }
+
+            const power = Math.min(a.power, b.power);
+            const shiftA = powerA - BigInt(power);
+            const shiftB = powerB - BigInt(power);
+            const divisor = absB * BigNumber.pow10(Number(shiftB));
+            let remainder;
+            let quotientMag = -Infinity;
+
+            if (shiftA > BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
+                remainder = MathPlus._modScale(absA, shiftA, divisor);
+                if (b.noiseMag !== -Infinity && remainder !== 0n) {
+                    // 仅在传播除数噪声时精确确定商的数量级，无需构造完整商。
+                    let mag = magDiff;
+                    if (MathPlus._modSign([[absA, powerA], [-absB, powerB + mag]]) < 0n) {
+                        mag--;
+                    }
+                    if (oppositeSigns && MathPlus._modSign([
+                        [absA, powerA], [-absB, powerB + mag + 1n], [absB, powerB]
+                    ]) > 0n) {
+                        mag++;
+                    }
+                    quotientMag = Number(mag);
+                }
+            } else {
+                const dividend = absA * BigNumber.pow10(Number(shiftA));
+                remainder = dividend % divisor;
+                const quotient = dividend / divisor + (oppositeSigns && remainder !== 0n ? 1n : 0n);
+                quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
+            }
+
+            if (remainder === 0n) {
+                return new BigNumber(0n, {acc});
+            }
+            const magnitude = oppositeSigns ? divisor - remainder : remainder;
+            if (nearUpperEdge([[divisor - magnitude, BigInt(power)]], Math.max(0, quotientMag))) {
+                return new BigNumber(0n, {acc});
+            }
+
+            return new BigNumber(b.isNegative() ? -magnitude : magnitude, {
+                pow: power,
+                acc,
+                noiseMag: noiseForQuotient(quotientMag)
+            });
+        }
+
+        /**
+         * 将尾数按十进制指数缩放后取余，大指数用模快速幂。
+         * @private
+         * @param {bigint} mantissa - 待缩放的尾数。
+         * @param {bigint} shift - 非负十进制指数。
+         * @param {bigint} modulus - 正整数模数。
+         * @returns {bigint} 缩放后的余数。
+         */
+        static _modScale(mantissa, shift, modulus) {
+            if (shift <= BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
+                return (mantissa * BigNumber.pow10(Number(shift))) % modulus;
+            }
+
+            let result = mantissa % modulus;
+            let base = 10n % modulus;
+            while (shift > 0n && result !== 0n) {
+                if ((shift & 1n) !== 0n) {
+                    result = (result * base) % modulus;
+                }
+                shift >>= 1n;
+                base = (base * base) % modulus;
+            }
+            return result;
+        }
+
+        /**
+         * 比较至多三个十进制项的和与零，只对齐数量级接近的项。
+         * @private
+         * @param {Array<[bigint, bigint]>} terms - 各项的尾数和十进制指数。
+         * @returns {bigint} 和的符号，为 -1n、0n 或 1n。
+         */
+        static _modSign(terms) {
+            let remaining = terms
+                .filter(([mantissa]) => mantissa !== 0n)
+                .map(([mantissa, power]) => [mantissa, power, power + BigInt(BigNumber.decimalLengthBigInt(mantissa) - 1)]);
+
+            while (remaining.length > 1) {
+                remaining.sort((a, b) => a[2] === b[2] ? 0 : a[2] > b[2] ? -1 : 1);
+                const [a, b] = remaining;
+                if (a[2] - b[2] >= 2n) {
+                    return a[0] < 0n ? -1n : 1n;
+                }
+                const power = a[1] < b[1] ? a[1] : b[1];
+                const sum = a[0] * BigNumber.pow10(Number(a[1] - power)) +
+                    b[0] * BigNumber.pow10(Number(b[1] - power));
+                remaining = remaining.slice(2);
+                if (sum !== 0n) {
+                    remaining.push([sum, power, power + BigInt(BigNumber.decimalLengthBigInt(sum) - 1)]);
+                }
+            }
+
+            const mantissa = remaining[0]?.[0] ?? 0n;
+            return mantissa < 0n ? -1n : mantissa > 0n ? 1n : 0n;
+        }
+
+        /**
+         * 将整数残差与小数尾合并，在返回时统一舍入。
+         * @private
+         * @param {bigint} mantissa - 整数残差的尾数。
+         * @param {number} power - 整数残差的十进制指数。
+         * @param {bigint} tail - 小数尾的尾数。
+         * @param {number} tailPower - 小数尾的十进制指数。
+         * @param {number} acc - 结果精度。
+         * @param {number} noiseMag - 已传播的噪声量级上界。
+         * @returns {BigNumber} 合并后的实数余数。
+         */
+        static _modWithTail(mantissa, power, tail, tailPower, acc, noiseMag) {
+            if (mantissa === 0n) {
+                return new BigNumber(tail, {acc, pow: tailPower, noiseMag});
+            }
+
+            if (tail !== 0n) {
+                const commonPower = Math.min(power, tailPower);
+                const gap = BigInt(power) - BigInt(tailPower);
+                const digits = BigNumber.decimalLengthBigInt(mantissa);
+                const tailDigits = BigNumber.decimalLengthBigInt(tail);
+
+                if (gap <= BigInt(acc + tailDigits + 1)) {
+                    mantissa = mantissa * BigNumber.pow10(power - commonPower) +
+                        tail * BigNumber.pow10(tailPower - commonPower);
+                    power = commonPower;
+                } else {
+                    noiseMag = Math.max(noiseMag, tailPower + tailDigits - 1);
+                    if (digits > acc) {
+                        const unit = BigNumber.pow10(digits - acc);
+                        const remainder = mantissa % unit;
+                        // 极小尾项只会改变恰好落在舍入中点时的取舍方向。
+                        if (remainder * 2n === unit || remainder * 2n === -unit) {
+                            mantissa += tail < 0n ? -1n : 1n;
+                        }
+                    }
+                }
+            }
+
+            return new BigNumber(mantissa, {acc, pow: power, noiseMag});
+        }
+
+        /**
          * 计算一个 BigNumber 或 ComplexNumber 的相反数。
          *
          * @param {BigNumber|ComplexNumber|string|number} x - 需要取反的值；`BigNumber` 返回同类型新实例，
@@ -1139,7 +1378,7 @@
                     return new ComplexNumber([MathPlus.oppositeNumber(x.re), MathPlus.oppositeNumber(x.im)]);
 
                 default: {
-                    const input = new ComplexNumber(x);
+                    const input = MathPlus._complexInput(x);
                     return MathPlus.oppositeNumber(input);
                 }
             }
@@ -1231,14 +1470,11 @@
 
             const noiseA = reA.noiseMag ?? -Infinity;
             const noiseB = reB.noiseMag ?? -Infinity;
-            let propagatedNoise = -Infinity;
-            if (!reA.isZero() && !reB.isZero()) {
-                const magA = BigNumber.getMag(reA);
-                const magB = BigNumber.getMag(reB);
-                const term1 = noiseA === -Infinity ? -Infinity : noiseA + magB;
-                const term2 = noiseB === -Infinity ? -Infinity : noiseB + magA;
-                propagatedNoise = Math.max(term1, term2);
-            }
+            const propagatedNoise = resultMantissa === 0n ? -Infinity : Math.max(
+                noiseA === -Infinity ? -Infinity : noiseA + BigNumber.getMag(reB),
+                noiseB === -Infinity ? -Infinity : noiseB + BigNumber.getMag(reA),
+                noiseA === -Infinity || noiseB === -Infinity ? -Infinity : noiseA + noiseB
+            );
 
             return new BigNumber(resultMantissa, {
                 pow: resultPower,
@@ -1315,7 +1551,7 @@
          * @returns {ComplexNumber} 以纯实数表示的实部。
          */
         static re(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             return new ComplexNumber(input.re);
         }
 
@@ -1327,7 +1563,7 @@
          * @returns {ComplexNumber} 以纯实数表示的虚部。
          */
         static im(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             return new ComplexNumber(input.im);
         }
 
@@ -1339,7 +1575,7 @@
          * @returns {ComplexNumber} 以弧度表示的辐角。
          */
         static arg(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             const zero = new ComplexNumber([0, 0n, acc]);
 
@@ -1348,19 +1584,19 @@
                     throw new Error('[MathPlus] The argument of 0 is undefined.');
                 }
                 return MathPlus.divide(
-                    CalcConfig.constants.pi,
+                    BigNumber.approximateConstant(CalcConfig.constants.pi),
                     [0, input.im.isNegative() ? -2n : 2n, acc]
                 );
             }
             if (input.onlyReal) {
-                return input.re.isPositive() ? zero : new ComplexNumber(CalcConfig.constants.pi, {acc: acc});
+                return input.re.isPositive() ? zero : new ComplexNumber(BigNumber.approximateConstant(CalcConfig.constants.pi, acc));
             }
 
             // 按实部符号修正 arctan(im/re) 的象限。
             const result = MathPlus.arctan(MathPlus.divide(input.im, input.re));
 
             if (input.re.isNegative()) {
-                return MathPlus[input.im.isNegative() ? 'minus' : 'plus'](result, CalcConfig.constants.pi);
+                return MathPlus[input.im.isNegative() ? 'minus' : 'plus'](result, BigNumber.approximateConstant(CalcConfig.constants.pi));
             }
 
             return result;
@@ -1374,7 +1610,7 @@
          * @returns {ComplexNumber} 一个新的 ComplexNumber 实例，代表输入值的共轭复数。
          */
         static conj(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
 
             return new ComplexNumber([input.re, MathPlus.oppositeNumber(input.im)]);
         }
@@ -1389,8 +1625,8 @@
          * @returns {ComplexNumber} 代表转换后笛卡尔坐标的 ComplexNumber 实例。
          */
         static toPolar(a, b) {
-            const inputA = new ComplexNumber(a);
-            const inputB = new ComplexNumber(b);
+            const inputA = MathPlus._arithmeticInput(a);
+            const inputB = MathPlus._complexInput(b);
             const acc = Math.min(inputA.acc, inputB.acc);
             const cosTheta = MathPlus.cos(inputB);
             const sinTheta = MathPlus.sin(inputB);
@@ -1399,7 +1635,7 @@
                 [MathPlus.oppositeNumber(sinTheta.im), sinTheta.re]
             );
             const result = MathPlus.times(inputA, complexExponential);
-            return new ComplexNumber(result, {acc: acc});
+            return MathPlus._complexInput(result, acc);
         }
 
         /**
@@ -1588,12 +1824,13 @@
             const qi = floorQuotient(ai * br - ar * bi, -bi, br);
             const magA = Math.max(BigNumber.getMag(inputA.re), BigNumber.getMag(inputA.im));
             const magB = Math.max(BigNumber.getMag(inputB.re), BigNumber.getMag(inputB.im));
+
             // 若被除数已经过约简，约简后的零商仍可能对应原商非零。
             const hasQuotient = magA >= magB || qr !== 0n || qi !== 0n;
             const divisorNoise = Math.max(inputB.re.noiseMag, inputB.im.noiseMag);
             const scaledNoise = !hasQuotient || divisorNoise === -Infinity
-                ? -Infinity
-                : divisorNoise + Math.max(0, magA - magB + 2);
+                                ? -Infinity
+                                : divisorNoise + Math.max(0, magA - magB + 2);
             const resultRe = MathPlus._modWithTail(
                 ar - qr * br + qi * bi, power, tailRe, inputA.re.power,
                 resultAcc, Math.max(inputA.re.noiseMag, scaledNoise)
@@ -1602,194 +1839,8 @@
                 ai - qr * bi - qi * br, power, tailIm, inputA.im.power,
                 resultAcc, Math.max(inputA.im.noiseMag, scaledNoise)
             );
+
             return new ComplexNumber([resultRe, resultIm]);
-        }
-
-        /**
-         * 纯实数取模，保留余数的符号和噪声。
-         * @private
-         * @param {BigNumber} a - 被除数。
-         * @param {BigNumber} b - 非零除数。
-         * @param {number} acc - 结果精度。
-         * @returns {BigNumber} 实数余数。
-         */
-        static _realMod(a, b, acc) {
-            if (a.isZero()) {
-                return new BigNumber(0n, {acc});
-            }
-            const oppositeSigns = a.isNegative() !== b.isNegative();
-            const absA = a.isNegative() ? -a.mantissa : a.mantissa;
-            const absB = b.isNegative() ? -b.mantissa : b.mantissa;
-            const lenA = BigNumber.decimalLengthBigInt(absA);
-            const lenB = BigNumber.decimalLengthBigInt(absB);
-            const powerA = BigInt(a.power);
-            const powerB = BigInt(b.power);
-            const magB = powerB + BigInt(lenB - 1);
-            const magDiff = powerA + BigInt(lenA - 1) - magB;
-            const effectiveDigits = Math.max(1, Math.floor(0.9 * acc), acc - 8);
-            const margin = Math.min(4, Math.max(0, acc - effectiveDigits));
-            const edgeMargin = Math.min(2, margin);
-            const divisorIsReliable = b.noiseMag === -Infinity || b.noiseMag + margin < Number(magB);
-            const noiseForQuotient = (quotientMag) => Math.max(
-                a.noiseMag,
-                quotientMag === -Infinity || b.noiseMag === -Infinity ? -Infinity : quotientMag + b.noiseMag
-            );
-            const nearUpperEdge = (distance, quotientMag) => {
-                const noise = noiseForQuotient(quotientMag);
-                if (!Number.isFinite(noise) || !divisorIsReliable) {
-                    return false;
-                }
-                const tolerancePower = BigInt(Math.floor(noise + edgeMargin)) + 1n;
-                // 容差至少比除数低两个数量级，以免把正常余数吸附为零。
-                if (tolerancePower > magB - 2n) {
-                    return false;
-                }
-                return MathPlus._modSign([...distance, [-1n, tolerancePower]]) < 0n;
-            };
-
-            if (magDiff < 0n) {
-                if (oppositeSigns) {
-                    if (nearUpperEdge([[absA, powerA]], 0)) {
-                        return new BigNumber(0n, {acc});
-                    }
-                    return MathPlus._modWithTail(b.mantissa, b.power, a.mantissa, a.power, acc, noiseForQuotient(0));
-                }
-                if (nearUpperEdge([[absB, powerB], [-absA, powerA]], 0)) {
-                    return new BigNumber(0n, {acc});
-                }
-                return new BigNumber(a, {acc});
-            }
-
-            const power = Math.min(a.power, b.power);
-            const shiftA = powerA - BigInt(power);
-            const shiftB = powerB - BigInt(power);
-            const divisor = absB * BigNumber.pow10(Number(shiftB));
-            let remainder;
-            let quotientMag = -Infinity;
-            if (shiftA > BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
-                remainder = MathPlus._modScale(absA, shiftA, divisor);
-                if (b.noiseMag !== -Infinity && remainder !== 0n) {
-                    // 仅在传播除数噪声时精确确定商的数量级，无需构造完整商。
-                    let mag = magDiff;
-                    if (MathPlus._modSign([[absA, powerA], [-absB, powerB + mag]]) < 0n) {
-                        mag--;
-                    }
-                    if (oppositeSigns && MathPlus._modSign([
-                        [absA, powerA], [-absB, powerB + mag + 1n], [absB, powerB]
-                    ]) > 0n) {
-                        mag++;
-                    }
-                    quotientMag = Number(mag);
-                }
-            } else {
-                const dividend = absA * BigNumber.pow10(Number(shiftA));
-                remainder = dividend % divisor;
-                const quotient = dividend / divisor + (oppositeSigns && remainder !== 0n ? 1n : 0n);
-                quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
-            }
-            if (remainder === 0n) {
-                return new BigNumber(0n, {acc});
-            }
-            const magnitude = oppositeSigns ? divisor - remainder : remainder;
-            if (nearUpperEdge([[divisor - magnitude, BigInt(power)]], Math.max(0, quotientMag))) {
-                return new BigNumber(0n, {acc});
-            }
-            return new BigNumber(b.isNegative() ? -magnitude : magnitude, {
-                pow: power,
-                acc,
-                noiseMag: noiseForQuotient(quotientMag)
-            });
-        }
-
-        /**
-         * 将尾数按十进制指数缩放后取余，大指数用模快速幂。
-         * @private
-         * @param {bigint} mantissa - 待缩放的尾数。
-         * @param {bigint} shift - 非负十进制指数。
-         * @param {bigint} modulus - 正整数模数。
-         * @returns {bigint} 缩放后的余数。
-         */
-        static _modScale(mantissa, shift, modulus) {
-            if (shift <= BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
-                return (mantissa * BigNumber.pow10(Number(shift))) % modulus;
-            }
-            let result = mantissa % modulus;
-            let base = 10n % modulus;
-            while (shift > 0n && result !== 0n) {
-                if ((shift & 1n) !== 0n) {
-                    result = (result * base) % modulus;
-                }
-                shift >>= 1n;
-                base = (base * base) % modulus;
-            }
-            return result;
-        }
-
-        /**
-         * 比较至多三个十进制项的和与零，只对齐数量级接近的项。
-         * @private
-         * @param {Array<[bigint, bigint]>} terms - 各项的尾数和十进制指数。
-         * @returns {bigint} 和的符号，为 -1n、0n 或 1n。
-         */
-        static _modSign(terms) {
-            let remaining = terms
-                .filter(([mantissa]) => mantissa !== 0n)
-                .map(([mantissa, power]) => [mantissa, power, power + BigInt(BigNumber.decimalLengthBigInt(mantissa) - 1)]);
-            while (remaining.length > 1) {
-                remaining.sort((a, b) => a[2] === b[2] ? 0 : a[2] > b[2] ? -1 : 1);
-                const [a, b] = remaining;
-                if (a[2] - b[2] >= 2n) {
-                    return a[0] < 0n ? -1n : 1n;
-                }
-                const power = a[1] < b[1] ? a[1] : b[1];
-                const sum = a[0] * BigNumber.pow10(Number(a[1] - power)) +
-                    b[0] * BigNumber.pow10(Number(b[1] - power));
-                remaining = remaining.slice(2);
-                if (sum !== 0n) {
-                    remaining.push([sum, power, power + BigInt(BigNumber.decimalLengthBigInt(sum) - 1)]);
-                }
-            }
-            const mantissa = remaining[0]?.[0] ?? 0n;
-            return mantissa < 0n ? -1n : mantissa > 0n ? 1n : 0n;
-        }
-
-        /**
-         * 将整数残差与小数尾合并，在返回时统一舍入。
-         * @private
-         * @param {bigint} mantissa - 整数残差的尾数。
-         * @param {number} power - 整数残差的十进制指数。
-         * @param {bigint} tail - 小数尾的尾数。
-         * @param {number} tailPower - 小数尾的十进制指数。
-         * @param {number} acc - 结果精度。
-         * @param {number} noiseMag - 已传播的噪声量级上界。
-         * @returns {BigNumber} 合并后的实数余数。
-         */
-        static _modWithTail(mantissa, power, tail, tailPower, acc, noiseMag) {
-            if (mantissa === 0n) {
-                return new BigNumber(tail, {acc, pow: tailPower, noiseMag});
-            }
-            if (tail !== 0n) {
-                const commonPower = Math.min(power, tailPower);
-                const gap = BigInt(power) - BigInt(tailPower);
-                const digits = BigNumber.decimalLengthBigInt(mantissa);
-                const tailDigits = BigNumber.decimalLengthBigInt(tail);
-                if (gap <= BigInt(acc + tailDigits + 1)) {
-                    mantissa = mantissa * BigNumber.pow10(power - commonPower) +
-                        tail * BigNumber.pow10(tailPower - commonPower);
-                    power = commonPower;
-                } else {
-                    noiseMag = Math.max(noiseMag, tailPower + tailDigits - 1);
-                    if (digits > acc) {
-                        const unit = BigNumber.pow10(digits - acc);
-                        const remainder = mantissa % unit;
-                        // 极小尾项只会改变恰好落在舍入中点时的取舍方向。
-                        if (remainder * 2n === unit || remainder * 2n === -unit) {
-                            mantissa += tail < 0n ? -1n : 1n;
-                        }
-                    }
-                }
-            }
-            return new BigNumber(mantissa, {acc, pow: power, noiseMag});
         }
 
         /**
@@ -1894,7 +1945,7 @@
                     return new ComplexNumber([0, 1n, workAcc]);
                 }
 
-                let b = new ComplexNumber(base, {acc: workAcc});
+                let b = MathPlus._complexInput(base, workAcc);
                 const innerAcc = b.acc;
                 let result = new ComplexNumber([0, 1n, innerAcc]);
 
@@ -1914,15 +1965,16 @@
                 return result;
             }
 
-            const inputA = new ComplexNumber(a);
-            const inputB = new ComplexNumber(b);
+            const inputA = MathPlus._complexInput(a);
+            const inputB = MathPlus._complexInput(b);
             const resultAcc = Math.min(inputA.acc, inputB.acc);
 
             if (!inputB.onlyReal && inputA.onlyReal) {
-                const instanceE = new BigNumber(CalcConfig.constants.e, {acc: inputA.re.acc});
+                const instanceE = BigNumber.approximateConstant(CalcConfig.constants.e, inputA.re.acc);
                 if (
                     inputA.re.power === instanceE.power &&
-                    inputA.re.mantissa === instanceE.mantissa
+                    inputA.re.mantissa === instanceE.mantissa &&
+                    inputA.re.noiseMag <= instanceE.noiseMag
                 ) {
                     // e 的复数幂由 exp 专用实现计算，避免经通用 ln/pow 路径损失精度。
                     return MathPlus.exp(inputB);
@@ -1948,9 +2000,51 @@
                     return new ComplexNumber([0, 0n, resultAcc]);
                 }
 
-                // 特判底数为 1：1^b 恒为 1
+                // 快路径计算名义值，再用 a^b 对底数和指数的变化率传播噪声。
+                const withInputNoise = (result) => {
+                    if (result.isZero() || (reA.noiseMag === -Infinity && reB.noiseMag === -Infinity)) {
+                        return result;
+                    }
+
+                    const part = result.onlyReal ? result.re : result.im;
+                    const resultMag = BigNumber.getMag(part);
+
+                    let baseNoise = -Infinity;
+                    if (reA.noiseMag !== -Infinity) {
+                        const absMantissaA = reA.isNegative() ? -reA.mantissa : reA.mantissa;
+                        const absMantissaB = reB.isNegative() ? -reB.mantissa : reB.mantissa;
+                        const logRatio = (reB.power - reA.power) +
+                            (_estimateLog10BigInt(absMantissaB) - _estimateLog10BigInt(absMantissaA));
+                        baseNoise = reA.noiseMag + resultMag + Math.ceil(logRatio);
+                    }
+
+                    let exponentNoise = -Infinity;
+                    if (reB.noiseMag !== -Infinity) {
+                        const unitBase = reA.power === 0 && (reA.mantissa === 1n || reA.mantissa === -1n);
+                        const logDerivative = unitBase ? -Infinity
+                                                       : _estimateBaseLog10Info(reA).log10Log10A + Math.log10(Math.LN10);
+                        exponentNoise = reB.noiseMag + resultMag + Math.ceil(logDerivative);
+                        if (reA.isNegative()) {
+                            // 快路径的结果在坐标轴上，相位变化仅以二阶影响该分量。
+                            // |1 - cos(πδ)| ≤ π²δ²/2 < 10δ²。
+                            const phaseNoise = resultMag + 2 * reB.noiseMag + 1;
+                            exponentNoise = Math.max(exponentNoise, phaseNoise);
+                        }
+                    }
+
+                    const noiseMag = Math.max(part.noiseMag, baseNoise, exponentNoise);
+                    if (noiseMag === part.noiseMag) {
+                        return result;
+                    }
+
+                    return new ComplexNumber(result, {
+                        noiseMag: result.onlyReal ? [noiseMag, undefined] : [undefined, noiseMag]
+                    });
+                };
+
+                // 特判底数为 1：1^b 恒为 1，近似底数仍有噪声。
                 if (reA.mantissa === 1n && reA.power === 0) {
-                    return new ComplexNumber([0, 1n, resultAcc]);
+                    return withInputNoise(new ComplexNumber([0, 1n, resultAcc]));
                 }
 
                 // --- 路径 1.1: 指数 b 是整数 ---
@@ -1960,7 +2054,7 @@
                     // 1. 前置 O(1) 特殊底数判断：特判 (-1)^n，凭指数奇偶性 O(1) 判定，杜绝大指数展开与卡死。
                     if (reA.mantissa === -1n && reA.power === 0) {
                         const isEven = reB.power > 0 || (reB.mantissa & 1n) === 0n;
-                        return new ComplexNumber([0, isEven ? 1n : -1n, resultAcc]);
+                        return withInputNoise(new ComplexNumber([0, isEven ? 1n : -1n, resultAcc]));
                     }
 
                     const isExponentNegative = reB.isNegative();
@@ -1995,7 +2089,7 @@
                             return new ComplexNumber([0, 0n, resultAcc]);
                         }
 
-                        return new ComplexNumber([0, sign, resultAcc], {pow: Number(finalPowerBigInt)});
+                        return withInputNoise(new ComplexNumber([0, sign, resultAcc], {pow: Number(finalPowerBigInt)}));
                     }
 
                     // 3. 用对数尺度整体预估最终数量级：log10(|b| * |log10|a||) = log10|b| + log10|log10|a||
@@ -2050,7 +2144,7 @@
                         if (isExponentNegative) {
                             result = MathPlus.divide([0, 1n, workAcc], result);
                         }
-                        return new ComplexNumber(result, {acc: resultAcc});
+                        return withInputNoise(MathPlus._complexInput(result, resultAcc));
                     } catch (err) {
                         if (
                             err &&
@@ -2072,7 +2166,7 @@
                 if (reA.isPositive()) {
                     // 正底数小数幂采用 a^b = exp(b·ln(a))，平方根走专用牛顿迭代。
                     if (reB.power === -1 && reB.mantissa === 5n) {
-                        return MathPlus.sqrt(reA);
+                        return withInputNoise(MathPlus.sqrt(reA));
                     }
                     return MathPlus.exp(
                         MathPlus.times(MathPlus.ln(reA), reB)
@@ -2092,7 +2186,7 @@
                 if (absB.power === -1 && absB.mantissa === 5n) {
                     // 负实数的 0.5 次幂走纯虚数分支，保持与主值方根解析连续并规避通用复数幂误差。
                     const zero = new BigNumber([0, 0n, resultAcc]);
-                    result = new ComplexNumber([zero, result.re]);
+                    result = withInputNoise(new ComplexNumber([zero, result.re]));
                 } else {
                     const mid = Public.integerCorrect(
                         MathPlus.divide([0, 1n, resultAcc], absB)
@@ -2103,7 +2197,7 @@
                         result = MathPlus.oppositeNumber(result);
                     } else {
                         // 无实数解
-                        const angle = MathPlus.times(absB, CalcConfig.constants.pi);
+                        const angle = MathPlus.times(absB, BigNumber.approximateConstant(CalcConfig.constants.pi));
                         const cosAngle = MathPlus.cos(angle);
                         const sinAngle = MathPlus.sin(angle);
 
@@ -2170,8 +2264,8 @@
          * MathPlus.exponential(1.23, 3);
          */
         static exponential(a, b) {
-            const inputA = new ComplexNumber(a);
-            const inputB = new ComplexNumber(b);
+            const inputA = MathPlus._arithmeticInput(a);
+            const inputB = MathPlus._arithmeticInput(b);
             const acc = Math.min(inputA.acc, inputB.acc);
             return MathPlus.times(
                 inputA,
@@ -2186,7 +2280,7 @@
          * @returns {ComplexNumber} 代表 √x 结果的 ComplexNumber 实例。
          */
         static sqrt(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             if (input.onlyReal) {
@@ -2218,8 +2312,6 @@
                     acc: workAcc,
                     noiseMag: scaledNoiseMag
                 });
-                const scaledInput = new ComplexNumber(scaledBig, {acc: workAcc});
-
                 // 原生 Math.sqrt 在 [1, 100) 范围内永远安全且不溢出，提供约 15 位精度的初值
                 const lowAccuracyScaled = new BigNumber(scaledBig, {acc: 15});
                 const numberRe = Number(lowAccuracyScaled.mantissa) * (10 ** lowAccuracyScaled.power);
@@ -2229,11 +2321,11 @@
                 }
 
                 if (!useAlternative) {
-                    result = new ComplexNumber(Math.sqrt(numberRe), {acc: workAcc});
+                    result = new BigNumber(Math.sqrt(numberRe), {acc: workAcc});
 
                     let i = 0;
                     const max = Math.max(20, Math.ceil(Math.log2(workAcc)) + 10);
-                    const const_2 = new ComplexNumber([0, 2n, workAcc]);
+                    const const_2 = new BigNumber(2n, {acc: workAcc});
                     let difference, mid;
                     let diffMag = Infinity;
 
@@ -2241,12 +2333,12 @@
                     do {
                         const prevDiffMag = diffMag;
                         mid = result;
-                        result = MathPlus.divide(
-                            MathPlus.plus(mid, MathPlus.divide(scaledInput, mid)),
+                        result = MathPlus.realDivide(
+                            MathPlus.realPlus(mid, MathPlus.realDivide(scaledBig, mid)),
                             const_2
                         );
 
-                        difference = MathPlus.minus(mid, result).re;
+                        difference = MathPlus.realMinus(mid, result);
                         diffMag = BigNumber.getMag(difference);
                         i++;
 
@@ -2265,13 +2357,13 @@
                 // 公式: √x = x^0.5 = e^(0.5 * ln(x))
                 if (useAlternative) {
                     result = MathPlus.exp(
-                        MathPlus.times(MathPlus.ln(absInput), new ComplexNumber([-1, 5n, acc]))
-                    );
+                        MathPlus.times(MathPlus.ln(absInput), [-1, 5n, acc])
+                    ).re;
                 }
 
                 const finalReal = useAlternative
-                                  ? result.re
-                                  : new BigNumber(result.re, {acc: acc, pow: k});
+                                  ? result
+                                  : new BigNumber(result, {acc: acc, pow: k});
 
                 if (isBaseNegative) {
                     return new ComplexNumber([[0, 0n, acc], finalReal]);
@@ -2290,7 +2382,7 @@
          * @returns {ComplexNumber} 主立方根。
          */
         static cbrt(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             if (input.onlyReal) {
@@ -2322,8 +2414,6 @@
                     acc: workAcc,
                     noiseMag: scaledNoiseMag
                 });
-                const scaledInput = new ComplexNumber(scaledBig, {acc: workAcc});
-
                 // 原生 Math.cbrt 在 [1, 1000) 范围内永远安全且不溢出，提供约 15 位精度的初值
                 const lowAccuracyScaled = new BigNumber(scaledBig, {acc: 15});
                 const numberRe = Number(lowAccuracyScaled.mantissa) * (10 ** lowAccuracyScaled.power);
@@ -2333,29 +2423,29 @@
                 }
 
                 if (!useAlternative) {
-                    result = new ComplexNumber(Math.cbrt(numberRe), {acc: workAcc});
+                    result = new BigNumber(Math.cbrt(numberRe), {acc: workAcc});
 
                     // 立方根的牛顿迭代：x_(n+1) = (2 * x_n + scaled / x_n²) / 3
                     let i = 0;
                     const max = Math.max(20, Math.ceil(Math.log2(workAcc)) + 10);
-                    const const_2 = new ComplexNumber([0, 2n, workAcc]);
-                    const const_3 = new ComplexNumber([0, 3n, workAcc]);
+                    const const_2 = new BigNumber(2n, {acc: workAcc});
+                    const const_3 = new BigNumber(3n, {acc: workAcc});
                     let difference, mid;
                     let diffMag = Infinity;
 
                     do {
                         const prevDiffMag = diffMag;
                         mid = result;
-                        const squareOfMid = MathPlus.times(mid, mid);
-                        result = MathPlus.divide(
-                            MathPlus.plus(
-                                MathPlus.times(mid, const_2),
-                                MathPlus.divide(scaledInput, squareOfMid)
+                        const squareOfMid = MathPlus.realTimes(mid, mid);
+                        result = MathPlus.realDivide(
+                            MathPlus.realPlus(
+                                MathPlus.realTimes(mid, const_2),
+                                MathPlus.realDivide(scaledBig, squareOfMid)
                             ),
                             const_3
                         );
 
-                        difference = MathPlus.minus(mid, result).re;
+                        difference = MathPlus.realMinus(mid, result);
                         diffMag = BigNumber.getMag(difference);
                         i++;
 
@@ -2376,7 +2466,7 @@
                     return isBaseNegative ? MathPlus.oppositeNumber(alt) : alt;
                 }
 
-                const finalReal = new BigNumber(result.re, {acc: acc, pow: k});
+                const finalReal = new BigNumber(result, {acc: acc, pow: k});
 
                 if (isBaseNegative) {
                     return new ComplexNumber(MathPlus.oppositeNumber(finalReal));
@@ -2398,8 +2488,8 @@
          * @returns {ComplexNumber} 代表 a 的 b 次方根主值的结果。
          */
         static nroot(a, b) {
-            const inputA = new ComplexNumber(a);
-            const inputB = new ComplexNumber(b);
+            const inputA = MathPlus._arithmeticInput(a);
+            const inputB = MathPlus._arithmeticInput(b);
             const acc = Math.min(inputA.acc, inputB.acc);
             const oneOverB = MathPlus.divide([0, 1n, acc], inputB);
             return MathPlus.pow(inputA, oneOverB);
@@ -2413,11 +2503,11 @@
          * @throws {Error} 如果泰勒级数未能收敛。
          */
         static exp(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
             const workAcc = acc + 6;
-            const workInput = new ComplexNumber(input, {acc: workAcc});
+            const workInput = MathPlus._complexInput(input, workAcc);
 
             if (input.onlyReal) {
                 const re = workInput.re;
@@ -2427,7 +2517,7 @@
                 }
 
                 if (re.power >= 0) {
-                    return new ComplexNumber(MathPlus.pow(CalcConfig.constants.e, workInput), {acc: acc});
+                    return new ComplexNumber(MathPlus.pow(BigNumber.approximateConstant(CalcConfig.constants.e), workInput), {acc: acc});
                 }
 
                 // 将 x 拆为整数和小数部分：e^x = e^floor(x) · e^(x-floor(x))。
@@ -2440,14 +2530,18 @@
                     const realPower = BigNumber.pow10(-re.power);
                     const intPart = re.mantissa / realPower;
                     resultMid = MathPlus.pow(
-                        new BigNumber(CalcConfig.constants.e, {acc: workAcc}),
+                        BigNumber.approximateConstant(CalcConfig.constants.e, workAcc),
                         [0, intPart, workAcc]
                     );
                     iterationMantissa = re.mantissa - intPart * realPower;
                 }
 
                 // 先计算更小参数的泰勒级数 e^t = Σ(t^n/n!)，随后取十次幂还原小数部分。
-                const iteration = new BigNumber(iterationMantissa, {pow: re.power - 1, acc: workAcc});
+                const iteration = new BigNumber(iterationMantissa, {
+                    pow: re.power - 1,
+                    acc: workAcc,
+                    noiseMag: re.noiseMag - 1
+                });
 
                 const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
                 const minMag = 0 - workAcc - 1;
@@ -2468,6 +2562,7 @@
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: exp. Input: ${input.toString()}`);
                 }
 
+                result = MathPlus._withNoise(result, Math.max(BigNumber.getMag(mid), mid.noiseMag));
                 // 组合最终结果：e^x = e^i * e^f
                 return new ComplexNumber(MathPlus.times(
                     MathPlus.pow(result, [1, 1n, workAcc]),
@@ -2495,11 +2590,11 @@
          * @throws {Error} 如果输入为 0，或者内部计算未能收敛。
          */
         static ln(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
             const workAcc = acc + 6;
-            const workInput = new ComplexNumber(input, {acc: workAcc});
+            const workInput = MathPlus._complexInput(input, workAcc);
 
             if (input.onlyReal && !input.re.isNegative()) {
                 const re = workInput.re;
@@ -2571,18 +2666,19 @@
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: ln. Input: ${input.toString()}`);
                 }
 
-                // 组合所有部分得到最终结果
+                // 首个省略项以及各范围缩减常量的误差均进入最终噪声。
+                result = MathPlus._withNoise(result, Math.max(BigNumber.getMag(mid), mid.noiseMag));
                 result = MathPlus.realTimes(new BigNumber(2n, {pow: 0, acc: workAcc}), result);
                 result = MathPlus.realPlus(result, MathPlus.realTimes(
-                    new BigNumber(CalcConfig.constants.ln_10, {acc: workAcc}),
+                    BigNumber.approximateConstant(CalcConfig.constants.ln_10, workAcc),
                     new BigNumber(BigInt(mantissaChangedBy10), {pow: 0, acc: workAcc})
                 ));
                 result = MathPlus.realPlus(result, MathPlus.realTimes(
-                    new BigNumber(CalcConfig.constants.ln_1_2, {acc: workAcc}),
+                    BigNumber.approximateConstant(CalcConfig.constants.ln_1_2, workAcc),
                     new BigNumber(BigInt(mantissaChangedBy1_2), {pow: 0, acc: workAcc})
                 ));
 
-                return new ComplexNumber(result, {acc: acc});
+                return MathPlus._complexInput(result, acc);
             }
 
             // 复对数主值：Log(z) = ln|z| + i·arg(z)。
@@ -2601,7 +2697,7 @@
          * @returns {ComplexNumber} 代表 lg(x) 结果的 ComplexNumber 实例。
          */
         static lg(x) {
-            return MathPlus.divide(MathPlus.ln(x), CalcConfig.constants.ln_10);
+            return MathPlus.divide(MathPlus.ln(x), BigNumber.approximateConstant(CalcConfig.constants.ln_10));
         }
 
         /**
@@ -2629,11 +2725,11 @@
          * @returns {ComplexNumber} 代表 sin(x) 结果的 ComplexNumber 实例。
          */
         static sin(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
             const workAcc = acc + 6;
-            const workInput = new ComplexNumber(input, {acc: workAcc});
+            const workInput = MathPlus._complexInput(input, workAcc);
 
             if (input.onlyReal) {
                 // 将实数参数归约到 [0, π/4]，再用三倍角继续缩减。
@@ -2658,7 +2754,7 @@
                 const squareOfRe = MathPlus.realTimes(re, re);
                 const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
                 const minMag = BigNumber.getMag(re) - workAcc - 1;
-                let mid = new BigNumber(re);
+                let mid = re;
                 let result = mid;
                 let i = 1;
 
@@ -2713,7 +2809,7 @@
          * @returns {ComplexNumber} 代表 arcsin(x) 结果的 ComplexNumber 实例。
          */
         static arcsin(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             if (input.onlyReal) {
@@ -2731,7 +2827,7 @@
                 }
 
                 const term = MathPlus.sqrt(MathPlus.minus(MathPlus.times(re, re), one));
-                const piOver2 = MathPlus.divide(CalcConfig.constants.pi, [0, 2n, acc]);
+                const piOver2 = MathPlus.divide(BigNumber.approximateConstant(CalcConfig.constants.pi), [0, 2n, acc]);
 
                 if (re.isPositive()) { // x > 1
                     // arcsin(x) = π/2 - i * ln(x + sqrt(x² - 1))
@@ -2775,11 +2871,11 @@
          * @throws {Error} 如果内部计算未能收敛。
          */
         static cos(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
             const workAcc = acc + 6;
-            const workInput = new ComplexNumber(input, {acc: workAcc});
+            const workInput = MathPlus._complexInput(input, workAcc);
 
             if (input.onlyReal) {
                 // 将实数参数归约到 [0, π/4]，再用四倍角继续缩减。
@@ -2823,6 +2919,7 @@
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: cos. Input: ${input.toString()}`);
                 }
 
+                result = MathPlus._withNoise(result, Math.max(BigNumber.getMag(mid), mid.noiseMag));
                 // 反复应用四倍角公式还原原始结果
                 for (; divideBy4 !== 0; divideBy4--) {
                     const squareOfResult = MathPlus.realTimes(result, result);
@@ -2862,11 +2959,11 @@
          * @returns {ComplexNumber} 代表 arccos(x) 结果的 ComplexNumber 实例。
          */
         static arccos(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             return MathPlus.minus(
-                MathPlus.divide(CalcConfig.constants.pi, [0, 2n, acc]),
+                MathPlus.divide(BigNumber.approximateConstant(CalcConfig.constants.pi), [0, 2n, acc]),
                 MathPlus.arcsin(input)
             );
         }
@@ -2881,7 +2978,7 @@
          * 底层的 `divide` 方法将抛出一个“除以零”的错误。
          */
         static tan(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const sinAngle = MathPlus.sin(input);
             const cosAngle = Public.zeroCorrect(MathPlus.cos(input), sinAngle);
 
@@ -2897,11 +2994,11 @@
          * @throws {Error} 迭代未收敛时抛出。
          */
         static arctan(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             // 级数累加和参数还原保留 6 位保护位，返回时统一舍入到输入精度。
             const workAcc = acc + 6;
-            const workInput = new ComplexNumber(input, {acc: workAcc});
+            const workInput = MathPlus._complexInput(input, workAcc);
 
             if (input.onlyReal) {
                 let re = workInput.re;
@@ -2935,36 +3032,40 @@
                 }
 
                 let [mid, mid_pow] = [re, re];
-                const squareOfRe = MathPlus.times(re, re);
+                const squareOfRe = MathPlus.realTimes(re, re);
                 const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
                 const minMag = BigNumber.getMag(re) - workAcc - 1;
-                let result = new ComplexNumber([0, 0n, workAcc]);
+                let result = new BigNumber(0n, {acc: workAcc});
                 let i = 0;
 
                 // arctan(x)=x-x³/3+x⁵/5-...；级数结果乘 2^j 后还原半角缩减。
                 for (; BigNumber.getMag(mid) > minMag && !mid.isZero() && i < max; i++) {
-                    result = MathPlus[i % 2 === 0 ? 'plus' : 'minus'](result, mid);
+                    result = MathPlus[i % 2 === 0 ? 'realPlus' : 'realMinus'](result, mid);
 
-                    mid_pow = MathPlus.times(mid_pow, squareOfRe);
-                    mid = MathPlus.divide(
+                    mid_pow = MathPlus.realTimes(mid_pow, squareOfRe);
+                    mid = MathPlus.realDivide(
                         mid_pow,
-                        [0, BigInt(2 * i + 3), workAcc]
-                    ).re;
+                        new BigNumber(BigInt(2 * i + 3), {acc: workAcc})
+                    );
                 }
                 if (i >= max) {
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: arctan. Input: ${input.toString()}`);
                 }
 
                 // 将级数结果乘以 2^j 来补偿半角公式的应用。
-                result = MathPlus.times([0, 2n ** BigInt(j), workAcc], result);
+                result = MathPlus._withNoise(result, Math.max(BigNumber.getMag(mid), mid.noiseMag));
+                result = MathPlus.realTimes(new BigNumber(2n ** BigInt(j), {acc: workAcc}), result);
 
                 // 如果初始 x > 1，应用 arctan(x) = π/2 - arctan(1/x)。
-                result = reciprocal ? MathPlus.minus(MathPlus.divide(CalcConfig.constants.pi, [0, 2n, workAcc]), result) : result;
-                // 如果初始 x < 0，应用 arctan(-x) = -arctan(x)。
-                if (isNegative) {
-                    return new ComplexNumber(MathPlus.oppositeNumber(result), {acc: acc});
+                if (reciprocal) {
+                    const halfPi = MathPlus.realDivide(
+                        BigNumber.approximateConstant(CalcConfig.constants.pi),
+                        new BigNumber(2n, {acc: workAcc})
+                    );
+                    result = MathPlus.realMinus(halfPi, result);
                 }
-                return new ComplexNumber(result, {acc: acc});
+                // 如果初始 x < 0，应用 arctan(-x) = -arctan(x)。
+                return new ComplexNumber(isNegative ? MathPlus.oppositeNumber(result) : result, {acc});
             }
 
             // --- 输入为复数 ---
@@ -2998,9 +3099,9 @@
          * @returns {ComplexNumber} 代表 sinh(x) 结果的 ComplexNumber 实例。
          */
         static sh(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
-            const workInput = new ComplexNumber(input, {acc: acc + 6});
+            const workInput = MathPlus._complexInput(input, acc + 6);
             const [sinh, cosh] = MathPlus._realSinhCosh(workInput.re);
 
             if (input.onlyReal) {
@@ -3021,7 +3122,7 @@
          * @returns {ComplexNumber} 代表 arsinh(x) 结果的 ComplexNumber 实例。
          */
         static arsh(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             // 负实数利用奇函数性质，避免 x 与 sqrt(x² + 1) 相消。
@@ -3048,9 +3149,9 @@
          * @returns {ComplexNumber} 代表 cosh(x) 结果的 ComplexNumber 实例。
          */
         static ch(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
-            const workInput = new ComplexNumber(input, {acc: acc + 6});
+            const workInput = MathPlus._complexInput(input, acc + 6);
             const [sinh, cosh] = MathPlus._realSinhCosh(workInput.re);
 
             if (input.onlyReal) {
@@ -3071,7 +3172,7 @@
          * @returns {ComplexNumber} 代表 arcosh(x) 结果的 ComplexNumber 实例。
          */
         static arch(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             const one = new BigNumber(1n, {acc: acc});
             const minusOne = new BigNumber(-1n, {acc: acc});
@@ -3091,7 +3192,7 @@
 
                 return new ComplexNumber([
                     realPart,
-                    new BigNumber(CalcConfig.constants.pi, {acc: acc})
+                    BigNumber.approximateConstant(CalcConfig.constants.pi, acc)
                 ]);
             }
 
@@ -3116,7 +3217,7 @@
          * @alias tanh
          */
         static th(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             const one = [0, 1n, acc];
 
@@ -3138,7 +3239,7 @@
          * @alias artanh
          */
         static arth(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
             const one = new ComplexNumber([0, 1n, acc]);
 
@@ -3211,7 +3312,7 @@
                 return rangeProduct(1n, num);
             }
 
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             if (input.onlyReal && input.re.power >= 0) {
@@ -3228,9 +3329,14 @@
                 if (BigNumber.getMag(re) <= maxFactorialMag) {
                     const realNumber = re.mantissa * BigNumber.pow10(re.power);
                     if (realNumber <= maxFactorialInput) {
-                        return new ComplexNumber(factorialOptimized(realNumber), {
-                            acc: acc
-                        });
+                        const result = new BigNumber(factorialOptimized(realNumber), {acc});
+                        if (re.noiseMag === -Infinity) {
+                            return new ComplexNumber(result);
+                        }
+                        // Γ'(n+1) = n!·(H_n - γ)，用 1 + ln(n) 给谐和数定界。
+                        const derivativeMag = BigNumber.getMag(result) +
+                            Math.ceil(Math.log10(1 + Math.log(Number(realNumber))));
+                        return new ComplexNumber(MathPlus._withNoise(result, re.noiseMag + derivativeMag));
                     }
                 }
             }
@@ -3255,9 +3361,7 @@
             const g = CalcConfig.constants[option].g;
             const p = CalcConfig.constants[option].p;
 
-            let calcNum = new ComplexNumber(input, {
-                acc: calcAcc
-            });
+            let calcNum = MathPlus._complexInput(input, calcAcc);
 
             // 先在正半平面计算，再由 Γ(z)Γ(1-z)=π/sin(πz) 反射回原参数。
             // Re(z) ∈ [-0.5, 0) 时用 z! = (z + 1)! / (z + 1) 平移到 [0.5, 1)，
@@ -3277,11 +3381,11 @@
             }
 
             // 仅 Lanczos 级数求和保留 calcAcc，抵抗各项正负相消。
-            let sum = p[0];
+            let sum = BigNumber.approximateConstant(p[0]);
             for (let i = 1; i < p.length; i++) {
                 sum = MathPlus.plus(
                     sum,
-                    MathPlus.divide(p[i], MathPlus.plus(calcNum, new ComplexNumber(i, {
+                    MathPlus.divide(BigNumber.approximateConstant(p[i]), MathPlus.plus(calcNum, new BigNumber(i, {
                         acc: calcAcc
                     })))
                 );
@@ -3295,12 +3399,12 @@
             );
             const workAcc = Math.min(calcAcc, acc + inputMag + 12);
 
-            const workNum = new ComplexNumber(calcNum, {acc: workAcc});
+            const workNum = MathPlus._complexInput(calcNum, workAcc);
             const workG = new BigNumber(g, {acc: workAcc});
-            const workE = new BigNumber(CalcConfig.constants.e, {acc: workAcc});
+            const workE = BigNumber.approximateConstant(CalcConfig.constants.e, workAcc);
 
             // 应用完整的兰佐斯公式：Γ(z+1) = ((z + g + 1/2) / e)^(z + 1/2) * A(z)
-            let result = new ComplexNumber(sum, {acc: workAcc});
+            let result = MathPlus._complexInput(sum, workAcc);
             const mid = MathPlus.plus(workNum, [-1, 5n, workAcc]);
             result = MathPlus.times(
                 result,
@@ -3315,8 +3419,8 @@
                 // workNum 已是 (input + 1) 在 workAcc 下的值，且 Re(workNum) ∈ [0.5, 1)，除法数值稳定。
                 result = MathPlus.divide(result, workNum);
             } else if (reflection) {
-                const workPi = new BigNumber(CalcConfig.constants.pi, {acc: workAcc});
-                const workInput = new ComplexNumber(input, {acc: workAcc});
+                const workPi = BigNumber.approximateConstant(CalcConfig.constants.pi, workAcc);
+                const workInput = MathPlus._complexInput(input, workAcc);
                 const numerator = MathPlus.times(workInput, workPi);
 
                 let reducedRe;
@@ -3347,9 +3451,7 @@
                 );
             }
 
-            return new ComplexNumber(result, {
-                acc: acc
-            });
+            return MathPlus._complexInput(result, acc);
         }
 
         /**
@@ -3363,7 +3465,7 @@
          * @throws {Error} 如果输入为 0 或负整数，此时伽玛函数未定义。
          */
         static gamma(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             // 接近零时改用 Γ(x) = (x+1)! / (x+1) / x，既避免 x - 1 舍入到极点 -1，
@@ -3388,7 +3490,7 @@
          * @returns {ComplexNumber} 代表向下取整结果的 ComplexNumber 实例。
          */
         static floor(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
 
             if (input.onlyReal) {
                 const re = input.re;
@@ -3407,7 +3509,7 @@
                 if (result < 0n || (result === 0n && re.isNegative())) {
                     result -= 1n;
                 }
-                return new ComplexNumber(result, {acc: acc});
+                return MathPlus._complexInput(result, acc);
             }
 
             return new ComplexNumber([
@@ -3425,7 +3527,7 @@
          * @returns {ComplexNumber} 代表向上取整结果的 ComplexNumber 实例。
          */
         static ceil(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
 
             if (input.onlyReal) {
                 const re = input.re;
@@ -3441,7 +3543,7 @@
                 if (result > 0n || (result === 0n && re.isPositive())) {
                     result += 1n;
                 }
-                return new ComplexNumber(result, {acc: acc});
+                return MathPlus._complexInput(result, acc);
             }
 
             return new ComplexNumber([
@@ -3459,7 +3561,7 @@
          * @returns {ComplexNumber} 一个纯实数的 ComplexNumber 实例，代表输入值的绝对值。
          */
         static abs(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const re = input.re, im = input.im;
 
             if (input.onlyReal) {
@@ -3483,7 +3585,7 @@
          * @returns {ComplexNumber} 代表 sgn(x) 结果的 ComplexNumber 实例。
          */
         static sgn(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._complexInput(x);
             const acc = input.acc;
 
             if (input.isZero()) {
@@ -3509,12 +3611,12 @@
          * @returns {ComplexNumber} 代表转换后弧度值的 ComplexNumber 实例。
          */
         static degree(x) {
-            const input = new ComplexNumber(x);
+            const input = MathPlus._arithmeticInput(x);
             const acc = input.acc;
 
             return MathPlus.times(
                 MathPlus.divide(input, [1, 18n, acc]),
-                CalcConfig.constants.pi
+                BigNumber.approximateConstant(CalcConfig.constants.pi)
             );
         }
 
@@ -3583,15 +3685,9 @@
 
                     case '[pi]':
                         // 常量本身也是近似值，须让整数倍角度继承其相位误差。
-                        return new ComplexNumber(CalcConfig.constants.pi, {
-                            acc: acc,
-                            noiseMag: CalcConfig.constants.pi[0] - 1
-                        });
+                        return new ComplexNumber(BigNumber.approximateConstant(CalcConfig.constants.pi, acc));
                     case '[e]':
-                        return new ComplexNumber(CalcConfig.constants.e, {
-                            acc: acc,
-                            noiseMag: CalcConfig.constants.e[0] - 1
-                        });
+                        return new ComplexNumber(BigNumber.approximateConstant(CalcConfig.constants.e, acc));
                     case '[i]':
                         return new ComplexNumber([[0, 0n, acc], [0, 1n, acc]]);
                     case '[x]':
@@ -3599,7 +3695,7 @@
                             if (unknown === undefined) {
                                 throw new Error('[MathPlus] input error: x is undefined.');
                             }
-                            return new ComplexNumber(unknown, {acc: acc});
+                            return MathPlus._complexInput(unknown, acc);
                         } else {
                             return new ComplexNumber([0, 0n, acc]);
                         }
@@ -3674,7 +3770,7 @@
             // 初始验证和准备
             const inputType = Public.typeOf(expr);
             if (['number', 'bigint', 'complexnumber', 'bignumber'].includes(inputType)) {
-                const val = new ComplexNumber(expr, {acc: acc});
+                const val = MathPlus._complexInput(expr, acc);
                 return [val, val.toString()];
             }
             if (inputType !== 'string') {
@@ -4224,7 +4320,7 @@
                 throw new Error('[MathPlus] syntax error: The final stack should have exactly one value.');
             }
 
-            const result = new ComplexNumber(mode === 'calc' ? valueStack[0] : [0, 0n, acc]);
+            const result = MathPlus._complexInput(mode === 'calc' ? valueStack[0] : [0, 0n, acc]);
             return [result, output];
         }
     }
@@ -5868,7 +5964,7 @@
             const length = MathPlus.pow(r, realPow);
             const argumentConstant = MathPlus.times(realPow, arg);
             const argumentConstantK = MathPlus.times(
-                MathPlus.times(2, CalcConfig.constants.pi),
+                MathPlus.times(2, BigNumber.approximateConstant(CalcConfig.constants.pi)),
                 realPow
             );
             const lengthPart = Public.idealizationToString(length);
@@ -6076,9 +6172,9 @@
          *   可供后续高精度运算使用的内部结果，调用方不可假定二者类型相同。
          * @param {string} [options.f] - 可供表达式 `[f]` 调用的函数体；可引用 `[x]` 和 `[g]`。
          * @param {string} [options.g] - 可供表达式 `[g]` 调用的函数体；可引用 `[x]` 和 `[f]`。
-         * @returns {{result:string|[[number,bigint,number],[number,bigint,number]], expr:string}} 固定二字段对象：
+         * @returns {{result:string|[[number,bigint,number],[number,bigint,number]], expr:string, noiseMag?:[number,number]}}
          *   `result` 在 `outputMode='output'` 时是格式化字符串，在 `mid` 时是实部、虚部各自的
-         *   `[power,mantissa,acc]` 元组；
+         *   `[power,mantissa,acc]` 元组，并额外返回 `noiseMag` 以恢复两分量的噪声状态；
          *   `expr` 始终是语法解析后的规范化内部表达式，可用于回显或再次计算。
          */
         static exec(expr, {
@@ -6094,21 +6190,23 @@
                 effectiveOutputAcc = calcAcc;
             }
 
-            const calcResult = MathPlus.calc(expr, {
+            const [value, normalizedExpr] = MathPlus.calc(expr, {
                 f: f,
                 g: g,
                 mode: calcMode,
                 acc: calcAcc
             });
 
+            if (outputMode === 'output') {
+                return {
+                    result: Public.idealizationToString(value, {acc: effectiveOutputAcc, printMode}),
+                    expr: normalizedExpr
+                };
+            }
             return {
-                result: outputMode === 'output' ?
-                        Public.idealizationToString(calcResult[0], {
-                            acc: effectiveOutputAcc,
-                            printMode: printMode
-                        }) :
-                        calcResult[0].valueOf(),
-                expr: calcResult[1]
+                result: value.valueOf(),
+                expr: normalizedExpr,
+                noiseMag: [value.re.noiseMag, value.im.noiseMag]
             };
         }
     }

@@ -1223,8 +1223,9 @@
                  * @param {'algebra'|'polar'} [options.printMode] - 本任务的复数输出形式，不修改默认配置。
                  * @param {string} [options.f] - 本任务中 `[f]` 对应的函数体，可引用 `[x]`、`[g]`。
                  * @param {string} [options.g] - 本任务中 `[g]` 对应的函数体，可引用 `[x]`、`[f]`。
-                 * @returns {Promise<{result:string|[[number,bigint,number],[number,bigint,number]],expr:string}>}
-                 *   `result` 的形态由 `outputMode` 决定：显示字符串或复数内部二元组；`expr` 始终为规范化表达式。
+                 * @returns {Promise<{result:string|[[number,bigint,number],[number,bigint,number]],expr:string,noiseMag?:[number,number]}>}
+                 *   `result` 为显示字符串或复数内部二元组；`mid` 额外返回两分量的 `noiseMag`；
+                 *   `expr` 始终为规范化表达式。
                  */
                 static exec(expr, {calcAcc, outputAcc, calcMode, outputMode, printMode, f, g} = {}) {
                     return this._dispatch('exec', [expr, {calcAcc, outputAcc, calcMode, outputMode, printMode, f, g}]);

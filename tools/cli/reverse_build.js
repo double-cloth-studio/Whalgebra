@@ -123,8 +123,8 @@ async function extractTagType(html, tagName, outputDirectory, extension, doDeden
 
         const tagId = getAttribute(attributes, "id");
         const filename = tagId && !/[<>:"/\\|?*]/u.test(tagId)
-            ? `${tagId}${extension}`
-            : `extracted_${calculateHash(content)}${extension}`;
+                         ? `${tagId}${extension}`
+                         : `extracted_${calculateHash(content)}${extension}`;
         const filePath = await uniqueFilepath(outputDirectory, filename);
 
         await writeFile(filePath, nativeNewlines(content), GLOBAL_CONFIG.ENCODING);

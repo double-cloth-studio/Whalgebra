@@ -57,7 +57,10 @@ test("强制逆向构建在输入无效或提取失败时保留旧产物", async
     await writeFile(oldFile, "旧产物", "utf8");
     await writeFile(inputFile, `<style>body{}</style><script id="${"a".repeat(300)}">true;</script>`, "utf8");
 
-    const options = {outputDir, force: true, logger: () => {}};
+    const options = {
+        outputDir, force: true, logger: () => {
+        }
+    };
     await assert.rejects(reverseBuild({...options, inputFile: path.join(directory, "missing.html")}), {
         code: "INPUT_NOT_FOUND"
     });

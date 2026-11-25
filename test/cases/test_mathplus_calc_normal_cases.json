@@ -1468,512 +1468,897 @@
     }
   },
   {
-    "description": ["[normal:complex-sin-small-imaginary] 复数正弦保留微小虚部"],
-    "coeffs": ["im(sin(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal:complex-sin-small-imaginary] 复数正弦保留微小虚部"
+    ],
+    "coeffs": [
+      "im(sin(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "5.403023058681397174009366E-301",
       "expr": "im(sin(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal:complex-cos-small-imaginary] 复数余弦保留微小虚部及其符号"],
-    "coeffs": ["im(cos(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal:complex-cos-small-imaginary] 复数余弦保留微小虚部及其符号"
+    ],
+    "coeffs": [
+      "im(cos(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "-8.414709848078965066525023E-301",
       "expr": "im(cos(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal:complex-sh-small-real] 复数双曲正弦保留微小负实部"],
-    "coeffs": ["re(sh(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal:complex-sh-small-real] 复数双曲正弦保留微小负实部"
+    ],
+    "coeffs": [
+      "re(sh(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "-5.403023058681397174009366E-301",
       "expr": "re(sh(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal:complex-ch-small-real] 复数双曲余弦保留微小实部产生的虚部"],
-    "coeffs": ["im(ch(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal:complex-ch-small-real] 复数双曲余弦保留微小实部产生的虚部"
+    ],
+    "coeffs": [
+      "im(ch(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "-8.414709848078965066525023E-301",
       "expr": "im(ch(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sin 微小虚部输入的结果实部（36 位计算精度）","复数参考值由 Python Decimal 以 100 位精度独立计算三角和双曲泰勒级数。"],
-    "coeffs": ["re(sin(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal] sin 微小虚部输入的结果实部（36 位计算精度）",
+      "复数参考值由 Python Decimal 以 100 位精度独立计算三角和双曲泰勒级数。"
+    ],
+    "coeffs": [
+      "re(sin(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.8414709848078965066525023",
       "expr": "re(sin(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] cos 微小虚部输入的结果实部（36 位计算精度）"],
-    "coeffs": ["re(cos(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal] cos 微小虚部输入的结果实部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "re(cos(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.5403023058681397174009366",
       "expr": "re(cos(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] sh 微小虚部输入的结果实部（36 位计算精度）"],
-    "coeffs": ["re(sh(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal] sh 微小虚部输入的结果实部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "re(sh(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382",
       "expr": "re(sh(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] sh 微小虚部输入的结果虚部（36 位计算精度）"],
-    "coeffs": ["im(sh(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal] sh 微小虚部输入的结果虚部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "im(sh(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "1.543080634815243778477906E-300",
       "expr": "im(sh(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] ch 微小虚部输入的结果实部（36 位计算精度）"],
-    "coeffs": ["re(ch(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal] ch 微小虚部输入的结果实部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "re(ch(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "1.543080634815243778477906",
       "expr": "re(ch(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] ch 微小虚部输入的结果虚部（36 位计算精度）"],
-    "coeffs": ["im(ch(1+1E-300*[i]))", 36, 25],
+    "description": [
+      "[normal] ch 微小虚部输入的结果虚部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "im(ch(1+1E-300*[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382E-300",
       "expr": "im(ch(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] sin 微小实部输入的结果实部（36 位计算精度）"],
-    "coeffs": ["re(sin(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal] sin 微小实部输入的结果实部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "re(sin(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "-1.543080634815243778477906E-300",
       "expr": "re(sin(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sin 微小实部输入的结果虚部（36 位计算精度）"],
-    "coeffs": ["im(sin(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal] sin 微小实部输入的结果虚部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "im(sin(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382",
       "expr": "im(sin(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] cos 微小实部输入的结果实部（36 位计算精度）"],
-    "coeffs": ["re(cos(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal] cos 微小实部输入的结果实部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "re(cos(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "1.543080634815243778477906",
       "expr": "re(cos(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] cos 微小实部输入的结果虚部（36 位计算精度）"],
-    "coeffs": ["im(cos(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal] cos 微小实部输入的结果虚部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "im(cos(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382E-300",
       "expr": "im(cos(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sh 微小实部输入的结果虚部（36 位计算精度）"],
-    "coeffs": ["im(sh(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal] sh 微小实部输入的结果虚部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "im(sh(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.8414709848078965066525023",
       "expr": "im(sh(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] ch 微小实部输入的结果实部（36 位计算精度）"],
-    "coeffs": ["re(ch(-1E-300+[i]))", 36, 25],
+    "description": [
+      "[normal] ch 微小实部输入的结果实部（36 位计算精度）"
+    ],
+    "coeffs": [
+      "re(ch(-1E-300+[i]))",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.5403023058681397174009366",
       "expr": "re(ch(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sin 0.1 以下的级数分支（36 位计算精度）"],
-    "coeffs": ["sin(0.099-0.099*[i])", 36, 25],
+    "description": [
+      "[normal] sin 0.1 以下的级数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sin(0.099-0.099*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.09932311585541010509482523-0.09867625015130385197986865[i]",
       "expr": "sin(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] cos 0.1 以下的级数分支（36 位计算精度）"],
-    "coeffs": ["cos(0.099-0.099*[i])", 36, 25],
+    "description": [
+      "[normal] cos 0.1 以下的级数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "cos(0.099-0.099*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.9999839900701616851769179+0.009800989539110248615044572[i]",
       "expr": "cos(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] sh 0.1 以下的级数分支（36 位计算精度）"],
-    "coeffs": ["sh(0.099-0.099*[i])", 36, 25],
+    "description": [
+      "[normal] sh 0.1 以下的级数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(0.099-0.099*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.09867625015130385197986865-0.09932311585541010509482523[i]",
       "expr": "sh(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] ch 0.1 以下的级数分支（36 位计算精度）"],
-    "coeffs": ["ch(0.099-0.099*[i])", 36, 25],
+    "description": [
+      "[normal] ch 0.1 以下的级数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(0.099-0.099*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.9999839900701616851769179-0.009800989539110248615044572[i]",
       "expr": "ch(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] sin 0.1 处的指数分支（36 位计算精度）"],
-    "coeffs": ["sin(-0.1+0.1*[i])", 36, 25],
+    "description": [
+      "[normal] sin 0.1 处的指数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sin(-0.1+0.1*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "-0.1003329998413139409962465+0.09966633349210757575654808[i]",
       "expr": "sin(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] cos 0.1 处的指数分支（36 位计算精度）"],
-    "coeffs": ["cos(-0.1+0.1*[i])", 36, 25],
+    "description": [
+      "[normal] cos 0.1 处的指数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "cos(-0.1+0.1*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.9999833333373015871679761+0.009999988888889770723089374[i]",
       "expr": "cos(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] sh 0.1 处的指数分支（36 位计算精度）"],
-    "coeffs": ["sh(-0.1+0.1*[i])", 36, 25],
+    "description": [
+      "[normal] sh 0.1 处的指数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(-0.1+0.1*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "-0.09966633349210757575654808+0.1003329998413139409962465[i]",
       "expr": "sh(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] ch 0.1 处的指数分支（36 位计算精度）"],
-    "coeffs": ["ch(-0.1+0.1*[i])", 36, 25],
+    "description": [
+      "[normal] ch 0.1 处的指数分支（36 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(-0.1+0.1*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "0.9999833333373015871679761-0.009999988888889770723089374[i]",
       "expr": "ch(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] sh(0) 验证零输入（36 位计算精度）"],
-    "coeffs": ["sh(0)", 36, 25],
+    "description": [
+      "[normal] sh(0) 验证零输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(0)",
+      36,
+      25
+    ],
     "expected": {
       "result": "0",
       "expr": "sh(0)"
     }
   },
   {
-    "description": ["[normal] ch(0) 验证零输入（36 位计算精度）"],
-    "coeffs": ["ch(0)", 36, 25],
+    "description": [
+      "[normal] ch(0) 验证零输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(0)",
+      36,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "ch(0)"
     }
   },
   {
-    "description": ["[normal] sh(-1E-300) 验证极小实数输入（36 位计算精度）"],
-    "coeffs": ["sh(-1E-300)", 36, 25],
+    "description": [
+      "[normal] sh(-1E-300) 验证极小实数输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(-1E-300)",
+      36,
+      25
+    ],
     "expected": {
       "result": "-1E-300",
       "expr": "sh(-1E-300)"
     }
   },
   {
-    "description": ["[normal] ch(-1E-300) 验证极小实数输入（36 位计算精度）"],
-    "coeffs": ["ch(-1E-300)", 36, 25],
+    "description": [
+      "[normal] ch(-1E-300) 验证极小实数输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(-1E-300)",
+      36,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "ch(-1E-300)"
     }
   },
   {
-    "description": ["[normal] sh(1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"],
-    "coeffs": ["sh(1E-300*[i])", 36, 25],
+    "description": [
+      "[normal] sh(1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(1E-300*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "1E-300*[i]",
       "expr": "sh(1E-300*[i])"
     }
   },
   {
-    "description": ["[normal] ch(1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"],
-    "coeffs": ["ch(1E-300*[i])", 36, 25],
+    "description": [
+      "[normal] ch(1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(1E-300*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "ch(1E-300*[i])"
     }
   },
   {
-    "description": ["[normal] sin(-1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"],
-    "coeffs": ["sin(-1E-300*[i])", 36, 25],
+    "description": [
+      "[normal] sin(-1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "sin(-1E-300*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "-1E-300*[i]",
       "expr": "sin(-1E-300*[i])"
     }
   },
   {
-    "description": ["[normal] cos(-1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"],
-    "coeffs": ["cos(-1E-300*[i])", 36, 25],
+    "description": [
+      "[normal] cos(-1E-300*[i]) 验证极小纯虚数输入（36 位计算精度）"
+    ],
+    "coeffs": [
+      "cos(-1E-300*[i])",
+      36,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "cos(-1E-300*[i])"
     }
   },
   {
-    "description": ["[normal] sin 微小虚部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(sin(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] sin 微小虚部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(sin(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.8414709848078965066525023",
       "expr": "re(sin(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] sin 微小虚部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(sin(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] sin 微小虚部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(sin(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "5.403023058681397174009366E-301",
       "expr": "im(sin(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] cos 微小虚部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(cos(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] cos 微小虚部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(cos(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.5403023058681397174009366",
       "expr": "re(cos(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] cos 微小虚部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(cos(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] cos 微小虚部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(cos(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "-8.414709848078965066525023E-301",
       "expr": "im(cos(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] sh 微小虚部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(sh(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] sh 微小虚部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(sh(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382",
       "expr": "re(sh(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] sh 微小虚部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(sh(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] sh 微小虚部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(sh(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "1.543080634815243778477906E-300",
       "expr": "im(sh(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] ch 微小虚部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(ch(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] ch 微小虚部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(ch(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "1.543080634815243778477906",
       "expr": "re(ch(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] ch 微小虚部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(ch(1+1E-300*[i]))", 220, 25],
+    "description": [
+      "[normal] ch 微小虚部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(ch(1+1E-300*[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382E-300",
       "expr": "im(ch(1+1E-300*[i]))"
     }
   },
   {
-    "description": ["[normal] sin 微小实部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(sin(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] sin 微小实部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(sin(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "-1.543080634815243778477906E-300",
       "expr": "re(sin(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sin 微小实部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(sin(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] sin 微小实部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(sin(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382",
       "expr": "im(sin(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] cos 微小实部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(cos(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] cos 微小实部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(cos(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "1.543080634815243778477906",
       "expr": "re(cos(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] cos 微小实部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(cos(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] cos 微小实部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(cos(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "1.175201193643801456882382E-300",
       "expr": "im(cos(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sh 微小实部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(sh(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] sh 微小实部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(sh(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "-5.403023058681397174009366E-301",
       "expr": "re(sh(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sh 微小实部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(sh(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] sh 微小实部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(sh(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.8414709848078965066525023",
       "expr": "im(sh(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] ch 微小实部输入的结果实部（220 位计算精度）"],
-    "coeffs": ["re(ch(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] ch 微小实部输入的结果实部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "re(ch(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.5403023058681397174009366",
       "expr": "re(ch(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] ch 微小实部输入的结果虚部（220 位计算精度）"],
-    "coeffs": ["im(ch(-1E-300+[i]))", 220, 25],
+    "description": [
+      "[normal] ch 微小实部输入的结果虚部（220 位计算精度）"
+    ],
+    "coeffs": [
+      "im(ch(-1E-300+[i]))",
+      220,
+      25
+    ],
     "expected": {
       "result": "-8.414709848078965066525023E-301",
       "expr": "im(ch(-1E-300+[i]))"
     }
   },
   {
-    "description": ["[normal] sin 0.1 以下的级数分支（220 位计算精度）"],
-    "coeffs": ["sin(0.099-0.099*[i])", 220, 25],
+    "description": [
+      "[normal] sin 0.1 以下的级数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sin(0.099-0.099*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.09932311585541010509482523-0.09867625015130385197986865[i]",
       "expr": "sin(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] cos 0.1 以下的级数分支（220 位计算精度）"],
-    "coeffs": ["cos(0.099-0.099*[i])", 220, 25],
+    "description": [
+      "[normal] cos 0.1 以下的级数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "cos(0.099-0.099*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.9999839900701616851769179+0.009800989539110248615044572[i]",
       "expr": "cos(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] sh 0.1 以下的级数分支（220 位计算精度）"],
-    "coeffs": ["sh(0.099-0.099*[i])", 220, 25],
+    "description": [
+      "[normal] sh 0.1 以下的级数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(0.099-0.099*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.09867625015130385197986865-0.09932311585541010509482523[i]",
       "expr": "sh(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] ch 0.1 以下的级数分支（220 位计算精度）"],
-    "coeffs": ["ch(0.099-0.099*[i])", 220, 25],
+    "description": [
+      "[normal] ch 0.1 以下的级数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(0.099-0.099*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.9999839900701616851769179-0.009800989539110248615044572[i]",
       "expr": "ch(0.099-0.099*[i])"
     }
   },
   {
-    "description": ["[normal] sin 0.1 处的指数分支（220 位计算精度）"],
-    "coeffs": ["sin(-0.1+0.1*[i])", 220, 25],
+    "description": [
+      "[normal] sin 0.1 处的指数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sin(-0.1+0.1*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "-0.1003329998413139409962465+0.09966633349210757575654808[i]",
       "expr": "sin(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] cos 0.1 处的指数分支（220 位计算精度）"],
-    "coeffs": ["cos(-0.1+0.1*[i])", 220, 25],
+    "description": [
+      "[normal] cos 0.1 处的指数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "cos(-0.1+0.1*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.9999833333373015871679761+0.009999988888889770723089374[i]",
       "expr": "cos(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] sh 0.1 处的指数分支（220 位计算精度）"],
-    "coeffs": ["sh(-0.1+0.1*[i])", 220, 25],
+    "description": [
+      "[normal] sh 0.1 处的指数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(-0.1+0.1*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "-0.09966633349210757575654808+0.1003329998413139409962465[i]",
       "expr": "sh(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] ch 0.1 处的指数分支（220 位计算精度）"],
-    "coeffs": ["ch(-0.1+0.1*[i])", 220, 25],
+    "description": [
+      "[normal] ch 0.1 处的指数分支（220 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(-0.1+0.1*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "0.9999833333373015871679761-0.009999988888889770723089374[i]",
       "expr": "ch(-0.1+0.1*[i])"
     }
   },
   {
-    "description": ["[normal] sh(0) 验证零输入（220 位计算精度）"],
-    "coeffs": ["sh(0)", 220, 25],
+    "description": [
+      "[normal] sh(0) 验证零输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(0)",
+      220,
+      25
+    ],
     "expected": {
       "result": "0",
       "expr": "sh(0)"
     }
   },
   {
-    "description": ["[normal] ch(0) 验证零输入（220 位计算精度）"],
-    "coeffs": ["ch(0)", 220, 25],
+    "description": [
+      "[normal] ch(0) 验证零输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(0)",
+      220,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "ch(0)"
     }
   },
   {
-    "description": ["[normal] sh(-1E-300) 验证极小实数输入（220 位计算精度）"],
-    "coeffs": ["sh(-1E-300)", 220, 25],
+    "description": [
+      "[normal] sh(-1E-300) 验证极小实数输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(-1E-300)",
+      220,
+      25
+    ],
     "expected": {
       "result": "-1E-300",
       "expr": "sh(-1E-300)"
     }
   },
   {
-    "description": ["[normal] ch(-1E-300) 验证极小实数输入（220 位计算精度）"],
-    "coeffs": ["ch(-1E-300)", 220, 25],
+    "description": [
+      "[normal] ch(-1E-300) 验证极小实数输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(-1E-300)",
+      220,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "ch(-1E-300)"
     }
   },
   {
-    "description": ["[normal] sh(1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"],
-    "coeffs": ["sh(1E-300*[i])", 220, 25],
+    "description": [
+      "[normal] sh(1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sh(1E-300*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "1E-300*[i]",
       "expr": "sh(1E-300*[i])"
     }
   },
   {
-    "description": ["[normal] ch(1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"],
-    "coeffs": ["ch(1E-300*[i])", 220, 25],
+    "description": [
+      "[normal] ch(1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "ch(1E-300*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "ch(1E-300*[i])"
     }
   },
   {
-    "description": ["[normal] sin(-1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"],
-    "coeffs": ["sin(-1E-300*[i])", 220, 25],
+    "description": [
+      "[normal] sin(-1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "sin(-1E-300*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "-1E-300*[i]",
       "expr": "sin(-1E-300*[i])"
     }
   },
   {
-    "description": ["[normal] cos(-1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"],
-    "coeffs": ["cos(-1E-300*[i])", 220, 25],
+    "description": [
+      "[normal] cos(-1E-300*[i]) 验证极小纯虚数输入（220 位计算精度）"
+    ],
+    "coeffs": [
+      "cos(-1E-300*[i])",
+      220,
+      25
+    ],
     "expected": {
       "result": "1",
       "expr": "cos(-1E-300*[i])"

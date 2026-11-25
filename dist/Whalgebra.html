@@ -2454,7 +2454,8 @@
                     if (typeof x === 'number' || typeof x === 'bigint' || (Array.isArray(x) && x.length === 3)) {
                         return new BigNumber(x);
                     }
-                    const input = x instanceof ComplexNumber ? x : new ComplexNumber(x);
+                    const parsed = x instanceof ComplexNumber ? x : new ComplexNumber(x);
+                    const input = MathPlus._complexInput(parsed);
                     return input.onlyReal ? input.re : input;
                 }
 
@@ -3493,10 +3494,13 @@
                                 const unitBase = reA.power === 0 && (reA.mantissa === 1n || reA.mantissa === -1n);
                                 const logDerivative = unitBase ? -Infinity
                                                                : _estimateBaseLog10Info(reA).log10Log10A + Math.log10(Math.LN10);
-                                // 负实数主值还包含由辐角 π 引入的误差。
-                                const exponentDerivative = reA.isNegative() ? Math.max(logDerivative, Math.log10(Math.PI))
-                                                                            : logDerivative;
-                                exponentNoise = reB.noiseMag + resultMag + Math.ceil(exponentDerivative);
+                                exponentNoise = reB.noiseMag + resultMag + Math.ceil(logDerivative);
+                                if (reA.isNegative()) {
+                                    // 快路径的结果在坐标轴上，相位变化仅以二阶影响该分量。
+                                    // |1 - cos(πδ)| ≤ π²δ²/2 < 10δ²。
+                                    const phaseNoise = resultMag + 2 * reB.noiseMag + 1;
+                                    exponentNoise = Math.max(exponentNoise, phaseNoise);
+                                }
                             }
 
                             const noiseMag = Math.max(part.noiseMag, baseNoise, exponentNoise);

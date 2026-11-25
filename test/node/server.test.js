@@ -63,7 +63,8 @@ test("工具状态接口不暴露项目绝对路径", async (t) => {
 });
 
 test("局域网模式只开放工作台、计算器和预览资源，禁用工具 API", async (t) => {
-    const {server, port} = await createServer(PROJECT_ROOT, 0, true, () => {});
+    const {server, port} = await createServer(PROJECT_ROOT, 0, true, () => {
+    });
     t.after(() => new Promise((resolve) => server.close(resolve)));
     assert.equal(server.address().address, "0.0.0.0");
     const baseUrl = `http://127.0.0.1:${port}`;
@@ -93,7 +94,8 @@ test("局域网自定义静态目录拒绝隐藏文件和指向目录外的链�
     await writeFile(path.join(directory, ".private.txt"), "fixture", "utf8");
     await writeFile(path.join(externalDirectory, "index.html"), "fixture", "utf8");
     await symlink(externalDirectory, path.join(directory, "external"), "junction");
-    const {server, port} = await createServer(directory, 0, true, () => {});
+    const {server, port} = await createServer(directory, 0, true, () => {
+    });
     t.after(() => new Promise((resolve) => server.close(resolve)));
     const baseUrl = `http://127.0.0.1:${port}`;
 

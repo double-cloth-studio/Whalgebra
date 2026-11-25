@@ -26,7 +26,7 @@ const r = await WorkerTools.exec("1+[i]", {
 console.log(r.result); // "1.4142136[toPolar]0.78539816"
 ```
 
-`exec(expr, options)` 支持 `calcAcc`、`outputAcc`、`printMode`、`calcMode`、`outputMode`、`f`、`g`，只覆盖当前任务的参数。响应包含 `result` 和 `expr`。`outputMode: 'mid'` 时 `result` 是含 `bigint` 的内部元组，单文件版还会返回实部、虚部的 `noiseMag`。默认输出的 `result` 为字符串。完整语义见 [CalcTools](./advanced_analysis_tools.md)。
+`exec(expr, options)` 支持 `calcAcc`、`outputAcc`、`printMode`、`calcMode`、`outputMode`、`f`、`g`，只覆盖当前任务的参数。响应包含 `result` 和 `expr`。`outputMode: 'mid'` 时 `result` 是含 `bigint` 的内部元组，响应还包含实部、虚部的 `noiseMag`。默认输出的 `result` 为字符串。完整语义见 [CalcTools](./advanced_analysis_tools.md)。
 
 以下方法与同步工具的参数、结果结构相同，仅增加 Promise：
 

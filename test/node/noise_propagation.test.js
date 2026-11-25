@@ -77,6 +77,32 @@ test("乘方、指数拆分、开方和阶乘快路径保留输入噪声", async
     assert.ok(imaginary.im.noiseMag >= -12);
 });
 
+test("负底数幂的相位噪声不会抹掉可分辨的轴向分量", async () => {
+    const {CalcTools} = await createCalcCoreWindow();
+    const cases = [["2", "1"], ["3", "-1"], ["0.5", "[i]"]];
+
+    for (const [exponent, expected] of cases) {
+        const expr = `(-1)^((1E31+${exponent}+1E-5)-1E31)`;
+        assert.equal(CalcTools.exec(expr, {calcAcc: 36}).result, expected, expr);
+    }
+});
+
+test("纯实复数的运算精度受两个分量共同限制", async () => {
+    const {BigNumber, ComplexNumber, MathPlus} = await createCalcCoreWindow();
+    const mixed = new ComplexNumber({
+        re: new BigNumber("2.123456789", {acc: 50}),
+        im: new BigNumber(0, {acc: 4})
+    });
+    const normalized = new ComplexNumber(mixed);
+    const cases = [["degree", []], ["exponential", [1]], ["nroot", [2]], ["toPolar", [0]]];
+
+    for (const [name, args] of cases) {
+        const result = MathPlus[name](mixed, ...args);
+        assert.equal(result.acc, 4, name);
+        assert.deepEqual(result.valueOf(), MathPlus[name](normalized, ...args).valueOf(), name);
+    }
+});
+
 test("实数乘法保留 bigint 尾数并传播噪声，零值使用统一的噪声状态", async () => {
     const {BigNumber, MathPlus} = await createCalcCoreWindow();
     const noisy = new BigNumber("2", {noiseMag: -12});
