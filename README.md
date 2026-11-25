@@ -66,7 +66,7 @@ console.log(custom.result); // "10"
 当前工具链仅提供 **`dist/Whalgebra.html` → `src/`** 的逆向拆分，没有将 `src` 打包回单文件的 npm 脚本。修改计算器时需保持两者一致：只改 `src` 不会进入现有计算核心测试，只改 `dist` 不会更新 Pages。
 
 ```powershell
-# 建议先拆到临时目录核对；--force 会清空指定输出目录
+# 建议先拆到临时目录核对。使用 --force 时，构建成功后会整体替换指定输出目录。
 npm run reverse-build -- --out tmp/reverse-preview --force
 # 确认单文件包含需保留的修改后，再同步部署源码
 npm run reverse-build -- --force

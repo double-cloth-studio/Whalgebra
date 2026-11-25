@@ -1,6 +1,6 @@
 import {createHash} from "node:crypto";
-import {existsSync} from "node:fs";
-import {mkdir, readFile, rm, writeFile} from "node:fs/promises";
+import {existsSync, lstatSync, renameSync} from "node:fs";
+import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
@@ -122,16 +122,12 @@ async function extractTagType(html, tagName, outputDirectory, extension, doDeden
         }
 
         const tagId = getAttribute(attributes, "id");
-        const filename = tagId ? `${tagId}${extension}` : `extracted_${calculateHash(content)}${extension}`;
+        const filename = tagId && !/[<>:"/\\|?*]/u.test(tagId)
+            ? `${tagId}${extension}`
+            : `extracted_${calculateHash(content)}${extension}`;
         const filePath = await uniqueFilepath(outputDirectory, filename);
 
-        try {
-            await writeFile(filePath, nativeNewlines(content), GLOBAL_CONFIG.ENCODING);
-        } catch (error) {
-            logger(`  [Error] Writing ${path.basename(filePath)}: ${error.message}`);
-            result += fullTag;
-            continue;
-        }
+        await writeFile(filePath, nativeNewlines(content), GLOBAL_CONFIG.ENCODING);
 
         const relativePath = `./${path.basename(outputDirectory)}/${path.basename(filePath)}`;
         if (tagName === "style") {
@@ -152,6 +148,16 @@ async function extractTagType(html, tagName, outputDirectory, extension, doDeden
     return {html: result, count};
 }
 
+function assertOutputAvailable(outputPath, force) {
+    const exists = Boolean(lstatSync(outputPath, {throwIfNoEntry: false}));
+    if (exists && !force) {
+        const error = new Error(`目标文件夹已存在: ${outputPath}`);
+        error.code = "OUTPUT_EXISTS";
+        throw error;
+    }
+    return exists;
+}
+
 export async function reverseBuild({
                                        inputFile = GLOBAL_CONFIG.DEFAULT_INPUT_FILE,
                                        outputDir = GLOBAL_CONFIG.DEFAULT_OUTPUT_DIR,
@@ -162,55 +168,96 @@ export async function reverseBuild({
     const inputPath = path.resolve(inputFile);
     const outputPathValue = outputDir || path.join(process.cwd(), `split_files_of_${path.parse(inputPath).name}`);
 
-    if (!existsSync(inputPath)) {
+    const inputStat = await stat(inputPath).catch((error) => {
+        if (error.code === "ENOENT" || error.code === "ENOTDIR") {
+            return null;
+        }
+        throw error;
+    });
+    if (!inputStat) {
         const error = new Error(`Input file '${inputPath}' not found.`);
         error.code = "INPUT_NOT_FOUND";
+        throw error;
+    }
+    if (!inputStat.isFile()) {
+        const error = new Error(`输入路径不是普通文件: ${inputPath}`);
+        error.code = "INVALID_INPUT_FILE";
         throw error;
     }
     const [outputPath] = assertSafeOutputPaths([outputPathValue], {
         inputPath,
         message: "输出目录不能是磁盘/项目根目录，也不能包含输入文件。"
     });
-    if (existsSync(outputPath) && !force) {
-        const error = new Error(`目标文件夹已存在: ${outputPath}`);
-        error.code = "OUTPUT_EXISTS";
-        throw error;
-    }
-
-    if (existsSync(outputPath)) {
-        logger(`Cleaning existing directory: ${outputPath}`);
-        await rm(outputPath, {recursive: true, force: true});
-    }
-
-    const cssDirectory = path.join(outputPath, GLOBAL_CONFIG.CSS_DIR_NAME);
-    const jsDirectory = path.join(outputPath, GLOBAL_CONFIG.JS_DIR_NAME);
-    await mkdir(cssDirectory, {recursive: true});
-    await mkdir(jsDirectory, {recursive: true});
+    assertOutputAvailable(outputPath, force);
+    const source = await readFile(inputPath, GLOBAL_CONFIG.ENCODING);
 
     logger(`Processing: ${path.basename(inputPath)}`);
     logger(`Output to: ${outputPath}`);
     logger("-".repeat(40));
 
-    const source = await readFile(inputPath, GLOBAL_CONFIG.ENCODING);
-    const cssResult = await extractTagType(source, "style", cssDirectory, ".css", !noDedent, logger);
-    const jsResult = await extractTagType(cssResult.html, "script", jsDirectory, ".js", !noDedent, logger);
+    const outputParent = path.dirname(outputPath);
+    await mkdir(outputParent, {recursive: true});
+    const temporaryPath = await mkdtemp(path.join(outputParent, ".reverse-build-"));
+    const stagedPath = path.join(temporaryPath, "output");
+    const backedUpPath = path.join(temporaryPath, "previous");
+    const cssDirectory = path.join(stagedPath, GLOBAL_CONFIG.CSS_DIR_NAME);
+    const jsDirectory = path.join(stagedPath, GLOBAL_CONFIG.JS_DIR_NAME);
     const outputHtmlPath = path.join(outputPath, "index.html");
+    let keepBackup = false;
+    let cssCount;
+    let jsCount;
 
-    await writeFile(path.join(outputPath, ".nojekyll"), "", GLOBAL_CONFIG.ENCODING);
-    await writeFile(outputHtmlPath, jsResult.html, GLOBAL_CONFIG.ENCODING);
+    try {
+        await mkdir(cssDirectory, {recursive: true});
+        await mkdir(jsDirectory, {recursive: true});
+        const cssResult = await extractTagType(source, "style", cssDirectory, ".css", !noDedent, logger);
+        const jsResult = await extractTagType(cssResult.html, "script", jsDirectory, ".js", !noDedent, logger);
+        await writeFile(path.join(stagedPath, ".nojekyll"), "", GLOBAL_CONFIG.ENCODING);
+        await writeFile(path.join(stagedPath, "index.html"), jsResult.html, GLOBAL_CONFIG.ENCODING);
+        cssCount = cssResult.count;
+        jsCount = jsResult.count;
+
+        // 同步完成两次重命名，避免同一进程的并发请求在两次操作之间修改目标目录。
+        const hadOutput = assertOutputAvailable(outputPath, force);
+        if (hadOutput) {
+            renameSync(outputPath, backedUpPath);
+        }
+        try {
+            renameSync(stagedPath, outputPath);
+        } catch (error) {
+            if (hadOutput) {
+                try {
+                    renameSync(backedUpPath, outputPath);
+                } catch (restoreError) {
+                    keepBackup = true;
+                    throw new AggregateError(
+                        [error, restoreError],
+                        `无法发布新产物或恢复旧产物。旧产物位于: ${backedUpPath}。`
+                    );
+                }
+            }
+            throw error;
+        }
+    } finally {
+        if (!keepBackup) {
+            await rm(temporaryPath, {recursive: true, force: true}).catch((error) => {
+                logger(`无法清理逆向构建临时目录 ${temporaryPath}: ${error.message}`);
+            });
+        }
+    }
 
     logger("-".repeat(40));
     logger("Success! Process completed.");
     logger(`  - Input:  ${inputPath}`);
     logger(`  - Output: ${outputHtmlPath}`);
-    logger(`  - Stats:  ${cssResult.count} CSS files, ${jsResult.count} JS files extracted.`);
+    logger(`  - Stats:  ${cssCount} CSS files, ${jsCount} JS files extracted.`);
 
     return {
         inputPath,
         outputPath,
         outputHtmlPath,
-        cssCount: cssResult.count,
-        jsCount: jsResult.count
+        cssCount,
+        jsCount
     };
 }
 
@@ -224,7 +271,7 @@ function printHelp() {
 选项:
   -o, --out <PATH>  指定输出文件夹
   --no-dedent       禁用智能去缩进
-  -f, --force       强制清空目标文件夹，跳过确认提示
+  -f, --force       构建成功后替换目标文件夹，跳过确认提示
   -h, --help        显示帮助
 
 默认配置:
@@ -271,7 +318,7 @@ async function runCli() {
 
     if (existsSync(options.outputDir) && !options.force) {
         const prompt = readline.createInterface({input: process.stdin, output: process.stdout});
-        const answer = (await prompt.question(`\n[Warning] 目标文件夹已存在: ${options.outputDir}\n是否清空该目录并继续? [y/N]: `)).trim().toLowerCase();
+        const answer = (await prompt.question(`\n[Warning] 目标文件夹已存在: ${options.outputDir}\n是否在构建成功后替换该目录? [y/N]: `)).trim().toLowerCase();
         prompt.close();
         if (answer !== "y") {
             console.log("操作已取消。");

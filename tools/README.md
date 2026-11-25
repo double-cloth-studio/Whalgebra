@@ -67,10 +67,10 @@ CLI 用法：`node tools/cli/reverse_build.js [input_file] [选项]`。
 | `input_file` | 输入单文件，默认 `dist/Whalgebra.html` |
 | `-o, --out <PATH>` | 输出目录，默认 `src` |
 | `--no-dedent` | 保留内联代码缩进 |
-| `-f, --force` | 清空已有输出目录并继续 |
+| `-f, --force` | 跳过确认，构建成功后替换已有输出目录 |
 | `-h, --help` | 帮助 |
 
-输出包含 `index.html`、`.nojekyll`、`css/`、`js/`。目标目录已存在且未传 `--force` 时，CLI 要求确认。输出目录不能是磁盘根目录、项目根目录或包含输入文件的目录；**允许的输出目录仍会整体清空**，不要将手工维护文件混入其中。
+输出包含 `index.html`、`.nojekyll`、`css/`、`js/`。目标目录已存在且未传 `--force` 时，CLI 要求确认。输出目录不能是磁盘根目录、项目根目录或包含输入文件的目录。读取或构建失败时会保留旧产物，构建成功后会整体替换目标目录。
 
 ## SVG 压缩
 
