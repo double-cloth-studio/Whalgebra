@@ -97,6 +97,13 @@
             '4': '0'
         };
 
+        static subModeOptions = {
+            '2_0': ['0', '1'],
+            '2_1': ['0', '1', '2'],
+            '3': ['0', '1', '2', '3', '4'],
+            '4': ['0', '1']
+        };
+
         /**
          * 获取存储每个主计算器模式下当前选定子模式的对象。
          *
@@ -135,7 +142,7 @@
              * @private
              */
             function _changeSubModes(name, dealMode) {
-                // 先解析 default 再判断模式 '0'，避免在模式 '0' 下传入 default 时触发 modeValidations['0'] 报错。
+                // 先解析 default，再跳过没有子模式的标准计算页。
                 if (dealMode === 'default') {
                     dealMode = PageConfig.currentMode;
                 }
@@ -206,14 +213,7 @@
                         });
                     }
                 } else {
-                    const modeValidations = {
-                        '2_0': ['0', '1'],
-                        '2_1': ['0', '1', '2'],
-                        '3': ['0', '1', '2', '3', '4'],
-                        '4': ['0', '1']
-                    };
-
-                    const validation = modeValidations[dealMode];
+                    const validation = PageConfig.subModeOptions[dealMode];
                     if (!validation || !validation.includes(name)) {
                         throw new Error('[PageConfig] Unsupported sub-mode');
                     }
@@ -4399,8 +4399,8 @@
             if (PageConfig.currentMode === '0') {
                 PrintManager.cancelMode0Preview();
                 if (PrintManager.mode0ScreenInCalc) {
-                    WorkerTools.restart().catch((err) => {
-                        console.warn('[UI] Worker restart failed:', err);
+                    WorkerTools.cancelWorker().catch((err) => {
+                        console.warn('[UI] Worker cancellation failed:', err);
                     });
                     PrintManager.mode0ScreenInCalc = false;
                 }
@@ -4509,9 +4509,11 @@
          *   上下在统计表中切换行，`end` 直接定位到当前可编辑区域末尾。
          * @param {boolean} [forcedMode=false] - 是否在非普通输入状态下仍移动活动子屏幕的光标；
          *   强制模式会服从当前主/子模式边界，但跳过主输入区可编辑性检查。
+         * @param {Object} [options={}] - 子屏幕导航选项。
+         * @param {boolean} [options.syncToInput=true] - 是否同步目标字段到主输入区并滚动定位。
          * @returns {void}
          */
-        static moveCursor(direction, forcedMode = false) {
+        static moveCursor(direction, forcedMode = false, {syncToInput = true} = {}) {
             const currentMode = PageConfig.currentMode;
 
             // 提示态没有可移动的文本光标，方向键改为在模式字段或统计单元格间导航。
@@ -4523,25 +4525,23 @@
                         return;
 
                     case '1': {
-                        const currentSubModes = PageConfig.subModes['1'];
+                        const [row, col] = PageConfig.subModes['1'];
+                        len = PageConfig.screenData['1'].length - 1;
                         switch (direction) {
                             case 'left':
                             case 'right':
-                                PageConfig.subModes = {'1': [currentSubModes[0], 1 - currentSubModes[1]]};
-                                PageControlTools.syncScreenToInput();
-
-                                HtmlTools.scrollToView();
-                                return;
+                                nextNum = row;
+                                makeValue = (nextNum) => [nextNum, 1 - col];
+                                break;
                             case 'up':
                             case 'down':
-                                len = PageConfig.screenData['1'].length - 1;
-                                nextNum = currentSubModes[0] + (direction === 'up' ? -1 : 1);
+                                nextNum = row + (direction === 'up' ? -1 : 1);
                                 /**
                                  * 生成统计表格模式下新行坐标的更新值。
                                  * @param {number} nextNum - 下一行索引。
                                  * @returns {[number, number]} 更新后的 [行, 列] 坐标。
                                  */
-                                makeValue = (nextNum) => [nextNum, currentSubModes[1]];
+                                makeValue = (nextNum) => [nextNum, col];
                                 break;
                         }
                         break;
@@ -4550,14 +4550,9 @@
                     case '3':
                         // 五个系数字段按两列视觉布局循环，上下移动跨两个索引。
                         len = 4;
+                        makeValue = (nextNum) => nextNum.toString();
                         if (['left', 'right'].includes(direction)) {
                             nextNum = Number(PageConfig.subModes[currentMode]) + (direction === 'left' ? -1 : 1);
-                            /**
-                             * 生成横向移动后的子模式索引字符串。
-                             * @param {number} nextNum - 新索引数值。
-                             * @returns {string} 字符串形式的子模式标识。
-                             */
-                            makeValue = (nextNum) => nextNum.toString();
                             break;
                         }
                         nextNum = Number(PageConfig.subModes[currentMode]) + (direction === 'up' ? -2 : 2);
@@ -4567,11 +4562,7 @@
                         if (nextNum > len) {
                             nextNum = nextNum % 2 === 0 ? 0 : 1;
                         }
-                        PageConfig.subModes = {'default': nextNum.toString()};
-                        PageControlTools.syncScreenToInput();
-
-                        HtmlTools.scrollToView();
-                        return;
+                        break;
 
                     default: {
                         len = HtmlTools.getHtml(`#screen_${currentMode}`).children.length - 1;
@@ -4598,10 +4589,14 @@
                         nextNum = 0;
                     }
                     PageConfig.subModes = {'default': makeValue(nextNum)};
-                    PageControlTools.syncScreenToInput();
+                    if (syncToInput) {
+                        PageControlTools.syncScreenToInput();
+                    }
                 }
 
-                HtmlTools.scrollToView();
+                if (syncToInput) {
+                    HtmlTools.scrollToView();
+                }
                 return;
             }
 
@@ -5210,7 +5205,7 @@
             if (needReshow) {
                 screenDisplay.classList.add('NoDisplay');
                 if (this.mode0ScreenInCalc) {
-                    await WorkerTools.restart();
+                    await WorkerTools.cancelWorker();
                     if (requestId !== this.exeRequestId) {
                         return;
                     }
@@ -6354,8 +6349,8 @@
                     PrintManager.cancelMode0Preview();
 
                     if (PrintManager.mode0ScreenInCalc) {
-                        WorkerTools.restart().catch((err) => {
-                            console.warn('[UI] Worker restart failed:', err);
+                        WorkerTools.cancelWorker().catch((err) => {
+                            console.warn('[UI] Worker cancellation failed:', err);
                         });
                         PrintManager.mode0ScreenInCalc = false;
                     }
@@ -6379,7 +6374,7 @@
 
         /**
          * 取消当前正在进行的计算任务或操作。
-         * 此方法作为一个“紧急停止”机制，不仅关闭结果展示界面，还会强制重启后台 Worker 线程以立即终止任何卡住或耗时的计算任务，同时移除 UI 上的加载锁定状态。
+         * 作废当前请求、关闭结果视图并移除加载遮罩；Worker 优先软取消，宽限期超时才重启。
          *
          * @returns {void}
          */
@@ -6387,8 +6382,8 @@
             this.invalidateInputSync();
             ++PrintManager.exeRequestId;
             PrintManager.cancelMode0Preview();
-            WorkerTools.restart().catch((err) => {
-                console.warn('[UI] Worker restart failed:', err);
+            WorkerTools.cancelWorker().catch((err) => {
+                console.warn('[UI] Worker cancellation failed:', err);
             });
             PrintManager.mode0ScreenInCalc = false;
 
@@ -6749,7 +6744,7 @@
                     }
 
                     if (moveCursor && addSucceed) {
-                        InputManager.moveCursor('down', true);
+                        InputManager.moveCursor('down', true, {syncToInput: false});
                     }
 
                     InputManager.ac();
@@ -6765,7 +6760,7 @@
                     PageConfig.syncScreenData();
 
                     if (moveCursor && HtmlTools.getHtml(`#screen_${currentMode}`).children.length !== Number(PageConfig.subModes[currentMode]) + 1) {
-                        InputManager.moveCursor('right', true);
+                        InputManager.moveCursor('right', true, {syncToInput: false});
                     }
 
                     InputManager.ac();

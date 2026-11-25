@@ -846,7 +846,8 @@
                                 powerFunctionAnalysis: (list) => PowerFunctionTools.powerFunctionAnalysis(list),
                                 statisticsCalc: (listA, listB) => StatisticsTools.statisticsCalc(listA, listB),
                                 radicalFunctionAnalysis: (z, n) => RadicalFunctionTools.radicalFunctionAnalysis(z, n),
-                                valueList: (f, g, start, step, end) => FuncValueListTools.valueList(f, g, start, step, end),
+                                valueList: (f, g, start, step, end, cancellationSignal) =>
+                                    FuncValueListTools.valueListCancellable(f, g, start, step, end, cancellationSignal),
                                 exec: async (expr, {
                                     calcAcc,
                                     outputAcc,
@@ -1211,6 +1212,7 @@
                  * @param {string|number|BigNumber|ComplexNumber|Array} end - 纯实闭区间终点；结果数超过上限时截断并标记省略。
                  * @returns {Promise<{varList:Array<string>,f:Array<string>,g:Array<string>}>} 三个索引对齐的数组；
                  *   单点错误和超出展示上限时使用的尾部哨兵与同步 `FuncValueListTools.valueList` 一致。
+                 *   分批采样期间可响应取消。
                  */
                 static valueList(f, g, start, step, end) {
                     return this._dispatch('valueList', [f, g, start, step, end]);

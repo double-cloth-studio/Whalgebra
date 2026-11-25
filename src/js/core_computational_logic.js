@@ -63,28 +63,19 @@
                         throw new Error('[BigNumber] Input error: Array length must be 2 or 3.');
                     }
 
-                    let mantissa = x[1];
-                    let power = x[0] + pow;
-
                     const arrayAcc = (len === 3 && x[2] > 0) ? x[2] : undefined;
                     const finalAcc = acc ?? arrayAcc ?? CalcConfig.globalCalcAccuracy;
-                    let finalNoiseMag = noiseMag ?? -Infinity;
+                    const {mantissa, power, noiseMag: finalNoiseMag} =
+                        BigNumber._roundAndNormalize(x[1], x[0] + pow, finalAcc, noiseMag ?? -Infinity);
 
-                    if (arrayAcc !== undefined || acc !== undefined) {
-                        const rounded = BigNumber._roundAndNormalize(mantissa, power, finalAcc, finalNoiseMag);
-                        mantissa = rounded.mantissa;
-                        power = rounded.power;
-                        finalNoiseMag = rounded.noiseMag;
-                    }
-
-                    if (power > Number.MAX_SAFE_INTEGER || power < Number.MIN_SAFE_INTEGER) {
+                    if (!Number.isSafeInteger(power)) {
                         throw new Error('[BigNumber] Input error: Power too large or too small');
                     }
-                    this.power = mantissa === 0n ? 0 : power;
+                    this.power = power;
                     /** @type {bigint} */
                     this.mantissa = mantissa;
                     this.acc = finalAcc;
-                    this.noiseMag = mantissa === 0n ? -Infinity : finalNoiseMag;
+                    this.noiseMag = finalNoiseMag;
                     return;
                 }
 
@@ -98,13 +89,13 @@
                     const baseNoiseMag = noiseMag ?? (x.noiseMag === -Infinity || x.noiseMag === undefined ? -Infinity : x.noiseMag + pow);
                     let realNum;
 
-                    if (finalAcc === x.acc) {
+                    if (x instanceof BigNumber && finalAcc === x.acc) {
                         realNum = {mantissa: x.mantissa, power: x.power + pow, noiseMag: baseNoiseMag};
                     } else {
                         realNum = BigNumber._roundAndNormalize(x.mantissa, x.power + pow, finalAcc, baseNoiseMag);
                     }
 
-                    if (realNum.power > Number.MAX_SAFE_INTEGER || realNum.power < Number.MIN_SAFE_INTEGER) {
+                    if (!Number.isSafeInteger(realNum.power)) {
                         throw new Error('[BigNumber] Input error: Power too large or too small');
                     }
                     this.power = realNum.mantissa === 0n ? 0 : realNum.power;
@@ -173,15 +164,12 @@
 
             if (mantissaStr.includes('e')) {
                 const parts = mantissaStr.split('e');
-                if (parts.length !== 2 || BigNumber._isInvalidNumericString(parts[1])) {
+                if (parts.length !== 2 || !/^[+-]?\d+$/.test(parts[1])) {
                     throw new Error('[BigNumber] Unsupported input type or invalid number format.');
                 }
                 const exponent = Number(parts[1]);
                 if (!Number.isFinite(exponent)) {
                     throw new Error('[BigNumber] Input error: Exponent is too large and results in Infinity.');
-                }
-                if (!Number.isInteger(exponent)) {
-                    throw new Error('[BigNumber] Input error: Exponent must be an integer.');
                 }
                 pow += exponent;
                 mantissaStr = parts[0];
@@ -199,8 +187,9 @@
                 noiseMag: finalNoiseMag
             } = BigNumber._roundAndNormalize(rawMantissa, rawPower + pow, acc, noiseMag ?? -Infinity);
 
-            // 过小的数按零处理，避免指数下溢。
-            if (finalMantissa === 0n || middlePower + CalcConfig.globalCalcAccuracy < CalcConfig.MIN_INPUT_EXPONENT) {
+            // 指数低于下限时，还要计入尾数位数才能判断数量级是否下溢。
+            if (finalMantissa === 0n || (middlePower < CalcConfig.MIN_INPUT_EXPONENT &&
+                middlePower + BigNumber.decimalLengthBigInt(finalMantissa) - 1 < CalcConfig.MIN_INPUT_EXPONENT)) {
                 this.power = 0;
                 this.mantissa = 0n;
                 this.acc = acc;
@@ -993,7 +982,7 @@
          *
          * @private
          * @param {'f'|'g'} token - 本次要进入的自定义函数名；用于选择表达式并保留另一函数的引用。
-         * @param {{f: string, g: string}} funcs - `f`、`g` 的内部表达式字符串；被调用函数可引用另一项，
+         * @param {object} funcs - `f`、`g` 的原始表达式或编译结果；被调用函数可引用另一项。
          *   缺失当前 `token` 对应表达式时视为未定义函数。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} unknown - 代入表达式中 `[x]` 的值；
          *   复数和高精度表示原样进入递归计算上下文。
@@ -1001,12 +990,13 @@
          * @returns {ComplexNumber} 函数值。
          */
         static _customFunc(token, funcs, unknown, acc) {
+            const body = funcs[token];
+            if (body === undefined) {
+                throw new Error(`[MathPlus] input error: Function ${token} is undefined or cyclically called.`);
+            }
             const another = token === 'f' ? 'g' : 'f';
-            return MathPlus.calc(funcs[token], {
-                [another]: funcs[another],
-                unknown: unknown,
-                acc: acc
-            })[0];
+            const compiled = Array.isArray(body?.rpn) ? body : MathPlus.compile(body, {acc});
+            return MathPlus.evalRPN(compiled.rpn, {[another]: funcs[another], unknown, acc});
         }
 
         /**
@@ -1484,7 +1474,7 @@
         }
 
         /**
-         * 纯实数除法核，保留原有舍入、精度和噪声传播规则。
+         * 纯实数除法核，按目标精度执行银行家舍入并传播噪声。
          * @param {BigNumber} reA - 第一个操作数。
          * @param {BigNumber} reB - 第二个操作数。
          * @returns {BigNumber} 新的实数结果。
@@ -1495,6 +1485,9 @@
             }
 
             const resultAcc = Math.min(reA.acc, reB.acc);
+            if (reA.isZero()) {
+                return new BigNumber(0n, {acc: resultAcc});
+            }
 
             const lenA = BigNumber.decimalLengthBigInt(
                 (reA.isNegative() ? -reA.mantissa : reA.mantissa)
@@ -1507,8 +1500,9 @@
             const scalingDigits = resultAcc + lenB - lenA + 4;
             const finalScalingDigits = Math.max(0, scalingDigits);
             const scaledMantissaA = reA.mantissa * BigNumber.pow10(finalScalingDigits);
-            const resultMantissa = scaledMantissaA / reB.mantissa;
-            const resultPower = reA.power - reB.power - finalScalingDigits;
+            let resultMantissa = scaledMantissaA / reB.mantissa;
+            let resultPower = reA.power - reB.power - finalScalingDigits;
+            const remainder = scaledMantissaA - resultMantissa * reB.mantissa;
 
             const noiseA = reA.noiseMag ?? -Infinity;
             const noiseB = reB.noiseMag ?? -Infinity;
@@ -1518,12 +1512,14 @@
             const termB = noiseB === -Infinity ? -Infinity : noiseB + magA - 2 * magB;
             let divisionNoise = Math.max(termA, termB);
 
-            if (scaledMantissaA % reB.mantissa !== 0n) {
-                const magRes = BigNumber.decimalLengthBigInt(
-                    resultMantissa < 0n ? -resultMantissa : resultMantissa
-                ) + resultPower - 1;
+            if (remainder !== 0n) {
+                const magRes = BigNumber.decimalLengthBigInt(resultMantissa) + resultPower - 1;
                 const roundNoise = magRes - resultAcc;
                 divisionNoise = Math.max(divisionNoise, roundNoise);
+
+                // 在保护位之后补上与商同号的粘滞位，防止非零余数被误判为精确中点。
+                resultMantissa = resultMantissa * 10n + (resultMantissa < 0n ? -1n : 1n);
+                resultPower--;
             }
 
             return new BigNumber(resultMantissa, {
@@ -1849,9 +1845,10 @@
          * - 核心原理：a^b = exp(b * ln(a))。
          * - 对于复数 z = r(cosθ + isinθ), z^b = r^b * (cos(bθ) + isin(bθ))。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} a - 实数或复数底数；负实数配非整数
-         *   指数时按复对数主值求幂，零底数仅允许正指数。
+         *   实指数时，若能识别出约分后分母为奇数的有理数 p/q，则返回实数幂，符号由 p 的奇偶性决定。
+         *   其余非整数指数按复对数主值求幂，零底数仅允许正实指数。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} b - 实数或复数指数；整数指数优先走
-         *   精确的快速幂路径，其他情况按 `exp(b * ln(a))` 返回主值。
+         *   整数幂路径。有限小数按精确分数处理，也可在舍入误差或原生 number 精度范围内识别简单分数。
          * @returns {ComplexNumber} 代表 a^b 结果的 ComplexNumber 实例。
          * @throws {Error} 如果出现数学上未定义的情况 (例如 0^0)。
          * @throws {Error} 如果结果的位数估算值过大，可能导致内存溢出。
@@ -1963,6 +1960,54 @@
                 }
 
                 return result;
+            }
+
+            /**
+             * 识别正小数指数的奇分母约分形式；精确小数直接约分，有噪声时检查连分数收敛分数。
+             * @param {BigNumber} exponent - 正的非整数指数
+             * @param {number} noiseMag - 允许的舍入误差量级
+             * @returns {{numerator: bigint, denominator?: bigint}|undefined} 奇分母分数；精确小数无需重算分母
+             */
+            function oddDenominatorFraction(exponent, noiseMag) {
+                const scale = -exponent.power;
+                const shift = BigInt(scale);
+                const numerator = exponent.mantissa >> shift;
+                if (numerator !== 0n && (numerator << shift) === exponent.mantissa) {
+                    // 10^scale = 2^scale × 5^scale；移除全部因子 2 后，剩余的约分不影响分子的奇偶性。
+                    return {numerator};
+                }
+                if (noiseMag === -Infinity) {
+                    return;
+                }
+
+                // 只考虑分母长度远小于可靠小数位数的分数，避免把无理数的高阶近似当成实根。
+                const denominatorDigits = Math.min(exponent.acc, Math.ceil((-noiseMag - 1) / 3));
+                const noiseShift = noiseMag - exponent.power;
+                if (denominatorDigits < 1 || BigNumber.getMag(exponent) < -denominatorDigits - 1 ||
+                    noiseShift < -denominatorDigits - 1) {
+                    return;
+                }
+                const limit = BigNumber.pow10(denominatorDigits);
+                const decimalDenominator = BigNumber.pow10(scale);
+                const tolerance = 5n * BigNumber.pow10(Math.max(0, noiseShift));
+                const errorScale = BigNumber.pow10(Math.max(0, -noiseShift));
+                let a = exponent.mantissa, b = decimalDenominator;
+                let p0 = 0n, p1 = 1n, q0 = 1n, q1 = 0n;
+                while (b !== 0n) {
+                    const integerPart = a / b;
+                    const p = integerPart * p1 + p0;
+                    const q = integerPart * q1 + q0;
+                    if (q > limit || q ** 3n * tolerance >= decimalDenominator * errorScale) {
+                        return;
+                    }
+                    const error = exponent.mantissa * q - decimalDenominator * p;
+                    if ((error < 0n ? -error : error) * errorScale <= tolerance * q) {
+                        // 接受第一个匹配的分数；偶分母和整数仍走通常的小数幂路径。
+                        return q > 1n && (q & 1n) === 1n ? {numerator: p, denominator: q} : undefined;
+                    }
+                    [a, b] = [b, a - integerPart * b];
+                    [p0, p1, q0, q1] = [p1, p, q1, q];
+                }
             }
 
             const inputA = MathPlus._complexInput(a);
@@ -2181,31 +2226,35 @@
                     absB = MathPlus.oppositeNumber(reB);
                 }
 
+                // 原生 number 无法保留 2/3 等分数的精确值，按双精度的有效位数检查。
+                const noiseMag = typeof b === 'number' ? Math.max(absB.noiseMag, BigNumber.getMag(absB) - 15) :
+                                 absB.noiseMag;
+                const fraction = oddDenominatorFraction(absB, noiseMag);
+                if (fraction) {
+                    const workAcc = resultAcc + 10;
+                    const numerator = isExponentNegative ? -fraction.numerator : fraction.numerator;
+                    const workExponent = fraction.denominator === undefined ? new BigNumber(reB, {acc: workAcc}) : MathPlus.realDivide(
+                        new BigNumber(numerator, {acc: workAcc}),
+                        new BigNumber(fraction.denominator, {acc: workAcc})
+                    );
+                    const absBase = MathPlus._complexInput(MathPlus.oppositeNumber(reA), workAcc);
+                    const magnitude = MathPlus.pow(absBase, workExponent);
+                    const result = (numerator & 1n) === 1n ? MathPlus.oppositeNumber(magnitude) : magnitude;
+                    return withInputNoise(MathPlus._complexInput(result, resultAcc));
+                }
+
                 let result = MathPlus.pow(MathPlus.oppositeNumber(inputA), absB);
-                // 负底数小数幂按 (-a)^b = |a|^b(cos(bπ)+i·sin(bπ)) 选择实根或主值。
+                // 无实根时取复数主值。
                 if (absB.power === -1 && absB.mantissa === 5n) {
                     // 负实数的 0.5 次幂走纯虚数分支，保持与主值方根解析连续并规避通用复数幂误差。
                     const zero = new BigNumber([0, 0n, resultAcc]);
                     result = withInputNoise(new ComplexNumber([zero, result.re]));
                 } else {
-                    const mid = Public.integerCorrect(
-                        MathPlus.divide([0, 1n, resultAcc], absB)
-                    ).re;
-                    // 判断是否有实数解
-                    if (mid.power === 0 && mid.mantissa % 2n !== 0n) {
-                        // 有实数解
-                        result = MathPlus.oppositeNumber(result);
-                    } else {
-                        // 无实数解
-                        const angle = MathPlus.times(absB, BigNumber.approximateConstant(CalcConfig.constants.pi));
-                        const cosAngle = MathPlus.cos(angle);
-                        const sinAngle = MathPlus.sin(angle);
-
-                        result = new ComplexNumber([
-                            MathPlus.times(result, cosAngle).re,
-                            MathPlus.times(result, sinAngle).re
-                        ]);
-                    }
+                    const angle = MathPlus.times(absB, BigNumber.approximateConstant(CalcConfig.constants.pi));
+                    result = new ComplexNumber([
+                        MathPlus.times(result, MathPlus.cos(angle)).re,
+                        MathPlus.times(result, MathPlus.sin(angle)).re
+                    ]);
                 }
 
                 if (isExponentNegative) {
@@ -2216,6 +2265,100 @@
 
             // --- 分支 2: 底数是复数, 指数是纯实数 ---
             if (inputB.onlyReal) {
+                const reB = inputB.re;
+                if (reB.power >= 0) {
+                    if (reB.isZero()) {
+                        return new ComplexNumber([0, 1n, resultAcc]);
+                    }
+                    const isNegative = reB.isNegative();
+                    const im = inputA.im;
+                    if (inputA.re.isZero() && im.power === 0 &&
+                        (im.mantissa === 1n || im.mantissa === -1n) &&
+                        im.noiseMag === -Infinity && reB.noiseMag === -Infinity) {
+                        // ±i 的整数幂以 4 为周期，无需展开超大指数。
+                        const residue = reB.power >= 2 ? 0n :
+                                        (reB.mantissa * (reB.power === 0 ? 1n : 10n)) & 3n;
+                        return fastPow(inputA, residue, resultAcc);
+                    }
+
+                    const log10B = _estimateLog10BigInt(isNegative ? -reB.mantissa : reB.mantissa) + reB.power;
+                    const mag = Math.max(BigNumber.getMag(inputA.re), BigNumber.getMag(im));
+                    // 缩放后估算 log10|a|，避免对原底数直接平方溢出。
+                    const scaledLog = (part) => part.isZero() ? -Infinity :
+                                                _estimateLog10BigInt(part.isNegative() ? -part.mantissa : part.mantissa) + (part.power - mag);
+                    const scaledRe = 10 ** scaledLog(inputA.re);
+                    const scaledIm = 10 ** scaledLog(im);
+                    const log10Norm = mag + Math.log10(Math.hypot(scaledRe, scaledIm));
+                    let normGrows = log10Norm > 0;
+                    let log10AbsLog = Math.log10(Math.abs(log10Norm));
+                    if (log10B > 16 && Math.abs(log10Norm) <= 1e-5) {
+                        // 模长接近 1 时，将较大的分量平方减 1 写成平方差，避免丢失小量。
+                        const precision = 2 * inputA.acc + 4;
+                        const [major, minor] = scaledRe >= scaledIm ? [inputA.re, im] : [im, inputA.re];
+                        const absMajor = new BigNumber(major.isNegative() ? -major.mantissa : major.mantissa,
+                            {pow: major.power, acc: precision});
+                        const one = new BigNumber(1n, {acc: precision});
+                        const scaledMinor = Math.abs(minor.power) <= Number.MAX_SAFE_INTEGER / 2
+                                            ? new BigNumber(minor, {acc: precision})
+                                            : new BigNumber(0n, {acc: precision});
+                        const delta = MathPlus.realPlus(
+                            MathPlus.realTimes(MathPlus.realMinus(absMajor, one), MathPlus.realPlus(absMajor, one)),
+                            MathPlus.realTimes(scaledMinor, scaledMinor)
+                        );
+                        normGrows = delta.isPositive();
+                        const log10Delta = delta.isZero() ? -Infinity :
+                                           _estimateLog10BigInt(delta.isNegative() ? -delta.mantissa : delta.mantissa) +
+                                               delta.power;
+                        log10AbsLog = log10Delta < -10 ? log10Delta - Math.log10(2 * Math.LN10) :
+                                      Math.log10(Math.abs(Math.log1p((normGrows ? 1 : -1) * 10 ** log10Delta)) / (2 * Math.LN10));
+                    }
+
+                    const sizeError = '[MathPlus] mathematical error: Result of power is too large to compute safely.';
+                    const willOverflow = normGrows !== isNegative;
+                    if (log10B + log10AbsLog > Math.log10(Number.MAX_SAFE_INTEGER)) {
+                        if (willOverflow) {
+                            throw new Error(sizeError);
+                        }
+                        return new ComplexNumber(0n, {acc: resultAcc});
+                    }
+                    if (log10B > Math.max(CalcConfig.MAX_INPUT_EXPONENT + reB.acc, 2 * inputA.acc + 16)) {
+                        throw new Error(sizeError);
+                    }
+
+                    const workAcc = resultAcc + Math.max(10, Math.ceil(log10B) + 10);
+                    const absMantissa = isNegative ? -reB.mantissa : reB.mantissa;
+                    const exponent = absMantissa * BigNumber.pow10(reB.power);
+                    let base = inputA;
+                    try {
+                        if (isNegative) {
+                            // 先对缩放后的底数取倒数，使中间量级与最终结果同向变化。
+                            const scaledBase = new ComplexNumber(inputA, {acc: workAcc, pow: -mag});
+                            const inverse = MathPlus.divide([0, 1n, workAcc], scaledBase);
+                            base = new ComplexNumber(inverse, {pow: -mag});
+                        }
+                        const result = fastPow(base, exponent, workAcc);
+                        if (reB.noiseMag === -Infinity) {
+                            return MathPlus._complexInput(result, resultAcc);
+                        }
+                        // 指数噪声按 a^b·Log(a) 的模长上界传播。
+                        const noise = reB.noiseMag +
+                            Math.max(BigNumber.getMag(result.re), BigNumber.getMag(result.im)) +
+                            1 + Math.ceil(Math.log10(Math.max(Math.PI, Math.abs(log10Norm) * Math.LN10)));
+                        return new ComplexNumber(result, {
+                            acc: resultAcc,
+                            noiseMag: [Math.max(noise, result.re.noiseMag), Math.max(noise, result.im.noiseMag)]
+                        });
+                    } catch (err) {
+                        if (!err?.message?.includes('Power too large or too small')) {
+                            throw err;
+                        }
+                        if (willOverflow) {
+                            throw new Error(sizeError);
+                        }
+                        return new ComplexNumber(0n, {acc: resultAcc});
+                    }
+                }
+
                 // 复底数、实指数：z^b = |z|^b(cos(b·arg z)+i·sin(b·arg z))。
                 const module = MathPlus.pow(MathPlus.abs(inputA), inputB);
                 const angle = MathPlus.times(inputB, MathPlus.arg(inputA));
@@ -2482,10 +2625,10 @@
          * - 该方法通过计算 a 的 1/b 次方来实现，即 `a^(1/b)`。
          * - 它能够自动处理实数和复数作为底数和根指数。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} a - 被开方数；可为实数或复数，
-         *   方法只返回由 `a ** (1 / b)` 确定的一个主值，不枚举全部复根。
+         *   返回 `pow(a, 1 / b)` 选定的一个根，负实数开奇次根可得到实根。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} b - 非零根指数；可为复数，
          *   但零会使倒数不存在。需要全部正整数次根时应使用 `RadicalFunctionTools`。
-         * @returns {ComplexNumber} 代表 a 的 b 次方根主值的结果。
+         * @returns {ComplexNumber} 代表选定的 a 的 b 次方根。
          */
         static nroot(a, b) {
             const inputA = MathPlus._arithmeticInput(a);
@@ -3071,24 +3214,25 @@
 
             // --- 输入为复数 ---
             // arctan(z) = (-i/2) * ln((1 + iz) / (1 - iz))
-            const mid = MathPlus.minus(
+            const numerator = MathPlus.minus(
                 [[0, 0n, workAcc], [0, 1n, workAcc]],
                 workInput
             );
-            const mid_pow = MathPlus.plus(
+            const denominator = MathPlus.plus(
                 [[0, 0n, workAcc], [0, 1n, workAcc]],
                 workInput
             );
 
-            if (mid.isZero() || mid_pow.isZero()) {
+            if (numerator.isZero() || denominator.isZero()) {
                 throw new Error(`[MathPlus] mathematical error: Unable to calculate arctan, input cannot be ${input.toString()}.`);
             }
 
+            // 下支割线取左侧极限：交换分子和分母，按 arctan(z) = -arctan(-z) 取值。
+            const onLowerCut = workInput.re.isZero() && denominator.im.isNegative();
+            const ratio = onLowerCut ? MathPlus.divide(denominator, numerator) : MathPlus.divide(numerator, denominator);
             return new ComplexNumber(MathPlus.times(
-                [[0, 0n, workAcc], [-1, -5n, workAcc]],
-                MathPlus.ln(
-                    MathPlus.divide(mid, mid_pow)
-                )
+                [[0, 0n, workAcc], [-1, onLowerCut ? 5n : -5n, workAcc]],
+                MathPlus.ln(ratio)
             ), {acc: acc});
         }
 
@@ -3573,7 +3717,31 @@
                 return im.isNegative() ? new ComplexNumber(MathPlus.oppositeNumber(im)) : new ComplexNumber(im);
             }
 
-            return MathPlus.sqrt(MathPlus.plus(MathPlus.times(re, re), MathPlus.times(im, im)));
+            const acc = input.acc;
+            const workAcc = acc + 6;
+            const scale = Math.max(re.power, im.power);
+            const absRe = re.isNegative() ? MathPlus.oppositeNumber(re) : re;
+            const absIm = im.isNegative() ? MathPlus.oppositeNumber(im) : im;
+
+            // 指数差远超计算精度时，小分量的平方低于保护位，也无需构造比值。
+            if (Math.abs(re.power - im.power) > workAcc + acc) {
+                const major = re.power === scale ? absRe : absIm;
+                return new ComplexNumber(MathPlus._withNoise(major, Math.max(re.noiseMag, im.noiseMag)));
+            }
+
+            // 先移除共同指数，在有界范围内计算 M * sqrt(1 + (m / M)^2)。
+            const scaledRe = new BigNumber(absRe, {pow: -scale, acc: workAcc});
+            const scaledIm = new BigNumber(absIm, {pow: -scale, acc: workAcc});
+            const [major, minor] = MathPlus.realMinus(scaledRe, scaledIm).isNegative()
+                                   ? [scaledIm, scaledRe] : [scaledRe, scaledIm];
+            const ratio = MathPlus.realDivide(minor, major);
+            const sum = MathPlus.realPlus(new BigNumber(1n, {acc: workAcc}), MathPlus.realTimes(ratio, ratio));
+            const norm = MathPlus.realTimes(major, MathPlus.sqrt(sum).re);
+
+            // 极小的模长在恢复指数前，先按内部可表示的最低位舍入。
+            const availableDigits = (scale - Number.MIN_SAFE_INTEGER) + BigNumber.getMag(norm) + 1;
+            const rounded = new BigNumber(norm, {acc: Math.min(acc, availableDigits)});
+            return new ComplexNumber(new BigNumber(rounded, {pow: scale}), {acc});
         }
 
         /**
@@ -3642,137 +3810,25 @@
          * @throws {Error} 语法、词元或计算无效时抛出。
          */
         static calc(expr, {unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy} = {}) {
-            /**
-             * (内部辅助函数) 将一个词法单元（token）转换为其内部表示或可执行的等价物。
-             * 这是连接词法分析和计算执行的关键步骤。它将运算符、函数名、常量和变量等字符串
-             * 映射到实际的 MathPlus 方法名、预计算的常量值或变量的当前值。
-             *
-             * @private
-             * @param {string} str - 要转换的词法单元字符串，例如 "+", "sin", "pi", "x"。
-             * @returns {string|ComplexNumber|BigNumber|Array|number}
-             *   - 对于运算符和函数，返回对应的 MathPlus 方法名（例如，"+" -> "plus"）。
-             *   - 对于常量（如 'pi', 'e', 'i'），返回其预计算的高精度数值。
-             *   - 对于变量 'x'，返回其在当前计算上下文中被赋予的值。
-             *   - 对于数字字符串，原样返回，由后续步骤处理。
-             */
-            function symbolConversion(str) {
-                switch (str) {
-                    case '+':
-                        return 'plus';
-                    case '-':
-                        return 'minus';
-                    case '*':
-                    case '&':
-                        return 'times';
-                    case '/':
-                        return 'divide';
-                    case '^':
-                        return 'pow';
-                    case 'E': // E 表示科学记数法。
-                        return 'exponential';
+            const compiled = MathPlus.compile(expr, {acc});
+            const result = mode === 'calc' || Public.typeOf(expr) !== 'string'
+                           ? MathPlus.evalRPN(compiled.rpn, {unknown, f, g, acc})
+                           : new ComplexNumber([0, 0n, acc]);
+            return [result, compiled.expr];
+        }
 
-                    case '!':
-                        return 'fact';
-                    case '|':
-                        return 'abs';
-                    case 'N':
-                        return 'oppositeNumber';
-                    case 'A':
-                        return 'abs';
-
-                    case 'f':
-                    case 'g':
-                        return '_customFunc';
-
-                    case '[pi]':
-                        // 常量本身也是近似值，须让整数倍角度继承其相位误差。
-                        return new ComplexNumber(BigNumber.approximateConstant(CalcConfig.constants.pi, acc));
-                    case '[e]':
-                        return new ComplexNumber(BigNumber.approximateConstant(CalcConfig.constants.e, acc));
-                    case '[i]':
-                        return new ComplexNumber([[0, 0n, acc], [0, 1n, acc]]);
-                    case '[x]':
-                        if (mode === 'calc') {
-                            if (unknown === undefined) {
-                                throw new Error('[MathPlus] input error: x is undefined.');
-                            }
-                            return MathPlus._complexInput(unknown, acc);
-                        } else {
-                            return new ComplexNumber([0, 0n, acc]);
-                        }
-
-                    default:
-                        return str.replace(/[\[\]]/g, '');
-                }
-            }
-
-            /**
-             * (内部辅助函数) 在调度场算法的求值阶段，处理并执行一个从操作符栈中弹出的词法单元（运算符或函数）。
-             * 该函数从 `valueStack` 中弹出所需的操作数，执行计算，然后将结果压回 `valueStack`。
-             * 它是逆波兰表示法 (RPN) 的核心执行引擎。
-             *
-             * @private
-             * @param {string} rawToken - 要执行的运算符或函数词法原始单元，例如 "+", "sin", "N"。
-             * @returns {void} 此函数不返回值，它通过修改 `valueStack` 来产生副作用。
-             * @throws {Error} 如果 `valueStack` 中的操作数不足以满足 `token` 所需的参数数量。
-             * @throws {Error} 如果尝试调用一个未定义的自定义函数 'f' 或 'g'。
-             */
-            function evaluationRPN(rawToken) {
-                const hasCommaMark = rawToken.endsWith('~');
-                const token = hasCommaMark ? rawToken.slice(0, -1) : rawToken;
-                let tokenInfo = Public.getTokenInfo(token);
-
-                if (tokenInfo.funcPlace === 'front' && tokenInfo.parameters === 2 && !hasCommaMark) {
-                    throw new Error(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
-                }
-
-                // --- 处理一元运算符（前缀或后缀） ---
-                if (tokenInfo.parameters === 1) {
-                    // 确保栈中至少有一个操作数。
-                    if (valueStack.length < 1) {
-                        throw new Error(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
-                    }
-
-                    if (mode === 'calc') {
-                        // 必须先从栈中弹出操作数。
-                        const operand = valueStack.pop();
-                        // 调用相应的 MathPlus 方法进行计算。
-                        let value;
-                        if (['f', 'g'].includes(token)) {
-                            const context = {f, g};
-                            if (context[token] === undefined) {
-                                throw new Error(`[MathPlus] input error: Function ${token} is undefined or cyclically called.`);
-                            }
-                            value = MathPlus._customFunc(token, context, operand, acc);
-                        } else {
-                            value = MathPlus[symbolConversion(tokenInfo.token)](operand);
-                        }
-                        valueStack.push(value);
-                    }
-                }
-
-                // --- 处理二元运算符和双参数函数 ---
-                else if (tokenInfo.parameters === 2) {
-                    // 确保栈中至少有两个操作数。
-                    if (valueStack.length < 2) {
-                        throw new Error(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
-                    }
-                    // 第二个操作数（b）先弹出，然后是第一个操作数（a）。
-                    const b = valueStack.pop();
-                    if (mode === 'calc') {
-                        const a = valueStack.pop();
-                        // 调用相应的 MathPlus 方法进行计算，保持 (a, b) 的正确顺序。
-                        const value = MathPlus[symbolConversion(tokenInfo.token)](a, b);
-                        valueStack.push(value);
-                    }
-                }
-            }
-
-            // 初始验证和准备
+        /**
+         * 规范化表达式并生成已校验的逆波兰指令。变量和常量在求值时按上下文绑定。
+         * @param {string|number|bigint|ComplexNumber|BigNumber} expr - 内部表达式或数值。
+         * @param {object} [options={}] - 数值输入的规范化选项。
+         * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 数值输入格式化前的有效位数。
+         * @returns {{expr:string,rpn:Array<object>}} 规范化表达式和可重复使用的指令序列。
+         */
+        static compile(expr, {acc = CalcConfig.globalCalcAccuracy} = {}) {
             const inputType = Public.typeOf(expr);
             if (['number', 'bigint', 'complexnumber', 'bignumber'].includes(inputType)) {
                 const val = MathPlus._complexInput(expr, acc);
-                return [val, val.toString()];
+                return {expr: val.toString(), rpn: [{operand: expr}]};
             }
             if (inputType !== 'string') {
                 throw new Error('[MathPlus] Disallowed input type.');
@@ -3950,21 +4006,21 @@
                     addKh = currentPush === '(' ? kh - 1 : kh;
                 }
 
-                if ( // 解决为隐式乘法添加的另一半括号
-                    tempBracketIdx !== -1 && (
-                        (
-                            tokenInfo.class === 'func' &&
-                            tokenInfo.priority > orderOfInvisibleTimes &&
-                            kh === addKh
-                        ) ||
-                        // 避免循环末尾需要在循环结束后重新处理
-                        i + 1 === input.length
-                    )
-                ) {
-                    if (tokenInfo.priority >= orderOfTimes || i + 1 === input.length) {
+                // 解决为隐式乘法添加的另一半括号
+                const hitBoundary =
+                    (tokenInfo.class === 'func' && tokenInfo.priority > orderOfInvisibleTimes && kh === addKh) ||
+                    (currentPush === ')' && kh < addKh) ||
+                    (currentPush === ',' && kh === addKh);
+
+                if (tempBracketIdx !== -1 && (hitBoundary || i + 1 === input.length)) {
+                    const needClose = hitBoundary
+                                      ? (currentPush === ')' || currentPush === ',' || tokenInfo.priority >= orderOfTimes)
+                                      : true;
+
+                    if (needClose) {
                         // 目前 token 优先级低于显式乘法，或已到达表达式末尾，需要补全括号
                         openAfter1[tempBracketIdx] = (openAfter1[tempBracketIdx] || 0) + 1;
-                        if (i + 1 === input.length) {
+                        if (i + 1 === input.length && !hitBoundary) {
                             output.push(currentPush);
                             currentPush = ')';
                         } else {
@@ -4238,25 +4294,38 @@
             output = output.replaceAll('A(', '|').replaceAll('|)', '|').replaceAll('&', '[cdot]').replaceAll('N', '-');
 
             // --- 第三轮解析循环 ---
-            // 生成 RPN（逆波兰表示法） 和 RPN求值循环
-            const valueStack = [];
+            // 生成 RPN（逆波兰表示法），只跟踪栈深度以校验语法。
+            const rpn = [];
             const operatorStack = [];
+            const methods = {
+                '+': 'plus', '-': 'minus', '*': 'times', '&': 'times', '/': 'divide',
+                '^': 'pow', 'E': 'exponential', '!': 'fact', '|': 'abs', 'A': 'abs',
+                'N': 'oppositeNumber', 'f': '_customFunc', 'g': '_customFunc'
+            };
+            let depth = 0;
+
+            const emitOperator = (rawToken) => {
+                const hasCommaMark = rawToken.endsWith('~');
+                const token = hasCommaMark ? rawToken.slice(0, -1) : rawToken;
+                const {funcPlace, parameters} = Public.getTokenInfo(token);
+                if (funcPlace === 'front' && parameters === 2 && !hasCommaMark) {
+                    throw new Error(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
+                }
+                if (depth < parameters) {
+                    throw new Error(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
+                }
+                depth += 1 - parameters;
+                const method = methods[token] ?? token.replace(/[\[\]]/g, '');
+                rpn.push({token, method, parameters});
+            };
 
             for (let i = 0; i < input.length; i++) {
                 const currentToken = input[i];
                 const tokenInfo = Public.getTokenInfo(currentToken);
 
                 if (tokenInfo.class === 'number') {
-                    if (mode === 'calc') {
-                        const pushNum = symbolConversion(currentToken);
-                        if (Public.typeOf(pushNum) === 'complexnumber') {
-                            valueStack.push(pushNum);
-                        } else {
-                            valueStack.push(new ComplexNumber(pushNum, {acc: acc}));
-                        }
-                    } else {
-                        valueStack.push(new ComplexNumber([0, 0n, acc]));
-                    }
+                    rpn.push({operand: currentToken});
+                    depth++;
                 } else if (tokenInfo.class === 'func') {
                     let topOfStack = operatorStack[operatorStack.length - 1];
                     let topOfStackInfo = {};
@@ -4274,8 +4343,8 @@
                             (topOfStackInfo.priority === tokenInfo.priority && tokenInfo.associativity === 'left') // 优先级相同且为左结合
                         ) && tokenInfo.funcPlace !== 'front' // 防止提前出栈
                         ) {
-                        // 使用 pop() 从栈顶弹出一个运算符，并用 evaluationRPN 更新求值栈的值。
-                        evaluationRPN(operatorStack.pop());
+                        // 使用 pop() 从栈顶弹出一个运算符，并写入指令序列。
+                        emitOperator(operatorStack.pop());
                         // 更新栈顶元素以供下一次循环判断。
                         topOfStack = operatorStack[operatorStack.length - 1];
                         if (topOfStack !== undefined) {
@@ -4289,7 +4358,7 @@
                     operatorStack.push(currentToken);
                 } else if (currentToken === ')') {
                     while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                        evaluationRPN(operatorStack.pop());
+                        emitOperator(operatorStack.pop());
                     }
                     if (operatorStack.length === 0) {
                         throw new Error('[MathPlus] syntax error: The parentheses do not match.');
@@ -4298,7 +4367,7 @@
                     operatorStack.pop();
                 } else if (currentToken === ',') {
                     while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                        evaluationRPN(operatorStack.pop());
+                        emitOperator(operatorStack.pop());
                     }
                     const subTopOfStack = Public.getTokenInfo(operatorStack[operatorStack.length - 2]);
                     if (operatorStack.length < 2 || !(subTopOfStack.funcPlace === 'front' && subTopOfStack.parameters === 2)) {
@@ -4314,15 +4383,59 @@
                 if (operator === '(') {
                     throw new Error('[MathPlus] syntax error: The parentheses do not match.');
                 }
-                evaluationRPN(operator);
+                emitOperator(operator);
             }
 
-            if (valueStack.length !== 1) {
+            if (depth !== 1) {
                 throw new Error('[MathPlus] syntax error: The final stack should have exactly one value.');
             }
 
-            const result = MathPlus._complexInput(mode === 'calc' ? valueStack[0] : [0, 0n, acc]);
-            return [result, output];
+            return {expr: output, rpn};
+        }
+
+        /**
+         * 在指定上下文中执行已编译的指令。
+         * @param {Array<object>} rpn - `MathPlus.compile` 返回的指令序列。
+         * @param {object} [context={}] - 有效位数、自变量及可选的 f/g 函数体（原始表达式或编译结果）。
+         * @returns {ComplexNumber} 表达式的数值。
+         */
+        static evalRPN(rpn, {unknown, f, g, acc = CalcConfig.globalCalcAccuracy} = {}) {
+            const stack = [];
+            for (const {operand, token, method, parameters} of rpn) {
+                if (method === undefined) {
+                    switch (operand) {
+                        case '[pi]':
+                            // 常量本身也是近似值，须让整数倍角度继承其相位误差。
+                            stack.push(new ComplexNumber(BigNumber.approximateConstant(CalcConfig.constants.pi, acc)));
+                            break;
+                        case '[e]':
+                            stack.push(new ComplexNumber(BigNumber.approximateConstant(CalcConfig.constants.e, acc)));
+                            break;
+                        case '[i]':
+                            stack.push(new ComplexNumber([[0, 0n, acc], [0, 1n, acc]]));
+                            break;
+                        case '[x]':
+                            if (unknown === undefined) {
+                                throw new Error('[MathPlus] input error: x is undefined.');
+                            }
+                            stack.push(MathPlus._complexInput(unknown, acc));
+                            break;
+                        default:
+                            stack.push(MathPlus._complexInput(operand, acc));
+                    }
+                    continue;
+                }
+
+                const b = stack.pop();
+                if (parameters === 2) {
+                    stack.push(MathPlus[method](stack.pop(), b));
+                } else if (method === '_customFunc') {
+                    stack.push(MathPlus._customFunc(token, {f, g}, b, acc));
+                } else {
+                    stack.push(MathPlus[method](b));
+                }
+            }
+            return MathPlus._complexInput(stack[0]);
         }
     }
 
@@ -4825,6 +4938,8 @@
             } catch {
                 /** 为每个回归参数生成错误占位值。 */
                 result.parameter = Array.from({length: power + 1}, () => 'error');
+                result.R2 = 'error';
+                return result;
             }
 
             try {
@@ -5551,6 +5666,7 @@
                 // 仅对舍入后为负的被开方数执行判零，保留接近零的正值。
                 const correctNonnegative = (value, ...refs) =>
                     value.re.isNegative() ? Public.zeroCorrect(value, ...refs) : value;
+
                 const termZ1 = MathPlus.times(D, D);
                 const termZ2 = MathPlus.times(A, 3);
                 const termZ3 = MathPlus.times(midZ, midZ);
@@ -6067,9 +6183,36 @@
          * @throws {Error} 边界或步长不是有效实数时抛出。
          */
         static valueList(f, g, start, step, end) {
-            start = Public.zeroCorrect(MathPlus.calc(start)[0]);
-            step = Public.zeroCorrect(MathPlus.calc(step)[0]);
-            end = Public.zeroCorrect(MathPlus.calc(end)[0]);
+            return this._sample(f, g, start, step, end).next().value;
+        }
+
+        /**
+         * 在 Worker 中分批采样，让取消消息能在相邻批次之间生效。
+         * @param {object} cancellationSignal - Worker 为本次任务注入的取消信号。
+         */
+        static async valueListCancellable(f, g, start, step, end, cancellationSignal) {
+            const batchTime = 16;
+            let deadline = performance.now() + batchTime;
+            cancellationSignal.throwIfCancelled();
+            const sampling = this._sample(f, g, start, step, end, () => performance.now() >= deadline);
+            let batch = sampling.next();
+            while (!batch.done) {
+                // 让出一个任务，使 Worker 能处理排队的取消消息。
+                await new Promise(resolve => setTimeout(resolve, 0));
+                cancellationSignal.throwIfCancelled();
+                deadline = performance.now() + batchTime;
+                batch = sampling.next();
+            }
+            return batch.value;
+        }
+
+        /** 共享采样循环；提供回调时，在回调返回 true 的点暂停采样。 */
+        static *_sample(f, g, start, step, end, onStep) {
+            const acc = CalcConfig.globalCalcAccuracy;
+            const formatOptions = {acc: CalcConfig.outputAccuracy, printMode: CalcConfig.globalPrintMode};
+            start = Public.zeroCorrect(MathPlus.calc(start, {acc})[0]);
+            step = Public.zeroCorrect(MathPlus.calc(step, {acc})[0]);
+            end = Public.zeroCorrect(MathPlus.calc(end, {acc})[0]);
 
             if (!start.onlyReal || !step.onlyReal || !end.onlyReal) {
                 throw new Error('[FuncValueListTools] Complex number appear in the input.');
@@ -6085,38 +6228,49 @@
             const varList = [];
             const resultF = [];
             const resultG = [];
-            const hasF = typeof f === 'string' ? f.trim() !== '' : f != null;
-            const hasG = typeof g === 'string' ? g.trim() !== '' : g != null;
             const maxCount = CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS;
+
+            const compileBody = (body) => {
+                if (body == null || (typeof body === 'string' && body.trim() === '')) {
+                    return undefined;
+                }
+                try {
+                    return MathPlus.compile(body, {acc});
+                } catch {
+                    // 无效的函数体在数表中显示为 error，另一列仍可独立求值。
+                    return undefined;
+                }
+            };
+            const compiledF = compileBody(f);
+            const compiledG = f === g ? compiledF : compileBody(g);
+            const contextF = {g: compiledG, acc};
+            const contextG = {f: compiledF, acc};
+
+            const formatValue = (compiled, context, unknown) => {
+                if (compiled === undefined) {
+                    return 'error';
+                }
+                try {
+                    context.unknown = unknown;
+                    return Public.idealizationToString(MathPlus.evalRPN(compiled.rpn, context), formatOptions);
+                } catch {
+                    return 'error';
+                }
+            };
 
             let k = 0;
             let currentX = start;
             while (!MathPlus.minus(currentX, end).re.isPositive() && k < maxCount) {
-                varList.push(Public.idealizationToString(currentX));
-
-                if (hasF) {
-                    try {
-                        resultF.push(Public.idealizationToString(MathPlus.calc(f, {g, unknown: currentX})[0]));
-                    } catch {
-                        resultF.push('error');
-                    }
-                } else {
-                    resultF.push('error');
-                }
-
-                if (hasG) {
-                    try {
-                        resultG.push(Public.idealizationToString(MathPlus.calc(g, {f, unknown: currentX})[0]));
-                    } catch {
-                        resultG.push('error');
-                    }
-                } else {
-                    resultG.push('error');
-                }
+                varList.push(Public.idealizationToString(currentX, formatOptions));
+                resultF.push(formatValue(compiledF, contextF, currentX));
+                resultG.push(formatValue(compiledG, contextG, currentX));
 
                 k++;
                 // 用 start + k * step 替代连续累加，消除长区间误差漂移。
-                currentX = MathPlus.plus(start, MathPlus.times(step, k));
+                currentX = MathPlus.plus(start, MathPlus.times(step, new BigNumber(k, {acc})));
+                if (onStep?.()) {
+                    yield;
+                }
             }
 
             if (k === maxCount && !MathPlus.minus(currentX, end).re.isPositive()) {

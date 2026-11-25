@@ -50,6 +50,8 @@ console.log(table.g);       // ["-2", "-1", "0", "1", "2"]
 
 返回 `{varList,f,g}`，三个数组按索引对齐。单点计算失败或函数为空时填入 `"error"`，不影响其他点。最多生成 999 个采样点，超限时 `varList` 追加 `[print_content_omit]`，两个函数数组同位置追加 `[not_applicable]`。
 
+发行版会在采样前编译函数体。逐点代入 `[x]` 或调用另一自定义函数时，直接执行已编译的指令。浏览器界面使用 `WorkerTools.valueList()` 分批采样，可在批次之间响应取消。
+
 ## 统计：StatisticsTools
 
 `statisticsCalc(listA,listB)` 接收等长、非空的成对实数样本，不改写原数组。返回统计量及七种回归模型，数值字段均为字符串。

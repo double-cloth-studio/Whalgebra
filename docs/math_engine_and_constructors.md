@@ -1,6 +1,6 @@
 # 计算引擎与数值构造器
 
-实现位于 `src/js/core_computational_logic.js`，依赖先加载的 `shared_code_and_configuration.js`。示例在计算器页面控制台运行。
+以下接口以 `dist/Whalgebra.html` 的发行版为准。示例在计算器页面控制台运行。
 
 ## MathPlus.calc：表达式求值
 
@@ -27,6 +27,14 @@ console.log(normalized); // "2[cdot](3+4)"
 ```
 
 解析器支持隐式乘法、末尾括号补全、绝对值、科学记数法和函数嵌套。`canonicalExpr` 使用内部词元，不一定与输入文本相同。函数可以互相引用，但递归环会报错。输入错误和数学错误通过异常报告。
+
+同一个表达式需要多次求值时，可以用 `MathPlus.compile(expr)` 取得规范化表达式 `expr` 和逆波兰指令 `rpn`。用 `MathPlus.evalRPN(rpn, context)` 执行指令并返回 `ComplexNumber`。每次求值可独立指定 `unknown`、`acc` 及 `f`、`g`。函数体可传原始表达式或 `compile` 的返回对象。
+
+```javascript
+const compiled = MathPlus.compile("2[x]+1");
+console.log(compiled.expr); // "2[cdot][x]+1"
+console.log(MathPlus.evalRPN(compiled.rpn, { unknown: 3, acc: 60 }).toString()); // "7"
+```
 
 ## 常用语法与静态方法
 

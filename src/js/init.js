@@ -2,235 +2,214 @@
 document.addEventListener('click', (event) => {
     "use strict";
 
-    /**
-     * 统一读取 HTML / SVG 元素的类名字符串，规避 SVGAnimatedString 引发类型异常。
-     * @param {Element|null} el - DOM 元素。
-     * @returns {string} 类名字符串。
-     */
-    const getClassName = (el) => {
-        if (!el) {
-            return '';
+    // 从点击节点向上分发，首个匹配的控件负责处理事件。
+    for (const target of event.composedPath()) {
+        if (!(target instanceof Element)) {
+            continue;
         }
-        return typeof el.className === 'string'
-               ? el.className
-               : (el.getAttribute('class') || '');
-    };
 
-    let target = event.target;
+        const targetID = target.id;
+        const targetClass = target.getAttribute('class') || '';
+        const firstChildClass = target.firstElementChild?.getAttribute('class') || '';
+        const parentID = target.parentElement?.id || '';
 
-    // 键帽文字由内部 p 元素承载；除主输入区外统一提升到按钮容器，保证点击图标和空白处行为一致。
-    if (target.tagName.toLowerCase() === 'p' && target.parentNode?.id !== 'input') {
-        target = target.parentNode;
-    }
-
-    const targetID = target.id || '';
-    const targetClass = getClassName(target);
-
-    const firstChildClass = getClassName(target.firstElementChild);
-    const parent = target.parentNode;
-    const parentID = parent?.id || '';
-
-    // 第一层按目标 ID 精确分发，处理全局唯一控件。
-    switch (targetID) {
-        case 'head_setting':
-            PageControlTools.hideExplain();
-            return PageControlTools.headChangeModes();
-
-        case 'head_title':
-            return PageControlTools.moveShip();
-
-        case 'main_cover':
-            return PageControlTools.clickMainCover();
-
-        case 'print_close':
-            return PageControlTools.closePrint();
-
-        case 'head_explain':
-        case 'explain_close':
-            return PageControlTools.headChangeExplain();
-
-        case 'input':
-            PageControlTools.hideExplain();
-            if (HtmlTools.isScrolledToRight(HtmlTools.getHtml('#input'))) {
-                InputManager.moveCursor('end');
-            }
-            return;
-
-        case 'load_cancel':
-            return PageControlTools.cancelPrint();
-
-        case 'print_1_0_choose':
-            return PageControlTools.clickPrint1Choose();
-
-        case 'print_content_1_cover':
-            return PageControlTools.clickPrint1Cover();
-
-        case 'statistics_results_top_x':
-        case 'statistics_results_top_y':
-        case 'statistics_results_top_xy':
-            PageControlTools.triggerSelection(target, event);
-            return PageControlTools.switchStatisticsResults(targetID.slice(23));
-
-        case 'back_btn':
-        case 'back_btn_child1':
-        case 'back_btn_child2':
-        case 'back_btn_father':
-            PageConfig.currentMode = '2_0';
-            return;
-    }
-
-    /**
-     * 切换至更多功能扩展副键盘。
-     */
-    const showMoreFunc = () => PageControlTools.changeSubKeyboard('SortSvg');
-
-    // 第二层按父容器分组，同一控件内部的图标和文字共享处理逻辑。
-    switch (parentID) {
-        case 'setting_acc_control':
-        case 'switch_knob_on':
-        case 'switch_knob_off':
-        case 'switch_knob':
-        case 'switch_container':
-        case 'switch_container_father':
-            PageConfig.calcAccMode = 1 - PageConfig.calcAccMode;
-            return;
-
-        case 'sort_svg':
-        case 'keyboard_top_more':
-            return showMoreFunc();
-
-        case 'keyboard_top': {
-            const handlers = {
-                '_2nd_': () => PageConfig.keyboardType = 1 - PageConfig.keyboardType,
-                '_trigonometry_': () => PageControlTools.changeSubKeyboard('_trigonometry_'),
-                '_functions_': () => PageControlTools.changeSubKeyboard('_functions_')
-            };
-
-            if (handlers[firstChildClass]) {
-                handlers[firstChildClass]();
-            } else if (targetID === 'keyboard_top_more') {
-                showMoreFunc();
-            } else {
+        // 第一层按目标 ID 精确分发，处理全局唯一控件。
+        switch (targetID) {
+            case 'head_setting':
                 PageControlTools.hideExplain();
+                return PageControlTools.headChangeModes();
 
-                const direction = firstChildClass.slice(13).toLowerCase();
-                if (direction) {
-                    InputManager.moveCursor(direction);
-                }
-            }
-            return;
-        }
-    }
+            case 'head_title':
+                return PageControlTools.moveShip();
 
-    // 第三层处理带规则命名的动态元素，避免为每个模式、单元格或按键逐一注册监听器。
-    if (parentID.startsWith('screen_input_')) {
-        PageControlTools.hideExplain();
-        const modeIndex = parentID.slice(-1);
-        PageConfig.subModes = {'default': modeIndex};
-        PageControlTools.syncScreenToInput();
-        return;
-    }
+            case 'main_cover':
+                return PageControlTools.clickMainCover();
 
-    if (parentID === 'input' && targetID === '') {
-        PageControlTools.hideExplain();
-        return InputManager.clickMoveCursor(target);
-    }
+            case 'print_close':
+                return PageControlTools.closePrint();
 
-    if (targetID.includes('keyboard_cover')) {
-        return PageControlTools.changeSubKeyboard('allNotShow');
-    }
+            case 'head_explain':
+            case 'explain_close':
+                return PageControlTools.headChangeExplain();
 
-    if (/^mode_[0-4]$/.test(targetID)) {
-        const mode = targetID.slice(-1);
-        PageConfig.currentMode = (mode === '2') ? '2_0' : mode;
-
-        // 延迟 340ms 关闭模态遮罩，预留 CSS drawer 收起动画过渡时长。
-        PageControlTools.delayCloseMainCover();
-        return;
-    }
-
-    if (/Data[XY]/.test(targetClass)) {
-        PageControlTools.hideExplain();
-
-        const children = target.parentElement.children;
-        const name = [];
-
-        const classList = HtmlTools.getClassList(children[0].children[0]);
-        name.push(classList ? Number(classList.join('').replace(/_/g, '')) - 1 : 0);
-        name.push(target.classList.contains('DataX') ? 0 : 1);
-
-        PageConfig.subModes = {'default': name};
-        PageControlTools.syncScreenToInput();
-        return;
-    }
-
-    if (/^print_[0-1]$/.test(targetID)) {
-        PageConfig.printMode = targetID.slice(-1);
-        return;
-    }
-
-    if (/KeyboardStyle(?:[123]|EXE)/.test(targetClass)) {
-        PageControlTools.hideExplain();
-        switch (firstChildClass) {
-            case '_exe_':
-                return PrintManager.exe();
-            case '_ac_':
-                return InputManager.ac();
-            case '_del_':
-                InputManager.del();
-                if (PageConfig.currentMode === '0') {
-                    PrintManager.mode0ShowOnScreen();
+            case 'input':
+                PageControlTools.hideExplain();
+                if (HtmlTools.isScrolledToRight(HtmlTools.getHtml('#input'))) {
+                    InputManager.moveCursor('end');
                 }
                 return;
-            case '_add_line_':
-                const currentSubModes = PageConfig.subModes['1'];
-                const succeed = InputManager.statisticsAddLine({
-                    location: currentSubModes[0] - 1,
-                    inputX: currentSubModes[1] === 0 ? '0' : '',
-                    inputY: currentSubModes[1] === 0 ? '' : '0'
-                });
-                if (succeed && !HtmlTools.getHtml('.InputTip')) {
-                    InputManager.ac();
+
+            case 'load_cancel':
+                return PageControlTools.cancelPrint();
+
+            case 'print_1_0_choose':
+                return PageControlTools.clickPrint1Choose();
+
+            case 'print_content_1_cover':
+                return PageControlTools.clickPrint1Cover();
+
+            case 'statistics_results_top_x':
+            case 'statistics_results_top_y':
+            case 'statistics_results_top_xy':
+                PageControlTools.triggerSelection(target, event);
+                return PageControlTools.switchStatisticsResults(targetID.slice(23));
+
+            case 'back_btn':
+            case 'back_btn_child1':
+            case 'back_btn_child2':
+            case 'back_btn_father':
+                PageConfig.currentMode = '2_0';
+                return;
+
+            case 'setting_acc_control':
+            case 'switch_knob_on':
+            case 'switch_knob_off':
+            case 'switch_knob':
+            case 'switch_container':
+            case 'switch_container_father':
+                PageConfig.calcAccMode = 1 - PageConfig.calcAccMode;
+                return;
+
+            case 'sort_svg':
+            case 'keyboard_top_more':
+                return PageControlTools.changeSubKeyboard('SortSvg');
+        }
+
+        // 顶部快捷键由同一容器分组，按键帽的首个子节点识别动作。
+        switch (parentID) {
+            case 'keyboard_top': {
+                const handlers = {
+                    '_2nd_': () => PageConfig.keyboardType = 1 - PageConfig.keyboardType,
+                    '_trigonometry_': () => PageControlTools.changeSubKeyboard('_trigonometry_'),
+                    '_functions_': () => PageControlTools.changeSubKeyboard('_functions_')
+                };
+
+                if (handlers[firstChildClass]) {
+                    handlers[firstChildClass]();
+                } else {
+                    PageControlTools.hideExplain();
+
+                    const direction = firstChildClass.slice(13).toLowerCase();
+                    if (direction) {
+                        InputManager.moveCursor(direction);
+                    }
                 }
-                return HtmlTools.scrollToView();
-            case '_del_line_':
-                InputManager.statisticsDelLine();
-                return HtmlTools.scrollToView();
-            default: {
-                const input = HtmlTools.getClassList(target);
-                InputManager.input(input);
-                if (targetClass.includes('NeedParentheses') && PageConfig.keyboardType === 1) {
-                    InputManager.input(['_parentheses_left_']);
-                }
-                if (PageConfig.currentMode === '0') {
-                    PrintManager.mode0ShowOnScreen();
-                }
-                PageControlTools.showExplain(input);
+                return;
             }
         }
-        return;
-    }
 
-    if (/title_mode_([0134]|2_0)|screen_title|print_title/.test(targetID)) {
-        // 嵌入式环境关闭网页专属全屏；函数值结果页的标题也不作为全屏触发区。
-        if (!Public.webMode || (targetID !== 'print_title' && PageConfig.currentMode === '2_1')) {
+        // 第三层处理带规则命名的动态元素，避免为每个模式、单元格或按键逐一注册监听器。
+        if (/^screen_input_(?:2_\d{2}|[34]\d)$/.test(targetID)) {
+            PageControlTools.hideExplain();
+            const modeIndex = targetID.slice(-1);
+            PageConfig.subModes = {'default': modeIndex};
+            PageControlTools.syncScreenToInput();
             return;
         }
 
-        if (document.fullscreenElement) {
-            document.exitFullscreen();
-        } else {
-            document.documentElement.requestFullscreen();
+        if (parentID === 'input') {
+            PageControlTools.hideExplain();
+            return InputManager.clickMoveCursor(target);
         }
-        return;
-    }
 
-    if (/^choose_ra_[0-6]$/.test(parentID)) {
-        return PageControlTools.changePrint1Ra(parentID);
-    }
+        if (/^keyboard_cover(?:_ForMode1)?$/.test(targetID)) {
+            return PageControlTools.changeSubKeyboard('allNotShow');
+        }
 
-    if (/^export_[0-1]$/.test(targetID)) {
-        return PageControlTools.exportRa(targetID);
+        if (/^mode_[0-4]$/.test(targetID)) {
+            const mode = targetID.slice(-1);
+            PageConfig.currentMode = (mode === '2') ? '2_0' : mode;
+
+            // 延迟 340ms 关闭模态遮罩，预留 CSS drawer 收起动画过渡时长。
+            PageControlTools.delayCloseMainCover();
+            return;
+        }
+
+        if (/Data[XY]/.test(targetClass)) {
+            PageControlTools.hideExplain();
+
+            const children = target.parentElement.children;
+            const name = [];
+
+            const classList = HtmlTools.getClassList(children[0].children[0]);
+            name.push(classList ? Number(classList.join('').replace(/_/g, '')) - 1 : 0);
+            name.push(target.classList.contains('DataX') ? 0 : 1);
+
+            PageConfig.subModes = {'default': name};
+            PageControlTools.syncScreenToInput();
+            return;
+        }
+
+        if (/^print_[0-1]$/.test(targetID)) {
+            PageConfig.printMode = targetID.slice(-1);
+            return;
+        }
+
+        if (/KeyboardStyle(?:[123]|EXE)/.test(targetClass)) {
+            PageControlTools.hideExplain();
+            switch (firstChildClass) {
+                case '_exe_':
+                    return PrintManager.exe();
+                case '_ac_':
+                    return InputManager.ac();
+                case '_del_':
+                    InputManager.del();
+                    if (PageConfig.currentMode === '0') {
+                        PrintManager.mode0ShowOnScreen();
+                    }
+                    return;
+                case '_add_line_':
+                    const currentSubModes = PageConfig.subModes['1'];
+                    const succeed = InputManager.statisticsAddLine({
+                        location: currentSubModes[0] - 1,
+                        inputX: currentSubModes[1] === 0 ? '0' : '',
+                        inputY: currentSubModes[1] === 0 ? '' : '0'
+                    });
+                    if (succeed && !HtmlTools.getHtml('.InputTip')) {
+                        InputManager.ac();
+                    }
+                    return HtmlTools.scrollToView();
+                case '_del_line_':
+                    InputManager.statisticsDelLine();
+                    return HtmlTools.scrollToView();
+                default: {
+                    const input = HtmlTools.getClassList(target);
+                    InputManager.input(input);
+                    if (targetClass.includes('NeedParentheses') && PageConfig.keyboardType === 1) {
+                        InputManager.input(['_parentheses_left_']);
+                    }
+                    if (PageConfig.currentMode === '0') {
+                        PrintManager.mode0ShowOnScreen();
+                    }
+                    PageControlTools.showExplain(input);
+                }
+            }
+            return;
+        }
+
+        if (/^(?:title_mode_(?:[0134]|2_0)|screen_title|print_title)$/.test(targetID)) {
+            // 嵌入式环境关闭网页专属全屏；函数值结果页的标题也不作为全屏触发区。
+            if (!Public.webMode || (targetID !== 'print_title' && PageConfig.currentMode === '2_1')) {
+                return;
+            }
+
+            if (document.fullscreenElement) {
+                document.exitFullscreen?.().catch(() => {
+                });
+            } else {
+                document.documentElement.requestFullscreen?.().catch(() => {
+                });
+            }
+            return;
+        }
+
+        if (/^choose_ra_[0-6]$/.test(targetID)) {
+            return PageControlTools.changePrint1Ra(targetID);
+        }
+
+        if (/^export_[0-1]$/.test(targetID)) {
+            return PageControlTools.exportRa(targetID);
+        }
     }
 });
 
@@ -238,11 +217,12 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
     "use strict";
 
-    const key = event.key;
-    const isCodeNumber = TokenConfig.codeNumbers.has(`[${key}]`);
+    // macOS 的 Option 组合键可能产生死键或特殊字符，使用物理键位识别数学符号。
+    const altInput = event.altKey && /^Key([EIX])$/.exec(event.code)?.[1].toLowerCase();
+    const key = altInput || event.key;
 
     // 除配置中的数学符号输入外，Alt 组合键交由浏览器处理。
-    if (event.ctrlKey || event.metaKey || (event.altKey && !isCodeNumber)) {
+    if (event.ctrlKey || event.metaKey || (event.altKey && !altInput)) {
         return;
     }
 
@@ -330,16 +310,9 @@ document.addEventListener('keydown', (event) => {
     if (/^([a-z0-9E])$/.test(key)) {
         event.preventDefault();
 
-        if (event.altKey && isCodeNumber) {
-            // 配置中的数学符号使用数学变量样式，普通按键仍保留字母词元。
-            const input = [`_${key}_mathit_`];
-            InputManager.input(input);
-            PageControlTools.showExplain(input);
-        } else {
-            const input = [`_${key}_`];
-            InputManager.input(input);
-            PageControlTools.showExplain(input);
-        }
+        const input = [altInput ? `_${key}_mathit_` : `_${key}_`];
+        InputManager.input(input);
+        PageControlTools.showExplain(input);
         if (PageConfig.currentMode === '0') {
             PrintManager.mode0ShowOnScreen();
         }
@@ -412,38 +385,67 @@ window.addEventListener('load', () => {
 
     recoverData('screenData', (data) => {
         data = JSON.parse(data);
-        for (const key in data) {
-            const inner = data[key];
-            if (key !== '1') {
-                const place = HtmlTools.getHtml(`#screen_input_inner_${key}`);
-                HtmlTools.appendDOMs(place, HtmlTools.textToHtmlClass(inner), {mode: 'replace'});
-            } else {
-                // 先限制总行数；满表保留全部数据，仅在有余量时补空白末行。
-                if (inner.length > InputManager.MAX_STATISTICS_ROW) {
-                    inner.length = InputManager.MAX_STATISTICS_ROW;
-                }
-
-                const lastItem = inner.at(-1);
-                if (inner.length < InputManager.MAX_STATISTICS_ROW &&
-                    (!lastItem || lastItem[0].length !== 0 || lastItem[1].length !== 0)) {
-                    inner.push(['', '']);
-                }
-            }
+        if (!data || Object.getPrototypeOf(data) !== Object.prototype) {
+            throw new Error('[GLOBAL] Invalid screenData structure.');
         }
-        // 所有字段恢复完成后统一更新，避免逐字段重复序列化和写入存储。
+
+        // 校验完整的存储记录，并在脱离页面的片段中准备各子屏幕的节点。
+        const fields = [];
+        for (const [key, value] of Object.entries(data)) {
+            if (!Object.hasOwn(PageConfig.screenData, key)) {
+                throw new Error('[GLOBAL] Invalid screenData field.');
+            }
+
+            if (key === '1') {
+                if (!Array.isArray(value) || !value.every(row =>
+                    Array.isArray(row) && row.length === 2 && row.every(cell => typeof cell === 'string')
+                )) {
+                    throw new Error('[GLOBAL] Invalid statistics data.');
+                }
+                const rows = value.slice(0, InputManager.MAX_STATISTICS_ROW);
+                const lastRow = rows.at(-1);
+                if (rows.length < InputManager.MAX_STATISTICS_ROW && (!lastRow || lastRow.some(Boolean))) {
+                    rows.push(['', '']);
+                }
+                data[key] = rows;
+                continue;
+            }
+
+            if (typeof value !== 'string') {
+                throw new Error('[GLOBAL] Invalid screenData expression.');
+            }
+            const place = document.getElementById(`screen_input_inner_${key}`);
+            if (!place) {
+                throw new Error('[GLOBAL] Missing screenData field.');
+            }
+            const fragment = document.createDocumentFragment();
+            HtmlTools.appendDOMs(fragment, HtmlTools.textToHtmlClass(value));
+            fields.push([place, fragment]);
+        }
+
+        for (const [place, fragment] of fields) {
+            place.replaceChildren(fragment);
+        }
         PageConfig.screenData = data;
     });
 
     recoverData('subModes', (data) => {
         data = JSON.parse(data);
-        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        if (!data || Object.getPrototypeOf(data) !== Object.prototype) {
             throw new Error('[GLOBAL] Invalid subModes structure.');
         }
 
-        const dataLen = PageConfig.screenData['1'].length;
-        // 存储的数据行可能已被最大行数限制截断，选中坐标必须随之回退到最后一行。
-        if (Array.isArray(data['1']) && data['1'][0] + 1 > dataLen) {
-            data['1'][0] = dataLen - 1;
+        for (const [key, value] of Object.entries(data)) {
+            if (key === '1') {
+                if (!Array.isArray(value) || value.length !== 2 ||
+                    !Number.isInteger(value[0]) || value[0] < 0 || ![0, 1].includes(value[1])) {
+                    throw new Error('[GLOBAL] Invalid statistics position.');
+                }
+                // 统计表可能已被截断，将原行号限制到恢复后的范围。
+                data[key] = [Math.min(value[0], PageConfig.screenData['1'].length - 1), value[1]];
+            } else if (!Object.hasOwn(PageConfig.subModeOptions, key) || !PageConfig.subModeOptions[key].includes(value)) {
+                throw new Error('[GLOBAL] Invalid subModes field.');
+            }
         }
         PageConfig.subModes = data;
     });

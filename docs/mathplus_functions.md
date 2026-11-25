@@ -220,10 +220,10 @@ console.log(CalcTools.exec("100001!", {
 | 方法 | 原理与内部用途 | 对应公开用法 |
 | --- | --- | --- |
 | `_arithmeticInput(x)` | 复用已有不可变数值实例，解析外部输入，并将纯实输入保留为 BigNumber，供基础四则运算分派。 | `MathPlus.plus/minus/times/divide`。 |
-| `_customFunc(token, funcs, unknown, acc)` | 为 f/g 递归调用 calc，将实参代入 [x] 并继承精度；传递另一函数定义，移除当前函数定义，使循环调用触发未定义错误。 | `MathPlus.calc("f(3)", { f: "[x]^2+1" })`。 |
+| `_customFunc(token, funcs, unknown, acc)` | 发行版将实参代入 [x] 并按原精度执行函数体的逆波兰指令。只向下传递另一函数的定义，使循环调用触发未定义错误。 | `MathPlus.calc("f(3)", { f: "[x]^2+1" })`。 |
 | `_toLessThanHalfPi(angle, name)` | 使用高精度 1/(2π) 进行周期归约，再用对称性映射到 [0,π/2]，返回实角 BigNumber 与象限符号乘子；发生归约时按相位噪声清理残差，未归约时保留原角度。 | sin、cos 自动调用，无需手工归约角度。 |
 
-方法内部还定义了局部辅助函数：pow 中的对数量级估计与 fastPow 用于规模保护和快速幂；fact 中的 factorialOptimized、rangeProduct 用于分治求积；calc 中的 symbolConversion、evaluationRPN 用于词元映射与栈求值。它们没有独立的外部调用入口。
+pow 中的对数量级估计与 fastPow 用于规模保护和快速幂。fact 中的 factorialOptimized、rangeProduct 用于分治求积。发行版将表达式编译与栈求值作为独立入口，见 [计算引擎与数值构造器](./math_engine_and_constructors.md)。
 
 ## 错误处理与页面调用
 

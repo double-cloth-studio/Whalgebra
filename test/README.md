@@ -20,7 +20,7 @@ node --test test/node/statistics.test.js
 
 这批测试不直接验证 `WorkerTools.isReady` 的环境同步条件，也不验证实时预览的请求作废、子屏幕异步提交的重复执行与取消、浮层关闭顺序等界面行为；这些流程的人工检查见[界面与交互](../docs/ui_and_interaction.md#修改后的人工检查)。
 
-通过本地服务器打开 `dist/Whalgebra.html` 或 `src/index.html` 后，可在新加载的页面控制台执行以下命令。每项应显示「通过」。用例主动注入重启与采样失败，运行中会出现预期的重测错误日志。
+通过本地服务器打开 `dist/Whalgebra.html` 后，可在新加载的页面控制台执行以下命令。每项应显示「通过」。用例主动注入重启与采样失败，运行中会出现预期的重测错误日志。
 
 ```js
 const {runLifecycleRegressions} = await import('../test/browser/lifecycle_regression.js');

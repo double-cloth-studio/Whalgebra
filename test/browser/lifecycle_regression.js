@@ -41,6 +41,30 @@ export async function runLifecycleRegressions() {
         check(String(response.result) === '5', '计算结果为 ' + response.result);
     });
 
+    await run('数表采样软取消后继续使用原 Worker', async () => {
+        const worker = WorkerTools._mathWorker;
+        const thread = worker._worker;
+        const exec = worker.exec;
+        let cancellation;
+        worker.exec = function (name, options) {
+            const task = exec.call(this, name, options);
+            if (name === 'valueList') {
+                cancellation = WorkerTools.cancelWorker();
+            }
+            return task;
+        };
+        try {
+            const [job] = await Promise.allSettled([WorkerTools.valueList('sin[x]', 'cos[x]', 1, 1, 999)]);
+            await cancellation;
+            check(job.reason?.name === 'CancellationError', '数表任务未被取消');
+            check(worker._worker === thread, '取消数表触发了硬重启');
+        } finally {
+            worker.exec = exec;
+        }
+        const table = await WorkerTools.valueList('g[x]+1', '[x]^2', 2, 1, 2);
+        check(table.f[0] === '5' && table.g[0] === '4', '取消后的数表计算失败');
+    });
+
     await run('重启失败不再次重启，取消等待同一次失败', async () => {
         const worker = WorkerTools._mathWorker;
         const restart = worker.restart;
