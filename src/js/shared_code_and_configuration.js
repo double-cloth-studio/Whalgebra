@@ -156,6 +156,8 @@
      * @class Public
      */
     class Public {
+        static _NEG_SCIENTIFIC_REGEX = /^-\d+(?:\.\d+)?E[+-]\d+$/;
+
         /**
          * 阻止实例化静态工具类。
          *
@@ -345,8 +347,6 @@
                 }
             }
         }
-
-        static _NEG_SCIENTIFIC_REGEX = /^-\d+(?:\.\d+)?E[+-]\d+$/;
 
         /**
          * 仅拼装已经格式化的系数字符串，避免各模型重复解析和修正系数。

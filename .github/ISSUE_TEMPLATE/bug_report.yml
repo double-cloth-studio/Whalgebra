@@ -1,7 +1,7 @@
 name: Bug 报告 (Bug Report)
 description: 提交计算错误、UI 异常、运行失败或工具链问题
 title: "[Bug]: "
-labels: ["bug"]
+labels: [ "bug" ]
 body:
   - type: markdown
     attributes:

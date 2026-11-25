@@ -1,7 +1,7 @@
 name: 交流与反馈 (Question & Feedback)
 description: 使用咨询、数学算法探讨，或其他不属于 Bug 或 Feature 的内容
 title: "[Feedback]: "
-labels: ["question"]
+labels: [ "question" ]
 body:
   - type: markdown
     attributes:

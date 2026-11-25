@@ -1,7 +1,7 @@
 name: 功能建议 (Feature Request)
 description: 建议新增数学函数、运算功能、界面交互或开发工具链改进
 title: "[Feature]: "
-labels: ["enhancement"]
+labels: [ "enhancement" ]
 body:
   - type: markdown
     attributes:

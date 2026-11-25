@@ -19,6 +19,7 @@ export async function runLifecycleRegressions() {
             await new Promise(requestAnimationFrame);
         }
     };
+
     function makeList(count = 200, renderItem = index => '<div style="height:20px">' + index + '</div>') {
         const container = document.createElement('div');
         container.id = 'regression-list';
@@ -159,8 +160,11 @@ export async function runLifecycleRegressions() {
             config.callableFunctions.added = () => 99;
             check(await worker.exec('answer') === 42, '原函数不可用');
             let rejected = false;
-            try { await worker.exec('added'); }
-            catch (error) { rejected = error.name === 'FunctionNotFoundError'; }
+            try {
+                await worker.exec('added');
+            } catch (error) {
+                rejected = error.name === 'FunctionNotFoundError';
+            }
             check(rejected, '新增函数进入了注册表');
             config.dependencies = null;
             config.injectCancelSignal = 'invalid';
@@ -169,11 +173,16 @@ export async function runLifecycleRegressions() {
             for (const options of [{dependencies: null}, {injectCancelSignal: 'invalid'}]) {
                 const key = Object.keys(options)[0];
                 let error;
-                try { new SyncWorker({callableFunctions: {answer: () => 42}, ...options}).terminate(); }
-                catch (caught) { error = caught; }
+                try {
+                    new SyncWorker({callableFunctions: {answer: () => 42}, ...options}).terminate();
+                } catch (caught) {
+                    error = caught;
+                }
                 check(error?.message.includes(key), '未在构造时拒绝无效配置 ' + key);
             }
-        } finally { worker.terminate(); }
+        } finally {
+            worker.terminate();
+        }
     });
 
     await run('恢复期间采用最新滚动请求', async () => {
@@ -195,7 +204,9 @@ export async function runLifecycleRegressions() {
             container.style.display = '';
             await afterFrames();
             check(container.scrollTop === 3900, '底部定位失败，scrollTop=' + container.scrollTop);
-        } finally { dispose(); }
+        } finally {
+            dispose();
+        }
     });
 
     await run('恢复后最近定位保留已可见行的原位置', async () => {
@@ -211,13 +222,17 @@ export async function runLifecycleRegressions() {
             await afterFrames();
             check(container.scrollTop === 1205 && list.getMetrics().pendingScrollQueue.length === 0,
                 '已可见的行改变了恢复位置，scrollTop=' + container.scrollTop);
-        } finally { dispose(); }
+        } finally {
+            dispose();
+        }
     });
 
     await run('重测异常保留列表且可继续滚动', async () => {
         let fail = false;
         const {container, list, dispose} = makeList(200, index => {
-            if (fail && index === 0) throw new Error('注入的采样失败');
+            if (fail && index === 0) {
+                throw new Error('注入的采样失败');
+            }
             return '<div style="height:20px">' + index + '</div>';
         });
         try {
@@ -240,7 +255,9 @@ export async function runLifecycleRegressions() {
             container.style.width = '300px';
             await afterFrames();
             check(list.getMetrics().containerHeight === 100 && list.getMetrics().anchorIndex === 80, '后续正常重测失败');
-        } finally { dispose(); }
+        } finally {
+            dispose();
+        }
     });
 
     await run('压缩滚动报告负顶部占位', async () => {
@@ -251,7 +268,9 @@ export async function runLifecycleRegressions() {
             const margin = parseFloat(container.querySelector('[data-vs-spacer="top"]').style.marginTop);
             check(margin < 0, '测试未进入负边距场景');
             check(list.getMetrics().spacerTop === margin, '指标没有记录负边距 ' + margin);
-        } finally { dispose(); }
+        } finally {
+            dispose();
+        }
     });
     return results;
 }

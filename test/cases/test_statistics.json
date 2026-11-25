@@ -2420,8 +2420,14 @@
         "样本满足 y = -1.5E-12 * 2^x，同时检查线性回归中负科学记数系数和常数项的拼接。"
       ],
       "coeffs": [
-        [0, 1],
-        ["-1.5E-12", "-3E-12"]
+        [
+          0,
+          1
+        ],
+        [
+          "-1.5E-12",
+          "-3E-12"
+        ]
       ],
       "calcConfig": {
         "globalCalcAccuracy": 60,
@@ -2450,43 +2456,65 @@
         "r": "-1",
         "bestModel": "linear",
         "linear": {
-          "parameter": ["-1.5E-12", "-1.5E-12"],
+          "parameter": [
+            "-1.5E-12",
+            "-1.5E-12"
+          ],
           "regressionEquation": "-(1.5E-12)[x]-1.5E-12",
           "R2": "1",
           "model": "linear"
         },
         "square": {
-          "parameter": ["error", "error", "error"],
+          "parameter": [
+            "error",
+            "error",
+            "error"
+          ],
           "regressionEquation": "error",
           "R2": "error",
           "model": "square"
         },
         "ln": {
-          "parameter": ["error", "error"],
+          "parameter": [
+            "error",
+            "error"
+          ],
           "regressionEquation": "error",
           "R2": "error",
           "model": "ln"
         },
         "axb": {
-          "parameter": ["error", "error"],
+          "parameter": [
+            "error",
+            "error"
+          ],
           "regressionEquation": "error",
           "R2": "error",
           "model": "axb"
         },
         "exp": {
-          "parameter": ["-1.5E-12", "0.69314718055994530942"],
+          "parameter": [
+            "-1.5E-12",
+            "0.69314718055994530942"
+          ],
           "regressionEquation": "-(1.5E-12)exp(0.69314718055994530942[x])",
           "R2": "1",
           "model": "exp"
         },
         "abx": {
-          "parameter": ["-1.5E-12", "2"],
+          "parameter": [
+            "-1.5E-12",
+            "2"
+          ],
           "regressionEquation": "-1.5E-12*2^[x]",
           "R2": "1",
           "model": "abx"
         },
         "reciprocal": {
-          "parameter": ["error", "error"],
+          "parameter": [
+            "error",
+            "error"
+          ],
           "regressionEquation": "error",
           "R2": "error",
           "model": "reciprocal"

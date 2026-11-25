@@ -6216,7 +6216,7 @@
         }
 
         /** 共享采样循环；提供回调时，在回调返回 true 的点暂停采样。 */
-        static *_sample(f, g, start, step, end, onStep) {
+        static* _sample(f, g, start, step, end, onStep) {
             const acc = CalcConfig.globalCalcAccuracy;
             const formatOptions = {acc: CalcConfig.outputAccuracy, printMode: CalcConfig.globalPrintMode};
             start = Public.zeroCorrect(MathPlus.calc(start, {acc})[0]);

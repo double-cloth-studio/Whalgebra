@@ -71,6 +71,12 @@
          * @type {number|null}
          */
         static _gridHighlightRaf = null;
+        static subModeOptions = Object.freeze({
+            '2_0': Object.freeze(['0', '1']),
+            '2_1': Object.freeze(['0', '1', '2']),
+            '3': Object.freeze(['0', '1', '2', '3', '4']),
+            '4': Object.freeze(['0', '1'])
+        });
 
         /**
          * 阻止实例化静态配置类。
@@ -96,13 +102,6 @@
             '3': '0',
             '4': '0'
         };
-
-        static subModeOptions = Object.freeze({
-            '2_0': Object.freeze(['0', '1']),
-            '2_1': Object.freeze(['0', '1', '2']),
-            '3': Object.freeze(['0', '1', '2', '3', '4']),
-            '4': Object.freeze(['0', '1'])
-        });
 
         /**
          * 获取存储每个主计算器模式下当前选定子模式的对象。
@@ -718,7 +717,7 @@
          * @private
          */
         static _ILLEGAL_TOKEN_REGEX = new RegExp(
-                `\\[(${[...this._ILLEGAL_TOKENS]
+            `\\[(${[...this._ILLEGAL_TOKENS]
                 .sort((a, b) => b.length - a.length)
                 .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
                 .join('|')})\\]`,
