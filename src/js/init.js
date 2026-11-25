@@ -335,7 +335,7 @@ window.addEventListener('load', () => {
     /**
      * 安全读取 LocalStorage 中的键值，规避隐私模式或禁用存储时的异常。
      * @param {string} key - 存储键名。
-     * @returns {string|null} 存储值或 null。
+     * @returns {string|null} 存储的原始字符串；键缺失或浏览器拒绝访问时返回 `null`。
      */
     const getStore = (key) => {
         try {

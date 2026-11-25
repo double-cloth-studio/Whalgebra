@@ -717,7 +717,7 @@
          * @private
          */
         static _ILLEGAL_TOKEN_REGEX = new RegExp(
-            `\\[(${[...this._ILLEGAL_TOKENS]
+                `\\[(${[...this._ILLEGAL_TOKENS]
                 .sort((a, b) => b.length - a.length)
                 .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
                 .join('|')})\\]`,
@@ -774,8 +774,8 @@
          *
          * @param {HTMLElement} area - 要读取其直接子元素的父节点；不会递归扫描后代，也不会修改 DOM。
          * @param {object} [options={}] - 子节点过滤及切片选项。
-         * @param {boolean} [options.onlyP=true] - `true` 时只收集 `<p>` 子元素的首个类名；`false` 时
-         *   其他元素也会以类名或 `[id]...` 标识加入结果。
+         * @param {boolean} [options.onlyP=true] - `true` 时只收集 `<p>` 子元素的完整 `className`；
+         *   `false` 时收集所有直接子元素，空类名以 `[id]` 加元素 ID 表示。
          * @param {boolean} [options.ignoreSpace=false] - 是否从结果中剔除内部 `_space_` 词元；
          *   索引范围仍以原始 `children` 为准，而不是过滤后的数组。
          * @param {number} [options.startIndex=0] - 在 `area.children` 中开始读取的零基索引，包含该位置。
@@ -856,9 +856,9 @@
          * 将一个由 `textToHtmlClass` 方法生成的 CSS 类名数组转换回其原始的文本或数学表达式字符串。
          * 这是 `textToHtmlClass` 的逆向操作，用于从 DOM 元素的类名中重建表达式，例如在处理用户输入或从 DOM 读取表达式时。
          *
-         * @param {string[]} classArray - 按 DOM 顺序排列的渲染类名；支持 `_token_`、附加样式类以及
-         *   `[id]...` 标识。转换只读取首个语义类并合并连续数字，不修改原数组。
-         * @returns {string} 重建后的原始文本字符串。
+         * @param {string[]} classArray - 按 DOM 顺序排列的渲染类名；`_token_` 通过映射表或词元规则
+         *   还原，`[id]cursor` 转为 `[cursor]`，其余非下划线包裹的字符串直接保留。
+         * @returns {string} 按原顺序拼接的内部表达式字符串。
          */
         static htmlClassToText(classArray) {
             const reverseConfig = HtmlTools._classNameConverterReverseConfig;
@@ -1074,7 +1074,7 @@
          *
          * @param {Function} func - 被包装的目标函数；执行时保留最后一次调用的 `this` 和参数，
          *   返回的包装函数复用最近一次真正执行所得的返回值。
-         * @param {number} wait - 连续调用之间的等待毫秒数；会规范化为非负数。
+         * @param {number} wait - 等待毫秒数；内部转为数值，无法转换时按 `0` 处理。
          * @param {object} [options={}] - 首尾触发和最长等待策略。
          * @param {boolean} [options.leading=false] - 是否在一轮等待窗口的第一次调用时立即执行。
          * @param {boolean} [options.trailing=true] - 是否在最后一次调用后满 `wait` 时执行；若只发生一次
@@ -1102,18 +1102,28 @@
             if (isObject(options)) {
                 leading = !!options.leading;
                 maxing = 'maxWait' in options;
-                // `maxWait` 必须大于常规等待时间。
+                // `maxWait` 至少等于常规等待时间。
                 maxWait = maxing ? Math.max(+options.maxWait || 0, wait) : undefined;
                 trailing = 'trailing' in options ? !!options.trailing : trailing;
             }
 
-            /** 判断值是否为对象或函数。 */
+            /**
+             * 判断值是否为非空对象或函数。
+             *
+             * @param {*} value - 待检查的值。
+             * @returns {boolean} 值可作为防抖选项对象时为 `true`。
+             */
             function isObject(value) {
                 const type = typeof value;
                 return value != null && (type === 'object' || type === 'function');
             }
 
-            /** 使用最近一次参数调用目标函数。 */
+            /**
+             * 以最近一次调用的接收者和参数执行目标函数，并缓存结果。
+             *
+             * @param {number} time - 本次执行时间，单位为毫秒。
+             * @returns {*} 目标函数此次执行的返回值。
+             */
             function invokeFunc(time) {
                 const args = lastArgs;
                 const thisArg = lastThis;
@@ -1124,12 +1134,23 @@
                 return result;
             }
 
-            /** 启动防抖计时器。 */
+            /**
+             * 启动防抖计时器。
+             *
+             * @param {function(): *} pendingFunc - 到期时调用的函数。
+             * @param {number} wait - 本次计时的等待毫秒数。
+             * @returns {number} 浏览器计时器标识。
+             */
             function startTimer(pendingFunc, wait) {
                 return setTimeout(pendingFunc, wait);
             }
 
-            /** 计算防抖调用的剩余等待时间。 */
+            /**
+             * 计算当前计时器需要续等的时间。
+             *
+             * @param {number} time - 当前时间，单位为毫秒。
+             * @returns {number} 距普通等待期结束的时间；启用 `maxWait` 时取两种剩余时间中较短者。
+             */
             function remainingWait(time) {
                 const timeSinceLastCall = time - lastCallTime;
                 const timeSinceLastInvoke = time - lastInvokeTime;
@@ -1140,7 +1161,12 @@
                        : timeWaiting;
             }
 
-            /** 判断当前调用是否应立即执行。 */
+            /**
+             * 判断当前时间是否达到触发条件。
+             *
+             * @param {number} time - 当前时间，单位为毫秒。
+             * @returns {boolean} 首次调用、等待期届满、系统时钟回拨或达到 `maxWait` 时为 `true`。
+             */
             function shouldInvoke(time) {
                 const timeSinceLastCall = time - lastCallTime;
                 const timeSinceLastInvoke = time - lastInvokeTime;
@@ -1153,7 +1179,11 @@
                 );
             }
 
-            /** 处理防抖计时器到期。 */
+            /**
+             * 计时器到期后重新判断触发条件；等待条件未满足时续设计时器。
+             *
+             * @returns {*} 进入尾沿时返回缓存结果或本次执行结果；续设计时器时为 `undefined`。
+             */
             function timerExpired() {
                 const time = Date.now();
                 if (shouldInvoke(time)) {
@@ -1163,14 +1193,24 @@
                 timerId = startTimer(timerExpired, remainingWait(time));
             }
 
-            /** 处理防抖周期的前沿调用。 */
+            /**
+             * 开启新的防抖周期，按 `leading` 决定是否执行目标函数。
+             *
+             * @param {number} time - 本轮开始时间，单位为毫秒。
+             * @returns {*} 目标函数本次或最近一次执行的返回值。
+             */
             function leadingEdge(time) {
                 lastInvokeTime = time;
                 timerId = startTimer(timerExpired, wait);
                 return leading ? invokeFunc(time) : result;
             }
 
-            /** 处理防抖周期的尾沿调用。 */
+            /**
+             * 结束当前防抖周期；启用 `trailing` 且存在待用参数时执行目标函数。
+             *
+             * @param {number} time - 本轮结束时间，单位为毫秒。
+             * @returns {*} 目标函数本次或最近一次执行的返回值。
+             */
             function trailingEdge(time) {
                 timerId = undefined;
 
@@ -1191,17 +1231,30 @@
                 lastArgs = lastCallTime = lastThis = timerId = undefined;
             }
 
-            /** 立即执行待处理的防抖调用。 */
+            /**
+             * 立即结束当前等待期，按尾沿配置处理待用参数。
+             *
+             * @returns {*} 尾沿执行结果；无尾沿执行时返回最近一次结果。
+             */
             function flush() {
                 return timerId === undefined ? result : trailingEdge(Date.now());
             }
 
-            /** 判断是否存在待处理的防抖调用。 */
+            /**
+             * 查询当前防抖周期的计时状态。
+             *
+             * @returns {boolean} 仍有计时器标识时为 `true`。
+             */
             function pending() {
                 return timerId !== undefined;
             }
 
-            /** 记录并调度一次防抖调用。 */
+            /**
+             * 保存最近一次调用的接收者和参数，并调度防抖执行。
+             *
+             * @param {...*} args - 转发给目标函数的位置参数。
+             * @returns {*} 最近一次实际执行的结果；首次执行前为 `undefined`。
+             */
             function debounced(...args) {
                 const time = Date.now();
                 const isInvoking = shouldInvoke(time);
@@ -1262,7 +1315,7 @@
      * @property {number} physicalHeight - 实际由 spacer 和节点承载的内容高度（px）。
      * @property {number} scrollRatio - 虚拟距离到物理距离的映射比例。
      * @property {number} poolSize - 当前可复用包装节点数。
-     * @property {number} wrapperCount - 已创建的池化包装节点总数。
+     * @property {number} wrapperCount - 已出池且仍在使用的包装节点数。
      * @property {number} userElemCount - 当前登记的用户自带 `HTMLElement` 数量。
      * @property {number} spacerTop - 顶部 spacer 当前高度（px）。
      * @property {number} spacerBottom - 底部 spacer 当前高度（px）。
@@ -1576,7 +1629,7 @@
             /**
              * 将 `renderItem()` 的返回值规范化为一个 `HTMLElement`。
              * - 若返回值是字符串，则从池中取出（或新建）包装 `<div>`，
-             *   将字符串赋给 `innerHTML`（使用 createContextualFragment 方法）。
+             *   将字符串解析为文档片段并追加到包装节点。
              * - 若返回值是 `HTMLElement`，直接使用，同时检查重复挂载。
              * - `measureOnly = true` 时仅用于临时测量，不更新池状态和引用计数。
              *
@@ -1865,7 +1918,7 @@
 
         /**
          * 自定义 `Object.prototype.toString.call()` 的返回值。
-         * 这使得 `Public.typeOf(new VirtualScroll())` 能够返回 'VirtualScroll'。
+         * 这使得 `Public.typeOf` 对 `VirtualScroll` 实例返回 `virtualscroll`。
          *
          * @readonly
          * @type {string}
@@ -3655,7 +3708,7 @@
 
         /**
          * 永久销毁实例，释放所有资源。
-         * - 销毁后不可再调用任何方法（会抛出异常），也无法通过 `load()` 重启。
+         * - 销毁后仍可读取状态和指标；`load()` 等受状态约束的操作会抛出异常。
          * - 若已处于 `DESTROYED` 状态则直接返回，不重复执行。
          *
          * @returns {void}
@@ -5360,7 +5413,7 @@
          * @private
          * @param {bigint} requestId - 本次 exe 的执行序号，用于忽略过期任务。
          *
-         * @returns {Promise<void>} 此方法没有返回值，其主要作用是通过DOM操作来更新页面内容。
+         * @returns {Promise<void>} 函数值列表更新或当前请求提前结束后兑现。
          */
         static async _exeMode2(requestId) {
             const headInit = HtmlTools.getHtml('#print_content_2_head').children[1].children[0];
@@ -5461,9 +5514,8 @@
              * @param {HTMLElement} target - 目标 DOM 容器。
              * @param {[string,string]} textList - 区间边界或点坐标 `[left,right]`；支持 `-inf`、`+inf`
              *   无穷端点和 `['null','null']` 不适用哨兵。含 `error` 时直接渲染错误状态。
-             * @param {boolean} [useBracket=false] - 是否强制使用方括号 `[]` (通常用于闭区间，但在当前逻辑中似乎主要用于区分)。
-             *   注意：代码逻辑中 `useBracket` 为 true 时使用 `_bracket_` (方括号)，否则使用 `_parentheses_` (圆括号)。
-             *   对于无穷大 `inf`，通常保持开区间（圆括号）。
+             * @param {boolean} [useBracket=false] - `true` 时有限端点使用方括号，相同的两个端点显示为
+             *   单元素集合；`false` 时使用圆括号。无穷端点使用圆括号，整个实数轴显示为 `ℝ`。
              */
             const powerFunctionTextToHtml = (target, textList, useBracket = false) => {
                 if (textList.includes('error')) {
@@ -5739,11 +5791,10 @@
         }
 
         /**
-         * 处理“执行”按钮的点击事件，根据当前计算器模式执行不同的操作。
-         * - 在函数列表定义模式 ('2_0') 下，此方法会切换到函数求值范围的设置界面 ('2_1')。
-         * - 在其他模式下，它会触发主界面的切换，并执行计算。
+         * 响应“执行”操作，按当前模式提交输入、切换设置页或执行计算。
+         * 非普通模式正在编辑字段时，先将编辑内容提交到活动子屏幕；函数定义页提交完毕后可进入范围设置页。
          *
-         * @returns {void}
+         * @returns {Promise<void>} 当前步骤完成后兑现；计算步骤包含结果渲染和本轮加载遮罩清理。
          */
         static async exe() {
             if (PageControlTools.isInputSyncInProgress) {
@@ -6647,14 +6698,11 @@
         }
 
         /**
-         * 将主输入区域的内容同步到当前活动的子屏幕输入区域。
-         * 此函数负责获取主输入框的表达式，通过 Web Worker 进行语法检查和美化，
-         * 然后将格式化后的内容更新到对应的子屏幕区域。
-         * 它还处理了特定模式下的后续 UI 交互，例如在统计模式下自动添加新行或在其他模式下移动到下一个输入字段。
+         * 将主输入区的表达式提交到当前活动子屏幕，并通过 Worker 进行语法校验和规范化。
+         * 解析器确认语法错误时，保留原输入并添加错误标记。取消、Worker 故障及过期结果均保留现有编辑状态。
          *
-         * @param {boolean} [moveCursor=true] - 成功写回后是否按当前模式进入下一个可编辑位置；
-         *   `false` 只保存和重绘当前字段，常用于提交前同步而不改变用户焦点。
-         * @returns {Promise<void>} 此方法不返回任何值，其作用是直接修改 DOM。
+         * @param {boolean} [moveCursor=true] - 写回后是否按当前模式进入下一个可编辑位置；统计模式下可能添加新行。
+         * @returns {Promise<void>} 本次提交完成或提前结束后兑现。
          */
         static async syncInputToScreen(moveCursor = true) {
             // 同一时刻只允许一次提交，连续按 Enter 不再重复派发或写入。
@@ -6687,7 +6735,7 @@
                 const currentInput = HtmlTools.htmlClassToText(currentInputArray);
                 let expr;
 
-                // 传入已保存的 f、g，使语法检查能正确解析自定义函数引用。
+                // 带上已保存的 f、g；语法检查只规范化字符串表达式，函数体在求值时才执行。
                 try {
                     const syntaxResult = await WorkerTools.exec(currentInput, {
                         calcMode: 'syntaxCheck',
@@ -6697,11 +6745,14 @@
 
                     expr = HtmlTools.textToHtmlClass(syntaxResult.expr);
                 } catch (e) {
-                    // 取消或重启不属于语法错误，不应提交或清空原输入。
-                    if (e?.name === 'CancellationError' || e?.name === 'TerminationError') {
+                    if (e?.name !== 'ExpressionSyntaxError') {
+                        // Worker 失败时保留草稿、原单元格和选区，允许原地重试。
+                        if (e?.name !== 'CancellationError' && e?.name !== 'TerminationError') {
+                            console.warn('[PageControlTools] Input validation failed:', e);
+                        }
                         return;
                     }
-                    // 保留原输入并加错误前缀，后续 DOM 渲染据此显示语法错误而不丢失用户内容。
+                    // 只有解析器确认的语法错误才加标记并写回子屏幕。
                     expr = ['_syntax_error_', ...currentInputArray];
                 }
 

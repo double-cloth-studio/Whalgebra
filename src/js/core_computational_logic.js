@@ -47,11 +47,12 @@
          *   pow?: number,
          *   noiseMag?: number
          * }} [options={}] - 构造选项。
-         * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 结果保留的有效数字位数；必须为正整数，
-         *   省略时取当前全局计算精度。输入精度更低时不会凭空补充有效信息。
+         * @param {number} [options.acc] - 结果保留的有效数字位数；应为正整数。省略时优先沿用输入携带的
+         *   精度，其余输入采用 `CalcConfig.globalCalcAccuracy`。
          * @param {number} [options.pow=0] - 在解析后的十进制指数上额外增加的安全整数，等价于将输入
          *   整体乘以 `10 ** pow`；它不改变 `acc`，常用于构造科学记数法的中间值。
-         * @param {number} [options.noiseMag=-Infinity] - 该数携带的截断/舍入噪声量级上界；精确数默认为 -Infinity。
+         * @param {number} [options.noiseMag] - 舍入前的噪声量级上界；省略时沿用输入对象的噪声并计入缩放，
+         *   不携带噪声的输入以 `-Infinity` 为基准。
          * @throws {Error} 输入格式、长度、数值范围或指数无效时抛出。
          */
         constructor(x, {acc, pow = 0, noiseMag} = {}) {
@@ -207,7 +208,7 @@
 
         /**
          * 自定义 `Object.prototype.toString.call()` 的返回值。
-         * 这使得 `Public.typeOf(new BigNumber())` 能够返回 'bignumber'。
+         * 这使得 `Public.typeOf` 对 `BigNumber` 实例返回 `bignumber`。
          *
          * @readonly
          * @type {string}
@@ -227,11 +228,12 @@
         }
 
         /**
-         * 获取 10 的指定非负整数次幂。
-         * 小指数走 O(1) 缓存表，大指数直接用原生 BigInt 快速幂，避免常驻内存膨胀。
+         * 获取 `10` 的指定非负整数次幂。
+         * 缓存上限内按需扩展十次幂表，超出上限时使用原生 BigInt 幂运算。
          *
-         * @param {number} exp
-         * @returns {bigint}
+         * @param {number} exp - 十进制幂指数。
+         * @returns {bigint} 精确的 `10n ** BigInt(exp)`。
+         * @throws {Error} 指数不是非负整数时抛出。
          */
         static pow10(exp) {
             if (!Number.isInteger(exp) || exp < 0) {
@@ -253,11 +255,10 @@
         }
 
         /**
-         * 计算 BigNumber 的十进制数量级（即 floor(log10(|x|))）。
-         * 零值返回 -Infinity。
+         * 计算数值绝对值的十进制数量级。
          *
-         * @param {BigNumber} bn
-         * @returns {number}
+         * @param {BigNumber|null|undefined} bn - 待检查的实数。
+         * @returns {number} `floor(log10(|bn|))`；零值或空值返回 `-Infinity`。
          */
         static getMag(bn) {
             if (!bn || bn.isZero()) {
@@ -271,8 +272,8 @@
          * 利用 `10^(2^k)` 倍增定位上界，再按二进制位从高到低整除缩减，
          * 无需构造任何中间的 `10^mid`，内存占用严格有界。
          *
-         * @param {bigint} n
-         * @returns {number}
+         * @param {bigint} n - 待统计位数的整数；负值先取绝对值。
+         * @returns {number} 十进制数字位数；`0n` 计为一位。
          */
         static decimalLengthBigInt(n) {
             if (n < 0n) {
@@ -563,18 +564,14 @@
         }
 
         /**
-         * 将 BigNumber 实例转换为其标准的十进制字符串表示形式。
-         * @param {object} [options={}] - 只影响返回字符串的格式化选项，不改变当前不可变实例。
-         * @param {number} [options.acc=this.acc] - 要显示的正整数有效位数；最多使用实例已有精度，
-         *   较小值会按有效数字舍入，省略时完整使用 `this.acc`。
-         * @param {'auto'|'normal'|'scientific'} [options.mode='auto'] - `normal` 强制普通十进制，
-         *   `scientific` 强制科学记数法，`auto` 根据指数和最大字符串长度选择更紧凑的形式。
-         * - 'auto': 根据 `CalcConfig.AUTOMATIC_SWITCH_LENGTH` 自动选择 'normal' 或 'scientific'。
-         * - 'normal': 标准十进制表示 (例如, "123.45" 或 "0.001")。
-         * - 'scientific': 科学记数法表示 (例如, "1.2345E+2")。
-         * @returns {string} 数字的字符串表示。
-         * @throws {Error} 如果提供的 `accuracy` 不是一个正整数。
-         * @throws {Error} 如果生成的字符串长度将超过 `CalcConfig.MAX_STRING_LENGTH`。
+         * 将 BigNumber 实例转换为十进制字符串。
+         *
+         * @param {object} [options={}] - 本次转换的格式化选项。
+         * @param {number} [options.acc=this.acc] - 希望保留的正整数有效位数；低于当前尾数位数时会舍入。
+         * @param {'auto'|'normal'|'scientific'} [options.mode='auto'] - `normal` 输出普通小数，`scientific`
+         *   输出科学记数法。`auto` 在舍入后按小数点位置与 `CalcConfig.TO_STRING_AUTOMATIC_SWITCH_LENGTH` 选择。
+         * @returns {string} 格式化后的实数字符串。
+         * @throws {Error} `acc` 转为数值后不是正整数、`mode` 无效或普通写法超出 `CalcConfig.MAX_TO_STRING_LENGTH` 限制时抛出。
          */
         toString({acc = this.acc, mode = 'auto'} = {}) {
             acc = Number(acc);
@@ -684,8 +681,8 @@
          *   字符串支持代数形式 `a+bi`；二元数组表示 `[real, imag]`，三元数值数组表示
          *   `[power, mantissa, acc]`；已有实例按指定精度复制。含歧义或多个虚数单位的字符串会被拒绝。
          * @param {object} [options={}] - 构造精度与缩放选项；对象本身不会被修改。
-         * @param {number} [options.acc=CalcConfig.getAccuracy()] - 实部和虚部共同采用的正整数计算精度；
-         *   省略时读取当前计算上下文精度，而不是固定的类常量。
+         * @param {number} [options.acc] - 实部和虚部共同采用的正整数计算精度；省略时优先沿用输入精度，
+         *   未自带精度的分量采用 `CalcConfig.globalCalcAccuracy`。`[real, imag]` 的两分量对齐至较低精度。
          * @param {number} [options.pow=0] - 同时施加于实部、虚部的十进制指数偏移，等价于整体乘以
          *   `10 ** pow`；必须满足底层 `BigNumber` 的安全指数约束。
          * @param {number|[number, number]} [options.noiseMag] - 噪声量级上界；单值用于实数或共同基准，二元数组用于分别指定实部与虚部。
@@ -771,7 +768,7 @@
 
         /**
          * 自定义 `Object.prototype.toString.call()` 的返回值。
-         * 这使得 `Public.typeOf(new ComplexNumber())` 能够返回 'complexnumber'。
+         * 这使得 `Public.typeOf` 对 `ComplexNumber` 实例返回 `complexnumber`。
          *
          * @readonly
          * @type {string}
@@ -862,15 +859,16 @@
         }
 
         /**
-         * 将 ComplexNumber 实例转换为其标准的字符串表示形式。
-         * @param {object} [options={}] - 仅作用于此次字符串转换的选项，不会改变复数的实部、虚部或精度。
-         * @param {number} [options.acc=this.acc] - 实部、虚部以及极坐标分量共用的正整数有效位数；
-         *   不能超过实例精度，省略时使用实部与虚部中的较低精度。
-         * @param {'algebra'|'polar'} [options.printMode='algebra'] - `algebra` 输出 `a+bi`，并省略零分量；
-         *   `polar` 输出模和主辐角。该选项只选择复数表示法，不选择数值记数法。
-         * @param {'auto'|'normal'|'scientific'} [options.mode='auto'] - 传给两个 `BigNumber` 分量的记数法；
-         *   `auto` 可分别为分量选择普通或科学记数法。
-         * @returns {string} - 复数的标准代数形式字符串 (a + bi) 或极坐标形式 (r∠θ)。
+         * 将 ComplexNumber 实例转换为内部数学词元字符串。
+         *
+         * @param {object} [options={}] - 本次转换的格式化选项。
+         * @param {number} [options.acc=this.acc] - 传给实部、虚部或极坐标分量的正整数有效位数。
+         * @param {'algebra'|'polar'} [options.printMode=CalcConfig.globalPrintMode] - `algebra` 使用 `[i]` 输出代数形式，
+         *   `polar` 以 `[toPolar]` 连接模与主辐角。纯实输入直接格式化实部。
+         * @param {'auto'|'normal'|'scientific'} [options.mode='auto'] - 传给各 `BigNumber` 分量的记数法；
+         *   `auto` 可分别为各分量选择普通或科学记数法。
+         * @returns {string} 可供词元解析器读取的数值表达式。
+         * @throws {Error} 非实输入的 `printMode` 无效，或分量转换失败时抛出。
          */
         toString({acc = this.acc, printMode = CalcConfig.globalPrintMode, mode = 'auto'} = {}) {
             if (this.onlyReal) {
@@ -928,6 +926,11 @@
      * @class MathPlus
      */
     class MathPlus {
+        /** @private */
+        static _ExpressionSyntaxError = class extends SyntaxError {
+            name = 'ExpressionSyntaxError';
+        };
+
         /**
          * 阻止实例化静态工具类。
          *
@@ -939,7 +942,11 @@
 
         /**
          * 解析复数输入；已有实例仅在需要统一或变更分量精度时重新构造。
+         *
          * @private
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array|object} x - `ComplexNumber` 可接受的数值表示。
+         * @param {number} [acc] - 目标有效位数；省略时沿用输入精度或构造器默认规则。
+         * @returns {ComplexNumber} 解析后的复数；两分量已满足目标精度时直接返回原复数实例。
          */
         static _complexInput(x, acc) {
             if (x instanceof ComplexNumber) {
@@ -953,7 +960,11 @@
 
         /**
          * 合并新增的噪声上界，并复用无需更新的实数实例。
+         *
          * @private
+         * @param {BigNumber} value - 携带现有噪声上界的实数。
+         * @param {number} noiseMag - 新估算出的十进制噪声量级上界。
+         * @returns {BigNumber} 采用较大噪声上界的新实数实例，或已满足该上界的原实例。
          */
         static _withNoise(value, noiseMag) {
             return noiseMag > value.noiseMag ? new BigNumber(value, {noiseMag}) : value;
@@ -1153,12 +1164,14 @@
         }
 
         /**
-         * 纯实数取模，保留余数的符号和噪声。
+         * 按向下取整的商计算实数余数；非零余数沿用除数符号。
+         * 被除数指数较大时用模幂约简；对齐除数时所需的位数由被除数尾数长度限定。
+         *
          * @private
          * @param {BigNumber} a - 被除数。
          * @param {BigNumber} b - 非零除数。
-         * @param {number} acc - 结果精度。
-         * @returns {BigNumber} 实数余数。
+         * @param {number} acc - 结果的有效位数。
+         * @returns {BigNumber} 实数余数；除数的噪声按商的数量级传播，可靠除数的上边界附近可按容差归零。
          */
         static _realMod(a, b, acc) {
             if (a.isZero()) {
@@ -1180,6 +1193,7 @@
             const edgeMargin = Math.min(2, margin);
             const divisorIsReliable = b.noiseMag === -Infinity || b.noiseMag + margin < Number(magB);
 
+            // 除数噪声乘以商后的量级与被除数噪声取较大值，零商无需传播除数噪声。
             const noiseForQuotient = (quotientMag) => Math.max(
                 a.noiseMag,
                 quotientMag === -Infinity || b.noiseMag === -Infinity ? -Infinity : quotientMag + b.noiseMag
@@ -1199,6 +1213,7 @@
             };
 
             if (magDiff < 0n) {
+                // 此时商只可能是 0 或 -1；直接保留尾量，避免按巨大的指数差对齐。
                 if (oppositeSigns) {
                     if (nearUpperEdge([[absA, powerA]], 0)) {
                         return new BigNumber(0n, {acc});
@@ -1214,11 +1229,12 @@
             const power = Math.min(a.power, b.power);
             const shiftA = powerA - BigInt(power);
             const shiftB = powerB - BigInt(power);
-            const divisor = absB * BigNumber.pow10(Number(shiftB));
+            // 数量级较小的被除数已提前处理；仅在 shiftB > 0 时对齐除数，位数最多为 lenA。
+            const divisor = shiftB === 0n ? absB : absB * BigNumber.pow10(Number(shiftB));
             let remainder;
             let quotientMag = -Infinity;
 
-            if (shiftA > BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
+            if (shiftA > 0n) {
                 remainder = MathPlus._modScale(absA, shiftA, divisor);
                 if (b.noiseMag !== -Infinity && remainder !== 0n) {
                     // 仅在传播除数噪声时精确确定商的数量级，无需构造完整商。
@@ -1231,13 +1247,14 @@
                     ]) > 0n) {
                         mag++;
                     }
-                    quotientMag = Number(mag);
+                    quotientMag = mag < 0n ? -Infinity : Number(mag);
                 }
             } else {
-                const dividend = absA * BigNumber.pow10(Number(shiftA));
-                remainder = dividend % divisor;
-                const quotient = dividend / divisor + (oppositeSigns && remainder !== 0n ? 1n : 0n);
-                quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
+                remainder = absA % divisor;
+                if (b.noiseMag !== -Infinity && remainder !== 0n) {
+                    const quotient = absA / divisor + (oppositeSigns ? 1n : 0n);
+                    quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
+                }
             }
 
             if (remainder === 0n) {
@@ -1256,7 +1273,7 @@
         }
 
         /**
-         * 将尾数按十进制指数缩放后取余，大指数用模快速幂。
+         * 用模快速幂计算缩放后的余数，避免展开十进制幂。
          * @private
          * @param {bigint} mantissa - 待缩放的尾数。
          * @param {bigint} shift - 非负十进制指数。
@@ -1264,10 +1281,6 @@
          * @returns {bigint} 缩放后的余数。
          */
         static _modScale(mantissa, shift, modulus) {
-            if (shift <= BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
-                return (mantissa * BigNumber.pow10(Number(shift))) % modulus;
-            }
-
             let result = mantissa % modulus;
             let base = 10n % modulus;
             while (shift > 0n && result !== 0n) {
@@ -1799,6 +1812,7 @@
             const [ar, tailRe] = split(inputA.re);
             const [ai, tailIm] = split(inputA.im);
 
+            // 在模数约简后的整数部分上计算商，并计入两分量的小数尾。
             const floorQuotient = (intNumerator, factorRe, factorIm) => {
                 const fraction = (intNumerator % norm + norm) % norm;
                 const quotient = (intNumerator - fraction) / norm;
@@ -3812,13 +3826,13 @@
          * @param {string} [options.f] - `[f]` 的函数体，可包含 `[x]` 并调用 `[g]`；只提供 `g` 时
          *   `[f]` 仍保持未定义。
          * @param {string} [options.g] - `[g]` 的函数体，可包含 `[x]` 并调用 `[f]`；与 `f` 一同传入时
-         *   支持有限的相互引用，由解析器负责检测非法递归路径。
+         *   支持调用另一函数；求值时移除已进入的函数绑定，阻止循环调用。
          * @param {'calc'|'syntaxCheck'} [options.mode='calc'] - `calc` 执行运算并返回数值；`syntaxCheck`
          *   只验证和规范化表达式，不应依赖其数值结果。
          * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 本次解析及所有嵌套运算使用的正整数
          *   有效位数；不会改写 `CalcConfig.globalCalcAccuracy`。
-         * @returns {[ComplexNumber, string]} 二元组：第 0 项是表达式值；`syntaxCheck` 模式下为指定精度
-         *   的零占位，不能当作真实计算结果。第 1 项是解析器补全隐式结构后的内部表达式字符串。
+         * @returns {[ComplexNumber, string]} 二元组：第 0 项是表达式值；字符串在 `syntaxCheck` 模式下
+         *   返回指定精度的零占位，直接传入的数值仍返回其数值。第 1 项是补全隐式结构后的内部表达式。
          * @throws {Error} 语法、词元或计算无效时抛出。
          */
         static calc(expr, {unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy} = {}) {
@@ -3831,10 +3845,14 @@
 
         /**
          * 规范化表达式并生成已校验的逆波兰指令。变量和常量在求值时按上下文绑定。
+         *
          * @param {string|number|bigint|ComplexNumber|BigNumber} expr - 内部表达式或数值。
          * @param {object} [options={}] - 数值输入的规范化选项。
          * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 数值输入格式化前的有效位数。
-         * @returns {{expr:string,rpn:Array<object>}} 规范化表达式和可重复使用的指令序列。
+         * @returns {{expr:string,rpn:Array<{operand:string|number|bigint|ComplexNumber|BigNumber}|{token:string,method:string,parameters:number}>}}
+         *   `expr` 是规范化表达式；`rpn` 中的操作数入栈，运算指令按 `parameters` 取出操作数并调用 `method`。
+         * @throws {SyntaxError} 字符串含非法词元、分隔符错位或求值栈深度不符合语法时抛出，错误名为 `ExpressionSyntaxError`。
+         * @throws {Error} 输入类型不受支持或数值输入无法格式化时抛出。
          */
         static compile(expr, {acc = CalcConfig.globalCalcAccuracy} = {}) {
             const inputType = Public.typeOf(expr);
@@ -3847,7 +3865,7 @@
             }
 
             if (expr === '') {
-                throw new Error('[MathPlus] syntax error: Input is empty.');
+                throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Input is empty.');
             }
 
             expr = expr.replaceAll('[cdot]', '').replaceAll('**', '^').replace(/\s/g, '');
@@ -3861,7 +3879,7 @@
             //   5. 添加括号消除表达式歧义，如 2/3pi -> 2/(3&pi)。
             let [output, input] = [[], Public.tokenizer(expr, {baseNumberMode: 'together'})];
             if (input[0] === 'error') {
-                throw new Error(`[MathPlus] syntax error: Illegal input (${input[1]}).`);
+                throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${input[1]}).`);
             }
 
             let lastTokenInfo = {};
@@ -3885,14 +3903,14 @@
                     for (let j = 0; j < i; j++) {
                         position += input[j].length;
                     }
-                    throw new Error(`[MathPlus] syntax error: Illegal input (${position}).`);
+                    throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${position}).`);
                 }
                 if (lastTokenInfo.parameters === 2 && lastTokenInfo.funcPlace === 'front' && currentPush !== '(') {
                     let position = 0;
                     for (let j = 0; j < i; j++) {
                         position += input[j].length;
                     }
-                    throw new Error(`[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (${position}).`);
+                    throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (${position}).`);
                 }
 
                 // --- 括号信息记录 ---
@@ -3910,7 +3928,7 @@
                             for (let j = 0; j < i; j++) {
                                 position += input[j].length;
                             }
-                            throw new Error(`[MathPlus] syntax error: Absolute value internal parentheses do not match (${position}).`);
+                            throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Absolute value internal parentheses do not match (${position}).`);
                         }
                     }
                     if (kh < minKh) {
@@ -4321,15 +4339,16 @@
             };
             let depth = 0;
 
+            // 栈内的 `~` 记录二元前缀函数已经遇到参数逗号，写入指令时去掉该标记。
             const emitOperator = (rawToken) => {
                 const hasCommaMark = rawToken.endsWith('~');
                 const token = hasCommaMark ? rawToken.slice(0, -1) : rawToken;
                 const {funcPlace, parameters} = Public.getTokenInfo(token);
                 if (funcPlace === 'front' && parameters === 2 && !hasCommaMark) {
-                    throw new Error(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
+                    throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
                 }
                 if (depth < parameters) {
-                    throw new Error(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
+                    throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
                 }
                 depth += 1 - parameters;
                 const method = methods[token] ?? token.replace(/[\[\]]/g, '');
@@ -4378,7 +4397,7 @@
                         emitOperator(operatorStack.pop());
                     }
                     if (operatorStack.length === 0) {
-                        throw new Error('[MathPlus] syntax error: The parentheses do not match.');
+                        throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
                     }
                     // 弹出并丢弃左括号 '('。
                     operatorStack.pop();
@@ -4388,7 +4407,7 @@
                     }
                     const subTopOfStack = Public.getTokenInfo(operatorStack[operatorStack.length - 2]);
                     if (operatorStack.length < 2 || !(subTopOfStack.funcPlace === 'front' && subTopOfStack.parameters === 2)) {
-                        throw new Error('[MathPlus] syntax error: Commas mismatch or incorrect position.');
+                        throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Commas mismatch or incorrect position.');
                     }
                     // 标记这个函数已经被一个逗号匹配。
                     operatorStack[operatorStack.length - 2] += '~';
@@ -4398,23 +4417,29 @@
             while (operatorStack.length > 0) {
                 const operator = operatorStack.pop();
                 if (operator === '(') {
-                    throw new Error('[MathPlus] syntax error: The parentheses do not match.');
+                    throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
                 }
                 emitOperator(operator);
             }
 
             if (depth !== 1) {
-                throw new Error('[MathPlus] syntax error: The final stack should have exactly one value.');
+                throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The final stack should have exactly one value.');
             }
 
             return {expr: output, rpn};
         }
 
         /**
-         * 在指定上下文中执行已编译的指令。
+         * 在指定上下文中执行已编译的逆波兰指令。
+         *
          * @param {Array<object>} rpn - `MathPlus.compile` 返回的指令序列。
-         * @param {object} [context={}] - 有效位数、自变量及可选的 f/g 函数体（原始表达式或编译结果）。
+         * @param {object} [options={}] - 本次求值的变量、函数和精度上下文。
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} [options.unknown] - 用于替换 `[x]` 的数值。
+         * @param {string|{expr:string,rpn:Array<object>}} [options.f] - `[f]` 的表达式或编译结果。
+         * @param {string|{expr:string,rpn:Array<object>}} [options.g] - `[g]` 的表达式或编译结果。
+         * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 解析操作数与自定义函数时采用的有效位数。
          * @returns {ComplexNumber} 表达式的数值。
+         * @throws {Error} 变量或函数未定义、发生循环调用或运算失败时抛出。
          */
         static evalRPN(rpn, {unknown, f, g, acc = CalcConfig.globalCalcAccuracy} = {}) {
             const stack = [];
@@ -4860,7 +4885,7 @@
          * @param {Array<ComplexNumber|string|number>} listB - 与 `listA` 等长的真实观测值，用于计算残差平方和。
          * @param {function(ComplexNumber|string|number): ComplexNumber} func - 同步预测函数；对每个 `xᵢ`
          *   返回对应 `ŷᵢ`。常量数据导致 `SS_tot = 0` 时，R² 不可定义。
-         * @param {ComplexNumber|string|number} ssTot - 可以复用的 SS_tot
+         * @param {ComplexNumber|string|number|null} [ssTot=null] - 可复用的原始因变量总平方和；`null` 时重新计算。
          * @returns {ComplexNumber} 决定系数。
          */
         static _calcR2(listA, listB, func, ssTot = null) {
@@ -4898,10 +4923,11 @@
          *
          * @private
          * @param {Array<ComplexNumber|string|number>} list - 要汇总的非空样本；返回结果中的极值按实部比较。
-         * @param {{sum: ComplexNumber, average: ComplexNumber}|null} [averageAndSum] - 同一列表的总和与均值缓存；
-         *   `null` 时计算，提供时直接信任并复用。
-         * @param {Array<ComplexNumber|string>|null} [varianceList] - 同一列表的 `[总体方差, 样本方差]`
-         *   缓存；`null` 时基于上面的均值缓存计算。
+         * @param {object} [options={}] - 已计算的统计中间结果。
+         * @param {{sum: ComplexNumber, average: ComplexNumber}|null} [options.averageAndSum=null] - 同一列表的总和与均值；
+         *   `null` 时重新计算。
+         * @param {[ComplexNumber, ComplexNumber|'error']|null} [options.varianceList=null] - 同一列表的
+         *   `[总体方差, 样本方差]`，样本方差不可用时为 `error`；`null` 时基于均值计算。
          * @returns {{statisticsResult: StatisticsSummary, squareList: Array<ComplexNumber>}} 中间汇总结果：
          *   `statisticsResult` 是已格式化的单组描述性统计；`squareList` 与输入等长，第 `i` 项为
          *   `list[i]²` 的高精度值，供 `dotA2B` 复用而无需再次平方。
@@ -4942,7 +4968,7 @@
          * @param {Array<ComplexNumber|string|number>} originalListB - 未变换的实际因变量；仅用于在原始量纲上计算 R²。
          * @param {function(ComplexNumber|string|number, Array<ComplexNumber|string|number>): ComplexNumber} func -
          *   模型预测函数，参数依次为原始 `x` 和已求得的系数数组；返回值用于和 `originalListB` 比较。
-         * @param {ComplexNumber|string|number} ssTot - 可以复用的 SS_tot
+         * @param {ComplexNumber|string|number|null} [ssTot=null] - 可复用的原始因变量总平方和；`null` 时重新计算。
          * @returns {{parameter: Array<ComplexNumber|'error'>, R2: ComplexNumber|'error'}} 尚未格式化的回归结果；
          *   `parameter` 含 `power + 1` 个按升幂排列的系数，求解失败时为等长 `error` 数组；`R2`
          *   使用 `originalListB` 独立计算，因而参数可求而 R² 仍可能为 `error`，反之不会发生。
@@ -4961,17 +4987,55 @@
 
             try {
                 // R² 使用未变换的原始 y 值，并复用外部预计算的 SS_tot。
-                result.R2 = StatisticsTools._calcR2(
+                result.R2 = Public.zeroCorrect(StatisticsTools._calcR2(
                     listA,
                     originalListB,
-                    // 使用已求得的参数计算预测值
+                    // 使用已求得的参数计算预测值，并在比较模型前应用输出时的噪声校正。
                     (x) => func(x, result.parameter),
                     ssTot
-                );
+                ));
             } catch {
                 result.R2 = 'error';
             }
 
+            return result;
+        }
+
+        /**
+         * 在平移和缩放后的坐标中拟合二次曲线并计算 R²，最后将系数换回原坐标。
+         *
+         * @private
+         * @param {Array<ComplexNumber|string|number>} listA - 非空自变量样本；以首项为原点，以最大绝对偏移为尺度。
+         * @param {Array<ComplexNumber|string|number>} listB - 与自变量逐项对应的原始因变量。
+         * @param {ComplexNumber|null} ssTot - 因变量的总平方和；`null` 时按原始因变量计算。
+         * @returns {{parameter:Array<ComplexNumber|'error'>,R2:ComplexNumber|'error'}} 原坐标下按常数项、一次项、
+         *   二次项排列的系数及决定系数；拟合失败时保留 `_getRegressionInfo` 生成的错误占位。
+         */
+        static _getQuadraticRegressionInfo(listA, listB, ssTot) {
+            const origin = listA[0];
+            const offsets = this._changeInner(listA, (x) => MathPlus.minus(x, origin));
+            const {max: scale} = this._getMaxAndMin(this._getAbsList(offsets));
+            const scaledA = scale.isZero()
+                            ? offsets
+                            : this._changeInner(offsets, (x) => MathPlus.divide(x, scale));
+            const result = this._getRegressionInfo(scaledA, listB, 2, listB,
+                (t, [a, b, c]) => MathPlus.plus(a, MathPlus.times(t, MathPlus.plus(b, MathPlus.times(t, c)))),
+                ssTot
+            );
+            if (result.parameter[0] === 'error') {
+                return result;
+            }
+
+            // 将 t = x / scale - origin / scale 代入。换算前清理拟合产生的系数底噪。
+            const [a, b, c] = result.parameter.map((value) => Public.zeroCorrect(value));
+            const shift = MathPlus.divide(MathPlus.minus(0, origin), scale);
+            const cross = MathPlus.times(c, shift);
+            const quadratic = MathPlus.divide(c, scale);
+            result.parameter = [
+                MathPlus.plus(a, MathPlus.times(shift, MathPlus.plus(b, cross))),
+                MathPlus.divide(MathPlus.plus(b, MathPlus.times(2, cross)), scale),
+                MathPlus.divide(quadratic, scale)
+            ];
             return result;
         }
 
@@ -5132,13 +5196,7 @@
                 ssTotB
             );
 
-            result.square = this._getRegressionInfo(listA, listB, 2, listB,
-                (x, coefficient) => MathPlus.plus(
-                    MathPlus.times(coefficient[2], MathPlus.times(x, x)),
-                    MathPlus.plus(MathPlus.times(coefficient[1], x), coefficient[0])
-                ),
-                ssTotB
-            );
+            result.square = this._getQuadraticRegressionInfo(listA, listB, ssTotB);
             result.bestModel = this._findBestModel(result, 'square');
 
             // 对数模型 y=a+b·ln(x) 要求所有 x>0。
@@ -6172,11 +6230,11 @@
          *   单点求值失败只在 `f` 结果的同一位置写入 `error`。
          * @param {string} g - 使用内部词元书写的 `g(x)` 函数体；可通过 `[f]` 调用 `f`，
          *   其失败位置与 `f` 独立记录。
-         * @param {string|number|BigNumber|ComplexNumber|Array} start - 闭区间实数起点；表达式求值、
+         * @param {string|number|bigint|BigNumber|ComplexNumber} start - 闭区间实数起点；表达式求值、
          *   近零修正后不得带非零虚部，且不得大于 `end`。
-         * @param {string|number|BigNumber|ComplexNumber|Array} step - 严格大于零的纯实步长；决定显示点间距。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} step - 严格大于零的纯实步长；决定显示点间距。
          *   达到最大展示数量时停止继续分配，并在结果尾部放置省略标记。
-         * @param {string|number|BigNumber|ComplexNumber|Array} end - 闭区间实数终点；
+         * @param {string|number|bigint|BigNumber|ComplexNumber} end - 闭区间实数终点；
          *   仅计算按步长实际到达且不大于它的点，不会为了包含终点而改变最后一步。
          * @returns {{varList:Array<string>, f:Array<string>, g:Array<string>}} 三个索引对齐的显示数组：
          *   `varList[i]` 是采样自变量，`f[i]`、`g[i]` 是对应函数值或 `error`。超出展示上限时
@@ -6192,9 +6250,9 @@
          *
          * @param {string} f - 使用内部词元书写的 `f(x)` 函数体。
          * @param {string} g - 使用内部词元书写的 `g(x)` 函数体。
-         * @param {string|number|BigNumber|ComplexNumber|Array} start - 闭区间的实数起点。
-         * @param {string|number|BigNumber|ComplexNumber|Array} step - 严格大于零的实数步长。
-         * @param {string|number|BigNumber|ComplexNumber|Array} end - 闭区间的实数终点。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} start - 闭区间的实数起点。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} step - 严格大于零的实数步长。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} end - 闭区间的实数终点。
          * @param {{isCancelled: function(): boolean, throwIfCancelled: function(): void}} cancellationSignal -
          *   Worker 注入的取消信号。任务已取消时，`throwIfCancelled()` 抛出 `CancellationError`。
          * @returns {Promise<{varList:Array<string>, f:Array<string>, g:Array<string>}>} 采样结果，格式与 `valueList` 一致。
@@ -6215,7 +6273,21 @@
             return batch.value;
         }
 
-        /** 共享采样循环；提供回调时，在回调返回 true 的点暂停采样。 */
+        /**
+         * 同步与可取消数表共用的采样循环，每个函数体在采样前至多编译一次。
+         *
+         * @private
+         * @param {string} f - 使用内部词元书写的 `f(x)` 函数体。
+         * @param {string} g - 使用内部词元书写的 `g(x)` 函数体。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} start - 闭区间的实数起点，必须不大于 `end`。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} step - 严格大于零的实数步长。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} end - 闭区间的实数终点。
+         * @param {function(): boolean} [onStep] - 每个采样点完成后调用；返回 `true` 时暂停，等待下一次 `next()`。
+         * @yields {undefined} 到达批次边界时让出控制权。
+         * @returns {Generator<undefined, {varList:Array<string>, f:Array<string>, g:Array<string>}, void>} 采样生成器；
+         *   完成时的 `value` 是与 `valueList` 相同的三个结果数组。
+         * @throws {Error} 推进生成器时，范围或步长不满足实数采样要求则抛出。
+         */
         static* _sample(f, g, start, step, end, onStep) {
             const acc = CalcConfig.globalCalcAccuracy;
             const formatOptions = {acc: CalcConfig.outputAccuracy, printMode: CalcConfig.globalPrintMode};
@@ -6239,6 +6311,7 @@
             const resultG = [];
             const maxCount = CalcConfig.VALUE_LIST_MAX_SHOW_RESULTS;
 
+            // 缺失、空白或无法编译的函数体统一留空，逐点格式化时写入错误标记。
             const compileBody = (body) => {
                 if (body == null || (typeof body === 'string' && body.trim() === '')) {
                     return undefined;
@@ -6246,7 +6319,6 @@
                 try {
                     return MathPlus.compile(body, {acc});
                 } catch {
-                    // 无效的函数体在数表中显示为 error，另一列仍可独立求值。
                     return undefined;
                 }
             };
@@ -6255,6 +6327,7 @@
             const contextF = {g: compiledG, acc};
             const contextG = {f: compiledF, acc};
 
+            // 每个采样点只更新代入值；另一函数的编译结果随上下文复用。
             const formatValue = (compiled, context, unknown) => {
                 if (compiled === undefined) {
                     return 'error';
@@ -6314,7 +6387,8 @@
         /**
          * 使用独立的计算与输出精度计算表达式；这些选项只作用于本次调用。
          *
-         * @param {string} expr - 使用内部数学词元书写的表达式；规范化后的表达式会与结果一并返回。
+         * @param {string|number|bigint|BigNumber|ComplexNumber} expr - 内部数学表达式或数值；其规范化
+         *   表达式会与结果一并返回。
          * @param {object} [options={}] - 只覆盖本次调用的计算、格式化和自定义函数上下文；不会修改
          *   `CalcConfig`，适合并发 Worker 任务使用。
          * @param {'algebra'|'polar'} [options.printMode=CalcConfig.globalPrintMode] - 最终字符串中的复数表示法；
@@ -6323,8 +6397,8 @@
          *   有效位数；应不超过配置允许的计算上限。
          * @param {number} [options.outputAcc=CalcConfig.outputAccuracy] - 最终显示精度；支持绝对位数、
          *   `(0, 1)` 比例以及非正的“保持计算精度”语义。
-         * @param {'calc'|'syntaxCheck'} [options.calcMode='calc'] - `calc` 计算表达式，`syntaxCheck` 仅执行
-         *   词法、语法和规范化流程，用于输入校验。
+         * @param {'calc'|'syntaxCheck'} [options.calcMode='calc'] - `calc` 计算表达式；`syntaxCheck` 对字符串
+         *   执行词法和语法校验，返回规范化表达式与零占位结果。
          * @param {'output'|'mid'} [options.outputMode='output'] - `output` 返回格式化字符串；`mid` 返回
          *   可供后续高精度运算使用的内部结果，调用方不可假定二者类型相同。
          * @param {string} [options.f] - 可供表达式 `[f]` 调用的函数体；可引用 `[x]` 和 `[g]`。
