@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
+import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import {createServer, parseArguments} from "../../tools/server/run_server.js";
@@ -60,6 +60,47 @@ test("工具状态接口不暴露项目绝对路径", async (t) => {
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {ok: true});
     assert.equal(response.headers.get("access-control-allow-origin"), null);
+});
+
+test("局域网模式只开放工作台、计算器和预览资源，禁用工具 API", async (t) => {
+    const {server, port} = await createServer(PROJECT_ROOT, 0, true, () => {});
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    assert.equal(server.address().address, "0.0.0.0");
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    for (const pathname of ["/", "/src/", "/dist/Whalgebra.html", "/assets/ui/styles/shared.css", "/test/web/index.html"]) {
+        assert.equal((await fetch(`${baseUrl}${pathname}`, {method: "HEAD"})).status, 200, pathname);
+    }
+    for (const pathname of ["/package.json", "/tools/server/run_server.js", "/.gitignore"]) {
+        assert.equal((await fetch(`${baseUrl}${pathname}`, {method: "HEAD"})).status, 404, pathname);
+    }
+    const status = await fetch(`${baseUrl}/api/tools/status`);
+    assert.equal(status.status, 403);
+    assert.equal((await status.json()).code, "TOOLS_DISABLED_IN_LAN");
+    for (const tool of ["reverse-build", "svg-compressor"]) {
+        const response = await fetch(`${baseUrl}/api/tools/${tool}`, {method: "POST"});
+        assert.equal(response.status, 403, tool);
+        assert.equal((await response.json()).code, "TOOLS_DISABLED_IN_LAN");
+    }
+    const options = await fetch(baseUrl, {method: "OPTIONS"});
+    assert.equal(options.headers.get("allow"), "GET, HEAD, OPTIONS");
+});
+
+test("局域网自定义静态目录拒绝隐藏文件和指向目录外的链接", async (t) => {
+    const directory = await temporaryDirectory(t);
+    const externalDirectory = await temporaryDirectory(t);
+    await writeFile(path.join(directory, "index.html"), "preview", "utf8");
+    await writeFile(path.join(directory, ".private.txt"), "fixture", "utf8");
+    await writeFile(path.join(externalDirectory, "index.html"), "fixture", "utf8");
+    await symlink(externalDirectory, path.join(directory, "external"), "junction");
+    const {server, port} = await createServer(directory, 0, true, () => {});
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    assert.equal(await (await fetch(`${baseUrl}/`)).text(), "preview");
+    for (const pathname of ["/.private.txt", "/external/", "/external/index.html"]) {
+        assert.equal((await fetch(`${baseUrl}${pathname}`, {method: "HEAD"})).status, 404, pathname);
+    }
 });
 
 test("工具 API 拒绝跨源和非 JSON 请求", async (t) => {

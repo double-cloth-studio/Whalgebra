@@ -1,5 +1,5 @@
 import {createReadStream, existsSync} from "node:fs";
-import {stat} from "node:fs/promises";
+import {realpath, stat} from "node:fs/promises";
 import http from "node:http";
 import {networkInterfaces} from "node:os";
 import path from "node:path";
@@ -20,6 +20,9 @@ export const SERVER_CONFIG = Object.freeze({
 
 const NOOP_LOGGER = () => {
 };
+
+const LAN_PREVIEW_DIRECTORIES = ["assets", "src", "test/web", "test/browser", "test/cases", "tools/web"];
+const LAN_PREVIEW_FILES = new Set(["", "index.html", "dist/Whalgebra.html"]);
 
 const MIME_TYPES = new Map([
     [".html", "text/html; charset=utf-8"],
@@ -73,6 +76,22 @@ function resolveInside(baseDirectory, requestPath) {
 function isSameOrChildDirectory(baseDirectory, targetPath) {
     const relative = path.relative(path.resolve(baseDirectory), path.resolve(targetPath));
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function isLanPreviewPath(rootDirectory, filePath) {
+    if (!isSameOrChildDirectory(rootDirectory, filePath)) {
+        return false;
+    }
+    const segments = path.relative(rootDirectory, filePath).split(path.sep);
+    if (segments.some((segment) => segment.startsWith("."))) {
+        return false;
+    }
+    if (path.relative(PROJECT_ROOT, rootDirectory) !== "") {
+        return true;
+    }
+    const relative = segments.join("/");
+    return LAN_PREVIEW_FILES.has(relative) || LAN_PREVIEW_DIRECTORIES.some((directory) =>
+        relative === directory || relative.startsWith(`${directory}/`));
 }
 
 function resolveWebToolPath(value, fallback, allowedDirectories, message) {
@@ -184,11 +203,19 @@ async function handleToolApi(request, response, pathname) {
     }
 }
 
-async function serveStatic(request, response, rootDirectory, pathname) {
+async function serveStatic(request, response, rootDirectory, pathname, lanPreview) {
     let filePath = resolveInside(rootDirectory, decodeURIComponent(pathname));
-    if (!filePath || !existsSync(filePath)) {
+    if (!filePath || (lanPreview && !isLanPreviewPath(rootDirectory, filePath)) || !existsSync(filePath)) {
         sendText(response, 404, "404 - File not found");
         return;
+    }
+
+    if (lanPreview) {
+        filePath = await realpath(filePath);
+        if (!isLanPreviewPath(rootDirectory, filePath)) {
+            sendText(response, 404, "404 - File not found");
+            return;
+        }
     }
 
     const fileStat = await stat(filePath);
@@ -201,14 +228,22 @@ async function serveStatic(request, response, rootDirectory, pathname) {
         }
         const indexPath = path.join(filePath, "index.html");
         if (existsSync(indexPath)) {
-            filePath = indexPath;
+            filePath = lanPreview ? await realpath(indexPath) : indexPath;
         } else {
             sendText(response, 403, "403 - Forbidden");
             return;
         }
     }
 
+    if (lanPreview && !isLanPreviewPath(rootDirectory, filePath)) {
+        sendText(response, 404, "404 - File not found");
+        return;
+    }
     const finalStat = await stat(filePath);
+    if (lanPreview && !finalStat.isFile()) {
+        sendText(response, 404, "404 - File not found");
+        return;
+    }
     response.statusCode = 200;
     response.setHeader("Content-Type", MIME_TYPES.get(path.extname(filePath).toLowerCase()) || "application/octet-stream");
     response.setHeader("Content-Length", finalStat.size);
@@ -225,20 +260,23 @@ async function serveStatic(request, response, rootDirectory, pathname) {
     }).pipe(response);
 }
 
-export function createRequestHandler(rootDirectory, logger = console.log) {
+export function createRequestHandler(rootDirectory, logger = console.log, {lanPreview = false} = {}) {
     return async (request, response) => {
         setCommonHeaders(response);
-        const requestUrl = new URL(request.url, "http://localhost");
-        logger(`[${new Date().toLocaleString()}] ${request.method} ${requestUrl.pathname}`);
-
-        if (request.method === "OPTIONS") {
-            response.statusCode = 204;
-            response.setHeader("Allow", "GET, HEAD, POST, OPTIONS");
-            response.end();
-            return;
-        }
-
         try {
+            const requestUrl = new URL(request.url, "http://localhost");
+            logger(`[${new Date().toLocaleString()}] ${request.method} ${requestUrl.pathname}`);
+
+            if (lanPreview && requestUrl.pathname.startsWith("/api/tools/")) {
+                sendJson(response, 403, {ok: false, code: "TOOLS_DISABLED_IN_LAN", error: "局域网预览模式已禁用工具 API。"});
+                return;
+            }
+            if (request.method === "OPTIONS") {
+                response.statusCode = 204;
+                response.setHeader("Allow", lanPreview ? "GET, HEAD, OPTIONS" : "GET, HEAD, POST, OPTIONS");
+                response.end();
+                return;
+            }
             if (requestUrl.pathname.startsWith("/api/tools/") && await handleToolApi(request, response, requestUrl.pathname)) {
                 return;
             }
@@ -246,7 +284,7 @@ export function createRequestHandler(rootDirectory, logger = console.log) {
                 sendText(response, 501, "501 - Unsupported method");
                 return;
             }
-            await serveStatic(request, response, rootDirectory, requestUrl.pathname);
+            await serveStatic(request, response, rootDirectory, requestUrl.pathname, lanPreview);
         } catch (error) {
             if (!response.headersSent) {
                 sendText(response, 400, `400 - ${error.message}`);
@@ -270,9 +308,10 @@ function listen(server, port, host) {
 
 export async function createServer(targetDirectory, startPort, bindAll, logger = console.log) {
     const host = bindAll ? "0.0.0.0" : "127.0.0.1";
+    const rootDirectory = bindAll ? await realpath(targetDirectory) : targetDirectory;
     for (let offset = 0; offset < SERVER_CONFIG.MAX_PORT_RETRIES; offset += 1) {
         const port = startPort + offset;
-        const server = http.createServer(createRequestHandler(targetDirectory, logger));
+        const server = http.createServer(createRequestHandler(rootDirectory, logger, {lanPreview: bindAll}));
         try {
             await listen(server, port, host);
             const actualPort = server.address().port;
@@ -322,7 +361,7 @@ function printHelp() {
 选项:
   --dir <PATH>   指定服务目录（默认：项目根目录）
   --port <PORT>  指定起始端口（默认：8000）
-  --lan          监听 0.0.0.0，允许局域网访问静态页面
+  --lan          监听 0.0.0.0，仅提供静态预览，禁用工具 API
   --local        仅监听 127.0.0.1（默认）
   --open         启动后自动打开浏览器
   --no-open      启动后不自动打开浏览器（默认）

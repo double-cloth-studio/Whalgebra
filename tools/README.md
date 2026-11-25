@@ -29,7 +29,9 @@ npm start -- --lan
 | `--log` / `--no-log` | 输出 / 不输出 HTTP 访问日志（默认） |
 | `-h, --help` | 帮助 |
 
-服务器禁用缓存，添加 `nosniff`、`Referrer-Policy: same-origin` 响应头；没有 `index.html` 的目录返回 403，不列目录。`--lan` 也会开放工具页面及其 API，应仅在需要局域网预览时启用。
+服务器禁用缓存，添加 `nosniff`、`Referrer-Policy: same-origin` 响应头。没有 `index.html` 的目录返回 403，服务器不列目录。`--lan` 仅用于静态预览，工具 API 统一返回 403，即使从本机访问。需要运行 Web 工具时，使用默认的 `--local` 模式。
+
+从项目根目录提供局域网预览时，只开放工作台、计算器和页面所需的静态资源。使用 `--dir` 指定其他目录时，请只放入要共享的文件。局域网模式屏蔽隐藏路径和指向服务目录外的链接。
 
 ### Web 工具 API
 
