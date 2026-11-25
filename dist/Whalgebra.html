@@ -2595,6 +2595,206 @@
                 }
 
                 /**
+                 * 纯实数取模，保留余数的符号和噪声。
+                 * @private
+                 * @param {BigNumber} a - 被除数。
+                 * @param {BigNumber} b - 非零除数。
+                 * @param {number} acc - 结果精度。
+                 * @returns {BigNumber} 实数余数。
+                 */
+                static _realMod(a, b, acc) {
+                    if (a.isZero()) {
+                        return new BigNumber(0n, {acc});
+                    }
+
+                    const oppositeSigns = a.isNegative() !== b.isNegative();
+                    const absA = a.isNegative() ? -a.mantissa : a.mantissa;
+                    const absB = b.isNegative() ? -b.mantissa : b.mantissa;
+                    const lenA = BigNumber.decimalLengthBigInt(absA);
+                    const lenB = BigNumber.decimalLengthBigInt(absB);
+                    const powerA = BigInt(a.power);
+                    const powerB = BigInt(b.power);
+
+                    const magB = powerB + BigInt(lenB - 1);
+                    const magDiff = powerA + BigInt(lenA - 1) - magB;
+                    const effectiveDigits = Math.max(1, Math.floor(0.9 * acc), acc - 8);
+                    const margin = Math.min(4, Math.max(0, acc - effectiveDigits));
+                    const edgeMargin = Math.min(2, margin);
+                    const divisorIsReliable = b.noiseMag === -Infinity || b.noiseMag + margin < Number(magB);
+
+                    const noiseForQuotient = (quotientMag) => Math.max(
+                        a.noiseMag,
+                        quotientMag === -Infinity || b.noiseMag === -Infinity ? -Infinity : quotientMag + b.noiseMag
+                    );
+                    const nearUpperEdge = (distance, quotientMag) => {
+                        const noise = noiseForQuotient(quotientMag);
+                        if (!Number.isFinite(noise) || !divisorIsReliable) {
+                            return false;
+                        }
+                        const tolerancePower = BigInt(Math.floor(noise + edgeMargin)) + 1n;
+                        // 容差至少比除数低两个数量级，以免把正常余数吸附为零。
+                        if (tolerancePower > magB - 2n) {
+                            return false;
+                        }
+
+                        return MathPlus._modSign([...distance, [-1n, tolerancePower]]) < 0n;
+                    };
+
+                    if (magDiff < 0n) {
+                        if (oppositeSigns) {
+                            if (nearUpperEdge([[absA, powerA]], 0)) {
+                                return new BigNumber(0n, {acc});
+                            }
+                            return MathPlus._modWithTail(b.mantissa, b.power, a.mantissa, a.power, acc, noiseForQuotient(0));
+                        }
+                        if (nearUpperEdge([[absB, powerB], [-absA, powerA]], 0)) {
+                            return new BigNumber(0n, {acc});
+                        }
+                        return new BigNumber(a, {acc});
+                    }
+
+                    const power = Math.min(a.power, b.power);
+                    const shiftA = powerA - BigInt(power);
+                    const shiftB = powerB - BigInt(power);
+                    const divisor = absB * BigNumber.pow10(Number(shiftB));
+                    let remainder;
+                    let quotientMag = -Infinity;
+
+                    if (shiftA > BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
+                        remainder = MathPlus._modScale(absA, shiftA, divisor);
+                        if (b.noiseMag !== -Infinity && remainder !== 0n) {
+                            // 仅在传播除数噪声时精确确定商的数量级，无需构造完整商。
+                            let mag = magDiff;
+                            if (MathPlus._modSign([[absA, powerA], [-absB, powerB + mag]]) < 0n) {
+                                mag--;
+                            }
+                            if (oppositeSigns && MathPlus._modSign([
+                                [absA, powerA], [-absB, powerB + mag + 1n], [absB, powerB]
+                            ]) > 0n) {
+                                mag++;
+                            }
+                            quotientMag = Number(mag);
+                        }
+                    } else {
+                        const dividend = absA * BigNumber.pow10(Number(shiftA));
+                        remainder = dividend % divisor;
+                        const quotient = dividend / divisor + (oppositeSigns && remainder !== 0n ? 1n : 0n);
+                        quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
+                    }
+
+                    if (remainder === 0n) {
+                        return new BigNumber(0n, {acc});
+                    }
+                    const magnitude = oppositeSigns ? divisor - remainder : remainder;
+                    if (nearUpperEdge([[divisor - magnitude, BigInt(power)]], Math.max(0, quotientMag))) {
+                        return new BigNumber(0n, {acc});
+                    }
+
+                    return new BigNumber(b.isNegative() ? -magnitude : magnitude, {
+                        pow: power,
+                        acc,
+                        noiseMag: noiseForQuotient(quotientMag)
+                    });
+                }
+
+                /**
+                 * 将尾数按十进制指数缩放后取余，大指数用模快速幂。
+                 * @private
+                 * @param {bigint} mantissa - 待缩放的尾数。
+                 * @param {bigint} shift - 非负十进制指数。
+                 * @param {bigint} modulus - 正整数模数。
+                 * @returns {bigint} 缩放后的余数。
+                 */
+                static _modScale(mantissa, shift, modulus) {
+                    if (shift <= BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
+                        return (mantissa * BigNumber.pow10(Number(shift))) % modulus;
+                    }
+
+                    let result = mantissa % modulus;
+                    let base = 10n % modulus;
+                    while (shift > 0n && result !== 0n) {
+                        if ((shift & 1n) !== 0n) {
+                            result = (result * base) % modulus;
+                        }
+                        shift >>= 1n;
+                        base = (base * base) % modulus;
+                    }
+                    return result;
+                }
+
+                /**
+                 * 比较至多三个十进制项的和与零，只对齐数量级接近的项。
+                 * @private
+                 * @param {Array<[bigint, bigint]>} terms - 各项的尾数和十进制指数。
+                 * @returns {bigint} 和的符号，为 -1n、0n 或 1n。
+                 */
+                static _modSign(terms) {
+                    let remaining = terms
+                        .filter(([mantissa]) => mantissa !== 0n)
+                        .map(([mantissa, power]) => [mantissa, power, power + BigInt(BigNumber.decimalLengthBigInt(mantissa) - 1)]);
+
+                    while (remaining.length > 1) {
+                        remaining.sort((a, b) => a[2] === b[2] ? 0 : a[2] > b[2] ? -1 : 1);
+                        const [a, b] = remaining;
+                        if (a[2] - b[2] >= 2n) {
+                            return a[0] < 0n ? -1n : 1n;
+                        }
+                        const power = a[1] < b[1] ? a[1] : b[1];
+                        const sum = a[0] * BigNumber.pow10(Number(a[1] - power)) +
+                            b[0] * BigNumber.pow10(Number(b[1] - power));
+                        remaining = remaining.slice(2);
+                        if (sum !== 0n) {
+                            remaining.push([sum, power, power + BigInt(BigNumber.decimalLengthBigInt(sum) - 1)]);
+                        }
+                    }
+
+                    const mantissa = remaining[0]?.[0] ?? 0n;
+                    return mantissa < 0n ? -1n : mantissa > 0n ? 1n : 0n;
+                }
+
+                /**
+                 * 将整数残差与小数尾合并，在返回时统一舍入。
+                 * @private
+                 * @param {bigint} mantissa - 整数残差的尾数。
+                 * @param {number} power - 整数残差的十进制指数。
+                 * @param {bigint} tail - 小数尾的尾数。
+                 * @param {number} tailPower - 小数尾的十进制指数。
+                 * @param {number} acc - 结果精度。
+                 * @param {number} noiseMag - 已传播的噪声量级上界。
+                 * @returns {BigNumber} 合并后的实数余数。
+                 */
+                static _modWithTail(mantissa, power, tail, tailPower, acc, noiseMag) {
+                    if (mantissa === 0n) {
+                        return new BigNumber(tail, {acc, pow: tailPower, noiseMag});
+                    }
+
+                    if (tail !== 0n) {
+                        const commonPower = Math.min(power, tailPower);
+                        const gap = BigInt(power) - BigInt(tailPower);
+                        const digits = BigNumber.decimalLengthBigInt(mantissa);
+                        const tailDigits = BigNumber.decimalLengthBigInt(tail);
+
+                        if (gap <= BigInt(acc + tailDigits + 1)) {
+                            mantissa = mantissa * BigNumber.pow10(power - commonPower) +
+                                tail * BigNumber.pow10(tailPower - commonPower);
+                            power = commonPower;
+                        } else {
+                            noiseMag = Math.max(noiseMag, tailPower + tailDigits - 1);
+                            if (digits > acc) {
+                                const unit = BigNumber.pow10(digits - acc);
+                                const remainder = mantissa % unit;
+                                // 极小尾项只会改变恰好落在舍入中点时的取舍方向。
+                                if (remainder * 2n === unit || remainder * 2n === -unit) {
+                                    mantissa += tail < 0n ? -1n : 1n;
+                                }
+                            }
+                        }
+                    }
+
+                    return new BigNumber(mantissa, {acc, pow: power, noiseMag});
+                }
+
+                /**
                  * 计算一个 BigNumber 或 ComplexNumber 的相反数。
                  *
                  * @param {BigNumber|ComplexNumber|string|number} x - 需要取反的值；`BigNumber` 返回同类型新实例，
@@ -2974,104 +3174,108 @@
                 }
 
                 /**
-                 * 按 `a - b * floor(a / b)` 计算实数或复数取模。
-                 *
-                 * 实数分支提取公共十进制指数，以便在 BigInt 范围内完成运算。
-                 *
-                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} a - 被取模值；实数分支精确对齐十进制
-                 *   指数，复数分支按统一定义计算，因此返回值不保证与 JavaScript `%` 的负数符号规则相同。
-                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} b - 非零模数；其符号参与
-                 *   `floor(a / b)`，传入零值会在任何余数计算前抛错。
+                 * 按 `a - b * floor(a / b)` 取模，复数的商按实部和虚部分别向下取整。
+                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} a - 被除数。
+                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} b - 非零除数。
                  * @returns {ComplexNumber} a mod b。
                  * @throws {Error} b 为零时抛出。
+                 * @throws {RangeError} 复数除数的分量指数差超过上限时抛出。
                  */
                 static mod(a, b) {
-                    const inputA = new ComplexNumber(a);
-                    const inputB = new ComplexNumber(b);
-
-                    if (inputB.isZero()) {
-                        throw new Error("[MathPlus] Modulo by zero error.");
+                    const numberA = MathPlus._arithmeticInput(a);
+                    const numberB = MathPlus._arithmeticInput(b);
+                    if (numberB.isZero()) {
+                        throw new Error('[MathPlus] Modulo by zero error.');
                     }
 
-                    if (inputA.onlyReal && inputB.onlyReal) {
-                        const reA = inputA.re;
-                        const reB = inputB.re;
-
-                        const resultAcc = Math.min(reA.acc, reB.acc);
-                        // 提取公共指数 m，把取模转换为整数尾数上的运算，最后再乘回 10^m。
-                        const m = Math.min(reA.power, reB.power);
-
-                        const isNegativeA = reA.mantissa < 0n;
-                        const isNegativeB = reB.mantissa < 0n;
-                        let calcA = isNegativeA ? -reA.mantissa : reA.mantissa;
-                        let calcB = isNegativeB ? -reB.mantissa : reB.mantissa;
-
-                        let modResult;
-                        const powOfA = reA.power - m;
-                        const powOfB = reB.power - m;
-                        if (powOfA > CalcConfig.MAX_INPUT_EXPONENT) {
-                            // 指数过大时用平方-乘模计算 10^powOfA mod calcB，避免构造巨型 BigInt。
-                            const modAB = calcA % calcB;
-
-                            // 快速幂算法
-                            let modOfPow = 1n;
-                            let base = 10n % calcB;
-                            let exp = powOfA;
-                            while (exp > 0) {
-                                if (exp % 2 !== 0) {
-                                    modOfPow = (modOfPow * base) % calcB;
-                                }
-                                base = (base ** 2n) % calcB;
-                                exp = Math.floor(exp / 2);
-                            }
-
-                            const leftMod = modAB * modOfPow;
-                            modResult = leftMod % calcB;
-                        } else if (powOfB > CalcConfig.MAX_INPUT_EXPONENT) {
-                            if (reA.acc < CalcConfig.MAX_INPUT_EXPONENT) {
-                                // 此时必然满足 |a| < |b|，直接按定义提前返回，避免构造巨型 BigInt
-                                if (reA.isZero()) {
-                                    return new ComplexNumber([0, 0n, resultAcc]);
-                                }
-                                if (isNegativeA !== isNegativeB) {
-                                    return MathPlus.plus(inputA, inputB);
-                                }
-                                return new ComplexNumber(inputA, {acc: resultAcc});
-                            } else {
-                                calcB = calcB * BigNumber.pow10(powOfB);
-                                modResult = calcA % calcB;
-                            }
-                        } else {
-                            calcA = powOfA === 0 ? calcA : calcA * BigNumber.pow10(powOfA);
-                            calcB = powOfB === 0 ? calcB : calcB * BigNumber.pow10(powOfB);
-                            modResult = calcA % calcB;
-                        }
-
-                        // 只有当余数不为 0 时，才进行符号调整补齐
-                        if (modResult !== 0n) {
-                            // 按 `a - b * floor(a / b)` 的定义修正不同符号组合，而非沿用 `%` 的截断语义。
-                            if (isNegativeA && isNegativeB) {
-                                modResult = -modResult;
-                            } else if (isNegativeA && !isNegativeB) {
-                                modResult = calcB - modResult;
-                            } else if (!isNegativeA && isNegativeB) {
-                                modResult = modResult - calcB;
-                            }
-                        }
-
-                        return new ComplexNumber(modResult, {
-                            acc: resultAcc,
-                            pow: m
-                        });
+                    const resultAcc = Math.min(numberA.acc, numberB.acc);
+                    if (numberA instanceof BigNumber && numberB instanceof BigNumber) {
+                        return new ComplexNumber(MathPlus._realMod(numberA, numberB, resultAcc));
+                    }
+                    if (numberA.isZero()) {
+                        return new ComplexNumber(0n, {acc: resultAcc});
                     }
 
-                    return MathPlus.minus(
-                        inputA,
-                        MathPlus.times(
-                            MathPlus.floor(MathPlus.divide(inputA, inputB)),
-                            inputB
-                        )
+                    const inputA = numberA instanceof ComplexNumber ? numberA : new ComplexNumber(numberA);
+                    const inputB = numberB instanceof ComplexNumber ? numberB : new ComplexNumber(numberB);
+
+                    if (inputB.onlyReal) {
+                        const resultRe = MathPlus._realMod(inputA.re, inputB.re, resultAcc);
+                        const resultIm = MathPlus._realMod(inputA.im, inputB.re, resultAcc);
+                        return new ComplexNumber([resultRe, resultIm]);
+                    }
+                    if (inputB.re.isZero()) {
+                        const negativeRe = MathPlus.oppositeNumber(inputA.re);
+                        const resultRe = MathPlus.oppositeNumber(MathPlus._realMod(negativeRe, inputB.im, resultAcc));
+                        const resultIm = MathPlus._realMod(inputA.im, inputB.im, resultAcc);
+                        return new ComplexNumber([resultRe, resultIm]);
+                    }
+
+                    const power = Math.min(inputB.re.power, inputB.im.power);
+                    const spread = BigInt(Math.max(inputB.re.power, inputB.im.power)) - BigInt(power);
+                    if (spread > 2n * BigInt(CalcConfig.MAX_INPUT_EXPONENT)) {
+                        throw new RangeError('[MathPlus] mathematical error: Modulo inputs are too extreme to compute safely.');
+                    }
+
+                    const br = inputB.re.mantissa * BigNumber.pow10(inputB.re.power - power);
+                    const bi = inputB.im.mantissa * BigNumber.pow10(inputB.im.power - power);
+                    const norm = br * br + bi * bi;
+                    // norm 是高斯整数除数的整倍数，约简两个整数分量不改变余数。
+                    const split = (part) => {
+                        if (part.isZero()) {
+                            return [0n, 0n];
+                        }
+                        const shift = BigInt(part.power) - BigInt(power);
+                        if (shift >= 0n) {
+                            return [MathPlus._modScale(part.mantissa, shift, norm), 0n];
+                        }
+                        if (-shift >= BigInt(BigNumber.decimalLengthBigInt(part.mantissa))) {
+                            return [0n, part.mantissa];
+                        }
+                        const scale = BigNumber.pow10(Number(-shift));
+                        return [(part.mantissa / scale) % norm, part.mantissa % scale];
+                    };
+                    const [ar, tailRe] = split(inputA.re);
+                    const [ai, tailIm] = split(inputA.im);
+
+                    const floorQuotient = (intNumerator, factorRe, factorIm) => {
+                        const fraction = (intNumerator % norm + norm) % norm;
+                        const quotient = (intNumerator - fraction) / norm;
+                        // 两个小数尾的加权和的绝对值小于 |br| + |bi|，而该和不超过 norm。
+                        // 精确比较余量与两个取整边界，修正整数部分求得的商。
+                        const tails = [
+                            [tailRe * factorRe, BigInt(inputA.re.power)],
+                            [tailIm * factorIm, BigInt(inputA.im.power)]
+                        ];
+                        if (MathPlus._modSign([[fraction, BigInt(power)], ...tails]) < 0n) {
+                            return quotient - 1n;
+                        }
+                        if (MathPlus._modSign([[fraction - norm, BigInt(power)], ...tails]) >= 0n) {
+                            return quotient + 1n;
+                        }
+                        return quotient;
+                    };
+                    const qr = floorQuotient(ar * br + ai * bi, br, bi);
+                    const qi = floorQuotient(ai * br - ar * bi, -bi, br);
+                    const magA = Math.max(BigNumber.getMag(inputA.re), BigNumber.getMag(inputA.im));
+                    const magB = Math.max(BigNumber.getMag(inputB.re), BigNumber.getMag(inputB.im));
+
+                    // 若被除数已经过约简，约简后的零商仍可能对应原商非零。
+                    const hasQuotient = magA >= magB || qr !== 0n || qi !== 0n;
+                    const divisorNoise = Math.max(inputB.re.noiseMag, inputB.im.noiseMag);
+                    const scaledNoise = !hasQuotient || divisorNoise === -Infinity
+                                        ? -Infinity
+                                        : divisorNoise + Math.max(0, magA - magB + 2);
+                    const resultRe = MathPlus._modWithTail(
+                        ar - qr * br + qi * bi, power, tailRe, inputA.re.power,
+                        resultAcc, Math.max(inputA.re.noiseMag, scaledNoise)
                     );
+                    const resultIm = MathPlus._modWithTail(
+                        ai - qr * bi - qi * br, power, tailIm, inputA.im.power,
+                        resultAcc, Math.max(inputA.im.noiseMag, scaledNoise)
+                    );
+
+                    return new ComplexNumber([resultRe, resultIm]);
                 }
 
                 /**

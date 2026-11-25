@@ -113,6 +113,150 @@
   },
   {
     "description": [
+      "[normal] mod π 的近似整倍数"
+    ],
+    "coeffs": [
+      "(4*[pi])mod[pi]",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "(4*[pi])mod[pi]"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 从整数倍下方吸附"
+    ],
+    "coeffs": [
+      "(4*[pi]-1E-34)mod[pi]",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "(4*[pi]-1E-34)mod[pi]"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 保留精确的边界余数"
+    ],
+    "coeffs": [
+      "(4-1E-35)mod1",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.99999999999999999999999999999999999",
+      "expr": "(4-1E-35)mod1"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 三分之一乘三后归零"
+    ],
+    "coeffs": [
+      "(1/3*3)mod1",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "(1/3*3)mod1"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 带噪被除数仍保留有效余数"
+    ],
+    "coeffs": [
+      "(1E31+22/3)mod9",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "8.3333",
+      "expr": "(1E31+22/3)mod9"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 带噪小数余数可用于后续运算"
+    ],
+    "coeffs": [
+      "((1E31+22/3)mod1.5)+1",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1.8333",
+      "expr": "((1E31+22/3)mod1.5)+1"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 限制上界吸附容差的数量级"
+    ],
+    "coeffs": [
+      "((1E32+7.95+2E-5)mod9)+10",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "18.95",
+      "expr": "((1E32+7.95+2E-5)mod9)+10"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 被底噪淹没的余数仍可参与后续运算"
+    ],
+    "coeffs": [
+      "((1E40*(1/3))mod17)+1E9",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1000000004",
+      "expr": "((1E40*(1/3))mod17)+1E9"
+    }
+  },
+  {
+    "description": [
+      "[normal] mod 实部指数为一百万的复数被除数"
+    ],
+    "coeffs": [
+      "(10^1000000+[i])mod(2+3[i])",
+      36,
+      36,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "3[i]",
+      "expr": "(10^1000000+[i])mod(2+3[cdot][i])"
+    }
+  },
+  {
+    "description": [
       "[normal] ^"
     ],
     "coeffs": [
