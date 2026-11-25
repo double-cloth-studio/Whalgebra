@@ -25,6 +25,8 @@ console.log(analysis.range);        // ["-1", "+inf"]
 
 区间、坐标、根均为显示字符串；无穷端点使用 `-inf`、`+inf`，不适用的区间或点使用 `[["null","null"]]`。常数多项式等特殊输入的根也可能返回占位信息，消费结果时不要将所有字符串直接转成 Number。
 
+四次求根按判别式选择根的组合。理论上应非负的被开方数若因舍入出现微小负残差，会按运算噪声和相消项的尺度归零。接近零的正被开方数仍参与开方。
+
 ## 复根：RadicalFunctionTools
 
 `radicalFunctionAnalysis(z,n)` 求正整数次复根，返回 `z`、`n`、`formula`、`kRange`、`numericalResults`、`overflow`。

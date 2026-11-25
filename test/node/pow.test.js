@@ -53,3 +53,10 @@ test("复数整数幂直接相乘，并在展开指数前检查结果规模", as
     assert.throws(() => MathPlus.pow("1+1e-20i", "1e60"), /Result of power is too large/);
     assert.throws(() => MathPlus.pow("0.1i", "-1e2022"), /Result of power is too large/);
 });
+
+test("复数倒数保留指数差仍适合中间计算的微小分量", async () => {
+    const {ComplexNumber, MathPlus} = await createCalcCoreWindow();
+    const result = MathPlus.pow(new ComplexNumber("1+1e-100i", {acc: 36}), -1);
+    assert.equal(result.re.toString(), "1");
+    assert.equal(result.im.toString(), "-1E-100");
+});

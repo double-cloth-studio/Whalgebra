@@ -95,7 +95,7 @@
                         realNum = BigNumber._roundAndNormalize(x.mantissa, x.power + pow, finalAcc, baseNoiseMag);
                     }
 
-                    if (!Number.isSafeInteger(realNum.power)) {
+                    if (realNum.mantissa !== 0n && !Number.isSafeInteger(realNum.power)) {
                         throw new Error('[BigNumber] Input error: Power too large or too small');
                     }
                     this.power = realNum.mantissa === 0n ? 0 : realNum.power;
@@ -2321,7 +2321,8 @@
                         }
                         return new ComplexNumber(0n, {acc: resultAcc});
                     }
-                    if (log10B > Math.max(CalcConfig.MAX_INPUT_EXPONENT + reB.acc, 2 * inputA.acc + 16)) {
+                    // 限制平方乘的迭代次数，并让常规精度下的保护位留在十次幂缓存范围内。
+                    if (BigNumber.getMag(reB) >= 250) {
                         throw new Error(sizeError);
                     }
 
@@ -2332,9 +2333,20 @@
                     try {
                         if (isNegative) {
                             // 先对缩放后的底数取倒数，使中间量级与最终结果同向变化。
-                            const scaledBase = new ComplexNumber(inputA, {acc: workAcc, pow: -mag});
+                            // 跳过缩放后连平方指数都无法表示的分量，避免次要分量导致整个倒数归零。
+                            const minScaledPower = -Math.floor(Number.MAX_SAFE_INTEGER / 2) + workAcc;
+                            const scale = (part, minPower) => new BigNumber(
+                                part.power - mag < minPower ? 0n : part,
+                                {acc: workAcc, pow: -mag}
+                            );
+                            const scaledBase = new ComplexNumber([
+                                scale(inputA.re, minScaledPower), scale(im, minScaledPower)
+                            ]);
                             const inverse = MathPlus.divide([0, 1n, workAcc], scaledBase);
-                            base = new ComplexNumber(inverse, {pow: -mag});
+                            // 还原量级时也分别处理分量下溢，保留仍可表示的分量。
+                            base = new ComplexNumber([
+                                scale(inverse.re, -Number.MAX_SAFE_INTEGER), scale(inverse.im, -Number.MAX_SAFE_INTEGER)
+                            ]);
                         }
                         const result = fastPow(base, exponent, workAcc);
                         if (reB.noiseMag === -Infinity) {
@@ -2898,16 +2910,16 @@
                 const max = Math.max(workAcc, CalcConfig.globalCalcAccuracy, 16) + 5;
                 const minMag = BigNumber.getMag(re) - workAcc - 1;
                 let mid = re;
-                let result = mid;
-                let i = 1;
+                let result = new BigNumber(0n, {acc: workAcc});
+                let i = 0;
 
                 // sin(x)=x-x³/3!+x⁵/5!-...，相邻项递推可避免重复计算幂和阶乘。
                 for (; BigNumber.getMag(mid) > minMag && !mid.isZero() && i < max; i++) {
+                    result = MathPlus[i % 2 === 0 ? 'realPlus' : 'realMinus'](result, mid);
                     mid = MathPlus.realDivide(
                         MathPlus.realTimes(mid, squareOfRe),
-                        new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {pow: 0, acc: workAcc})
+                        new BigNumber(BigInt(2 * i + 2) * BigInt(2 * i + 3), {acc: workAcc})
                     );
-                    result = MathPlus[i % 2 === 0 ? 'realPlus' : 'realMinus'](result, mid);
                 }
 
                 if (i >= max) {
@@ -5534,6 +5546,10 @@
          *   无重根时返回 4 个根）；元素顺序来自天珩公式的符号组合，不承诺按实部或虚部排序。
          */
         static _solveQuartic(list) {
+            // 仅对舍入后为负的被开方数执行判零，保留接近零的正值。
+            const correctNonnegative = (value, ...refs) =>
+                value.re.isNegative() ? Public.zeroCorrect(value, ...refs) : value;
+
             const
                 a = list[0],
                 b = list[1],
@@ -5668,10 +5684,6 @@
                 const z1 = MathPlus.cbrt(MathPlus.plus(mid1, mid2));
                 const z2 = MathPlus.cbrt(MathPlus.minus(mid1, mid2));
                 const midZ = MathPlus.plus(z1, z2);
-                // 仅对舍入后为负的被开方数执行判零，保留接近零的正值。
-                const correctNonnegative = (value, ...refs) =>
-                    value.re.isNegative() ? Public.zeroCorrect(value, ...refs) : value;
-
                 const termZ1 = MathPlus.times(D, D);
                 const termZ2 = MathPlus.times(A, 3);
                 const termZ3 = MathPlus.times(midZ, midZ);
@@ -5719,7 +5731,9 @@
                 // E=0、F>0：按 D 与 F 的组合直接构造四个根。
                 const mid0 = MathPlus.times(MathPlus.sqrt(F), 2);
                 const mid1 = MathPlus.sqrt(MathPlus.plus(D, mid0));
-                const mid2 = MathPlus.sqrt(MathPlus.minus(D, mid0));
+                const radicand = MathPlus.minus(D, mid0);
+                // D>0 时两项均应非负，D<0 时保留复根所需的负值。
+                const mid2 = MathPlus.sqrt(D.isPositive() ? correctNonnegative(radicand, D, mid0) : radicand);
                 const mid3 = MathPlus.times(a, -4);
                 const root1 = MathPlus.divide(
                     MathPlus.minus(b, mid1),
@@ -5742,16 +5756,14 @@
 
             if (E.isZero() && F.isNegative()) {
                 // E=0、F<0：得到两对共轭复根。
+                const sqrtAF = MathPlus.sqrt(MathPlus.minus(A, F));
                 const mid0 = MathPlus.divide(
                     b,
                     MathPlus.times(a, -4)
                 );
                 const mid1 = MathPlus.divide(
                     MathPlus.sqrt(MathPlus.times(
-                        MathPlus.plus(
-                            MathPlus.sqrt(MathPlus.minus(A, F)),
-                            D
-                        ),
+                        correctNonnegative(MathPlus.plus(sqrtAF, D), sqrtAF, D),
                         2
                     )),
                     MathPlus.times(a, 8)
@@ -5760,10 +5772,7 @@
                 const re2 = MathPlus.minus(mid0, mid1).re;
                 const im = MathPlus.divide(
                     MathPlus.sqrt(MathPlus.times(
-                        MathPlus.minus(
-                            MathPlus.sqrt(MathPlus.minus(A, F)),
-                            D
-                        ),
+                        correctNonnegative(MathPlus.minus(sqrtAF, D), sqrtAF, D),
                         2
                     )),
                     MathPlus.times(a, 8)
@@ -5792,29 +5801,16 @@
             }
             const cosCT = MathPlus.cos(ct);
             const sinCT = MathPlus.times(MathPlus.sin(ct), MathPlus.sqrt(3));
-            const y1 = MathPlus.sqrt(MathPlus.divide(
-                MathPlus.minus(
-                    D,
-                    MathPlus.times(MathPlus.times(mid0, cosCT), 2)
-                ),
-                3
-            ));
-            const y2 = MathPlus.sqrt(MathPlus.divide(
-                MathPlus.plus(
-                    D,
-                    MathPlus.times(mid0, MathPlus.plus(cosCT, sinCT))
-                ),
-                3
-            ));
-            const y3 = MathPlus.sqrt(MathPlus.divide(
-                MathPlus.plus(
-                    D,
-                    MathPlus.times(mid0, MathPlus.minus(cosCT, sinCT))
-                ),
-                3
-            ));
+            const hasFourRealRoots = !E.isZero() && F.isPositive() && D.isPositive();
+            const sqrtY = (term) => {
+                const sum = MathPlus.plus(D, term);
+                return MathPlus.sqrt(MathPlus.divide(hasFourRealRoots ? correctNonnegative(sum, D, term) : sum, 3));
+            };
+            const y1 = sqrtY(MathPlus.times(MathPlus.times(mid0, cosCT), -2));
+            const y2 = sqrtY(MathPlus.times(mid0, MathPlus.plus(cosCT, sinCT)));
+            const y3 = sqrtY(MathPlus.times(mid0, MathPlus.minus(cosCT, sinCT)));
 
-            if (!E.isZero() && F.isPositive() && D.isPositive()) {
+            if (hasFourRealRoots) {
                 // D、F 均为正时四根均为实数；否则下方组合给出两对共轭复根。
                 const mid1 = MathPlus.plus(y2, y3);
                 const mid2 = MathPlus.minus(y2, y3);
@@ -6193,7 +6189,15 @@
 
         /**
          * 在 Worker 中分批采样，让取消消息能在相邻批次之间生效。
-         * @param {object} cancellationSignal - Worker 为本次任务注入的取消信号。
+         *
+         * @param {string} f - 使用内部词元书写的 `f(x)` 函数体。
+         * @param {string} g - 使用内部词元书写的 `g(x)` 函数体。
+         * @param {string|number|BigNumber|ComplexNumber|Array} start - 闭区间的实数起点。
+         * @param {string|number|BigNumber|ComplexNumber|Array} step - 严格大于零的实数步长。
+         * @param {string|number|BigNumber|ComplexNumber|Array} end - 闭区间的实数终点。
+         * @param {{isCancelled: function(): boolean, throwIfCancelled: function(): void}} cancellationSignal -
+         *   Worker 注入的取消信号。任务已取消时，`throwIfCancelled()` 抛出 `CancellationError`。
+         * @returns {Promise<{varList:Array<string>, f:Array<string>, g:Array<string>}>} 采样结果，格式与 `valueList` 一致。
          */
         static async valueListCancellable(f, g, start, step, end, cancellationSignal) {
             const batchTime = 16;

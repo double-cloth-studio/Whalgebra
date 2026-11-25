@@ -70,3 +70,13 @@ test("归约按相位噪声判零并保留可分辨的余角", async () => {
             "0.9575238006716051573380273");
     }
 });
+
+test("正弦以首个省略项的量级记录截断噪声", async () => {
+    const {BigNumber, MathPlus} = await createCalcCoreWindow();
+    const angle = new BigNumber("3E-100", {acc: 36});
+    const result = MathPlus.sin(angle).re;
+
+    assert.equal(result.toString(), "3E-100");
+    // 首个省略项 -x³/6 的绝对值为 4.5E-300。
+    assert.equal(result.noiseMag, -300);
+});

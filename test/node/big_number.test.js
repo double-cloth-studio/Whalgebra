@@ -62,3 +62,19 @@ test("实数除法区分精确中点及其两侧，并保留除零错误", async
     assert.equal(quotient.noiseMag, -Infinity);
     assert.throws(() => MathPlus.realDivide(zero, zero), /Division by zero/);
 });
+
+test("零值复制统一归一化指数，非零实例仍校验缩放后的指数", async () => {
+    const {BigNumber} = await createCalcCoreWindow();
+    const zero = new BigNumber(0n, {acc: 36});
+
+    for (const pow of [Number.MAX_SAFE_INTEGER + 1, -Number.MAX_SAFE_INTEGER - 1]) {
+        for (const acc of [36, 60]) {
+            const result = new BigNumber(zero, {acc, pow, noiseMag: 0});
+            assert.equal(result.mantissa, 0n);
+            assert.equal(result.power, 0);
+            assert.equal(result.acc, acc);
+            assert.equal(result.noiseMag, -Infinity);
+        }
+        assert.throws(() => new BigNumber(new BigNumber(1n, {acc: 36}), {pow}), /Power too large or too small/);
+    }
+});

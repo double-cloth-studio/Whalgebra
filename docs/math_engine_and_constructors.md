@@ -68,6 +68,8 @@ new BigNumber(x, { acc, pow: 0, noiseMag });
 
 科学记数法的指数只接受可带正负号的整数。字符串舍入后的数量级低于 `CalcConfig.MIN_INPUT_EXPONENT` 时按零处理。
 
+复制 `BigNumber` 零值时，`pow` 缩放后的内部指数仍归一化为 `0`。复制非零值时，缩放后的指数必须是安全整数。
+
 ```javascript
 const a = new BigNumber("12345678901234567890.125", { acc: 30 });
 console.log(a.toString({ mode: 'normal' })); // "12345678901234567890.125"

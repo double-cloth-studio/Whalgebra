@@ -1,6 +1,19 @@
 [
   {
     "description": [
+      "[error:complex-integer-power] 单位圆底数的整数指数超过快速幂上限"
+    ],
+    "coeffs": [
+      "(0.6+0.8[i])^(1E250)",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] mathematical error: Result of power is too large to compute safely."
+    }
+  },
+  {
+    "description": [
       "[error] 空字符串"
     ],
     "coeffs": [
