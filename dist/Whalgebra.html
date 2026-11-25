@@ -4541,24 +4541,25 @@
 
                     // --- 输入为复数 ---
                     // arctan(z) = (-i/2) * ln((1 + iz) / (1 - iz))
-                    const mid = MathPlus.minus(
+                    const numerator = MathPlus.minus(
                         [[0, 0n, workAcc], [0, 1n, workAcc]],
                         workInput
                     );
-                    const mid_pow = MathPlus.plus(
+                    const denominator = MathPlus.plus(
                         [[0, 0n, workAcc], [0, 1n, workAcc]],
                         workInput
                     );
 
-                    if (mid.isZero() || mid_pow.isZero()) {
+                    if (numerator.isZero() || denominator.isZero()) {
                         throw new Error(`[MathPlus] mathematical error: Unable to calculate arctan, input cannot be ${input.toString()}.`);
                     }
 
+                    // 下支割线取左侧极限：交换分子和分母，按 arctan(z) = -arctan(-z) 取值。
+                    const onLowerCut = workInput.re.isZero() && denominator.im.isNegative();
+                    const ratio = onLowerCut ? MathPlus.divide(denominator, numerator) : MathPlus.divide(numerator, denominator);
                     return new ComplexNumber(MathPlus.times(
-                        [[0, 0n, workAcc], [-1, -5n, workAcc]],
-                        MathPlus.ln(
-                            MathPlus.divide(mid, mid_pow)
-                        )
+                        [[0, 0n, workAcc], [-1, onLowerCut ? 5n : -5n, workAcc]],
+                        MathPlus.ln(ratio)
                     ), {acc: acc});
                 }
 
