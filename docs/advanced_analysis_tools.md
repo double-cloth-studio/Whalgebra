@@ -130,4 +130,4 @@ const value = new ComplexNumber(mid.result);
 console.log(value.toString({ acc: 8 })); // "0.33333333"
 ```
 
-`outputMode: 'output'` 返回经过 `Public.idealizationToString` 归整的字符串；`'mid'` 返回实部、虚部的 `[power,bigintMantissa,acc]` 元组。元组保留当前数值精度，但不携带噪声追踪元数据，不能直接 JSON 序列化。若要继续组合运算并保留误差传播，应使用 `MathPlus.calc` 返回的数值对象，详见[数值构造器](./math_engine_and_constructors.md#噪声状态与对象传递)。
+`outputMode: 'output'` 返回经过 `Public.idealizationToString` 归整的字符串。`'mid'` 的 `result` 由实部和虚部的 `[power,bigintMantissa,acc]` 元组组成，支持结构化克隆。使用 `dist/Whalgebra.html` 时，`'mid'` 响应还包含 `noiseMag` 数组，可用 `new ComplexNumber(mid.result, { noiseMag: mid.noiseMag })` 恢复噪声状态。详见[数值构造器](./math_engine_and_constructors.md#噪声状态与对象传递)。
