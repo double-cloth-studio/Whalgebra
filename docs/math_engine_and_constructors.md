@@ -28,6 +28,8 @@ console.log(normalized); // "2[cdot](3+4)"
 
 解析器支持隐式乘法、末尾括号补全、绝对值、科学记数法和函数嵌套。`canonicalExpr` 使用内部词元，不一定与输入文本相同。函数可以互相引用，但递归环会报错。输入错误和数学错误通过异常报告。
 
+非法词元、分隔符错位等解析器识别的语法错误使用 `ExpressionSyntaxError` 作为错误名称。通过 `WorkerTools.exec` 调用时，仍可用 `error.name` 识别该错误。
+
 绝对值内部的隐式乘法分母在闭合竖线前补齐括号。例如，`|1/2[x]|+1` 规范化为 `|1/(2[cdot][x])|+1`。
 
 同一个表达式需要多次求值时，可以用 `MathPlus.compile(expr)` 取得规范化表达式 `expr` 和逆波兰指令 `rpn`。用 `MathPlus.evalRPN(rpn, context)` 执行指令并返回 `ComplexNumber`。每次求值可独立指定 `unknown`、`acc` 及 `f`、`g`。函数体可传原始表达式或 `compile` 的返回对象。

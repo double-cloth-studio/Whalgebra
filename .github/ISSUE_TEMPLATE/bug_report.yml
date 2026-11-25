@@ -15,7 +15,7 @@ body:
       options:
         - label: 我已经搜索过现有的 [Issues](https://github.com/double-cloth-studio/Whalgebra/issues)，确认该问题未被提出或未得到解决。
           required: true
-        - label: 我确认使用的是最新版本代码或 [在线部署版本](https://double-cloth-studio.github.io/Whalgebra/)。
+        - label: 我已确认所用版本，并会在下方注明。网页版可用 [在线部署版本](https://double-cloth-studio.github.io/Whalgebra/)复查。
           required: true
 
   - type: dropdown
@@ -26,7 +26,8 @@ body:
       options:
         - 在线版 (Online GitHub Pages)
         - 本地单文件运行 (dist/Whalgebra.html)
-        - 本地开发服务 (npm start / http://localhost:8080)
+        - 本地开发服务 (npm start / 以终端输出地址为准)
+        - 平台安装包 (Windows x64 / Android)
         - 命令行构建与辅助工具 (tools/cli/...)
         - 自动化测试套件 (npm test / test runner)
         - 其他 (Other)
@@ -97,6 +98,7 @@ body:
       label: 系统与软件环境 / System Information
       description: 请提供您的操作系统、浏览器或运行环境信息。
       value: |
+        - Whalgebra 版本 (Version): [如 Web v3.1.4 / Windows v3.1.3]
         - 操作系统 (OS): [如 Windows 11 / macOS 14 / Ubuntu 22.04 / Android 14 / iOS 17]
         - 浏览器 (Browser): [如 Chrome 125, Firefox 126, Safari 17, Edge 125]
         - Node.js 版本 (若涉及本地开发/测试): [如 Node.js v20.x]

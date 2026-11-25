@@ -10,7 +10,7 @@
 ## 使用与本地启动
 
 - [在线计算器](https://double-cloth-studio.github.io/Whalgebra/)
-- 离线使用：下载仓库中的 `dist/Whalgebra.html`，用现代浏览器打开。
+- 离线使用：下载仓库中的 [Whalgebra.html](./dist/Whalgebra.html)，用现代浏览器打开。
 - 平台安装包：参见 [Releases](https://github.com/double-cloth-studio/Whalgebra/releases)。
 
 开发工具和测试需要 **Node.js 20+**。仓库没有 npm 依赖，无需先运行 `npm install`。

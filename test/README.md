@@ -14,13 +14,16 @@ node --test test/node/statistics.test.js
 
 专项测试包括：
 
+- `big_number.test.js`、`noise_propagation.test.js`：数值构造、除法舍入、指数边界、噪声传播及 `mid` 响应恢复。
+- `expression_compile.test.js`：复用逆波兰指令、数表只编译一次函数体及极小复数模长的舍入。
+- `pow.test.js`、`power_function.test.js`：负实数的有理幂、复数整数幂和倒数、近似对称四次多项式的实根。
 - `trigonometry.test.js`：36 / 220 位精度下的正负大角度（覆盖 `10^32` 至 `10^219` 中的代表值）、相位噪声判零、近似整周期及精确小角度。
 - `statistics.test.js`：全零因变量时的回归定义域、样本数量和参数唯一性。
 - `reverse_build.test.js`、`svg_compressor.test.js`、`server.test.js`：有效资源拆分、SVG 输出、目录清理边界和本地服务 API 约束。
 
-这批测试不直接验证 `WorkerTools.isReady` 的环境同步条件，也不验证实时预览的请求作废、子屏幕异步提交的重复执行与取消、浮层关闭顺序等界面行为；这些流程的人工检查见[界面与交互](../docs/ui_and_interaction.md#修改后的人工检查)。
+实时预览的请求作废、子屏幕提交的重复执行与取消、浮层关闭顺序等界面行为仍需浏览器人工检查，详见[界面与交互](../docs/ui_and_interaction.md#修改后的人工检查)。
 
-通过本地服务器打开 `dist/Whalgebra.html` 后，可在新加载的页面控制台执行以下命令。每项应显示「通过」。生命周期用例覆盖取消探测超时后立即提交计算，以及列表恢复时对已可见行执行 `nearest` 定位。用例注入重启、探测超时和采样失败，运行中会出现预期的重测错误日志。
+通过本地服务器打开 `dist/Whalgebra.html` 后，可在新加载的页面控制台执行以下命令。各项应通过。生命周期用例覆盖数表软取消后继续计算、取消探测超时后向新 Worker 派发任务、并发等待同一次重启及配置同步。虚拟列表用例覆盖恢复期间采用最新定位请求、`nearest` 保持已可见行的位置、重测失败后继续滚动及压缩滚动的负占位。注入重测失败时，控制台会出现预期的错误日志。
 
 ```js
 const {runLifecycleRegressions} = await import('../test/browser/lifecycle_regression.js');
@@ -31,6 +34,7 @@ console.table(await runLifecycleRegressions());
 
 ```text
 test/
+├── browser/lifecycle_regression.js # Worker 与虚拟列表回归
 ├── browser/test_logic.js  # JSON 用例执行与性能基准
 ├── cases/                # 测试清单和数据
 ├── node/                 # node:test 测试及 vm 辅助逻辑
@@ -145,6 +149,8 @@ case 文件可直接是数组；需要统一配置时，用对象包裹。推荐
 | 统计 | `[[1,2,3],[2,4,6]]` | `WorkerTools.statisticsCalc(...c.coeffs)` |
 
 数值结果通常是字符串，也可能包含 `error`、`null` 等业务哨兵。字段和边界说明见[分析工具文档](../docs/advanced_analysis_tools.md)。
+
+统计用例包含不同 x 量级下的精确线性关系、线性 R² 为零的二次曲线，以及负科学记数法系数的回归方程。检查回归结果时，同时核对模型字段、参数顺序和 `bestModel`。
 
 ## 维护步骤
 

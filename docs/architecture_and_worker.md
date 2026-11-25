@@ -43,7 +43,8 @@ console.log(r.result); // "1.4142136[toPolar]0.78539816"
 
 ## 超时、取消与恢复
 
-- `SyncWorker.exec(name, {args, transfer, timeout, cancellable})` 默认 `timeout: 0`，不设超时；`WorkerTools` 业务派发使用 60 秒超时，环境同步使用 10 秒。
+- `SyncWorker.exec(name, {args, transfer, timeout, cancellable})` 在发送任务时开始计时，默认 `timeout: 0`，不设超时。超时以 `TimeoutError` 拒绝该任务并发送协作式取消信号，迟到响应会被忽略。
+- `WorkerTools` 通常在初始化、重启和取消探测完成后派发任务，派发后使用 60 秒超时。首次启动或重启时，每次环境快照同步使用 10 秒超时。
 - `SyncWorker.cancel()` 拒绝可取消任务，并发送取消信号；同步数学运算运行期间无法处理消息，软取消本身不能立即停止它。
 - 发行版的 `WorkerTools.valueList()` 约每 16 毫秒在采样点之间让出事件循环，使 Worker 能接收取消消息并停止后续采样。单点计算阻塞时仍由宽限期保障恢复。
 - `await WorkerTools.cancelWorker()` 作废旧业务任务，包括尚未派发的任务。首次初始化期间只更新取消标识，环境同步继续进行。已有重启时，取消请求等待同一次重启完成，并传播重启错误。Worker 已就绪时，软取消已派发任务并在 150 毫秒宽限期内探测响应，超时则重启。取消后提交的新任务会等探测及可能触发的重启、环境同步完成后再派发。
@@ -65,4 +66,4 @@ try {
 
 更新 UI 时还需检查请求标识，丢弃旧请求返回的结果。`PrintManager` 分别用 `_currentRequestId` 和 `exeRequestId` 管理实时预览与正式计算；`cancelMode0Preview()` 同时作废已启动的预览并丢弃防抖队列，本身不取消 Worker。调用方负责取消或重启 Worker、复位计算状态，详见[界面与交互](./ui_and_interaction.md)。
 
-编辑区提交另由 `PageControlTools._inputSyncRequestId` 管理，语法检查返回后须核对原模式和子屏幕。取消或终止错误不应标记为语法错误；模式切换与 `cancelPrint()` 会作废当前提交。完整流程见[编辑区提交](./ui_and_interaction.md#编辑区提交到子屏幕)。
+编辑区提交另由 `PageControlTools._inputSyncRequestId` 管理，语法检查返回后须核对原模式和子屏幕。Worker 传回错误名称、消息和堆栈，提交逻辑通过 `error.name === 'ExpressionSyntaxError'` 识别语法错误。模式切换与 `cancelPrint()` 会作废当前提交。完整流程见[编辑区提交](./ui_and_interaction.md#编辑区提交到子屏幕)。
