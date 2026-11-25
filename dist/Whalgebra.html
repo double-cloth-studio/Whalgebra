@@ -2,7 +2,7 @@
 <html dir="ltr" lang="zh-CN">
 
 <head>
-    <!-- Whalgebra Version: v3.1.4 | Updated: 2026-11-24 -->
+    <!-- Whalgebra Version: v3.1.4 | Updated: 2026-11-25 -->
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0, user-scalable=yes" name="viewport"/>
     <title>Whalgebra</title>
@@ -2551,6 +2551,50 @@
                 }
 
                 /**
+                 * 在输入的工作精度下同时计算实数双曲正弦和双曲余弦。
+                 * @private
+                 * @param {BigNumber} x - 实数自变量。
+                 * @returns {[BigNumber, BigNumber]} 依次为 sinh(x) 和 cosh(x)。
+                 */
+                static _realSinhCosh(x) {
+                    const acc = x.acc;
+                    const one = new BigNumber(1n, {acc});
+                    const mag = BigNumber.getMag(x);
+                    // 由 |x| < 10^(mag+1) 可知，极小时平方修正低于工作精度，也无需构造可能下溢的 x²。
+                    if (2 * (mag + 1) <= -acc) {
+                        return [x, one];
+                    }
+
+                    if (mag < -1) {
+                        const square = MathPlus.realTimes(x, x);
+                        const minMag = mag - acc - 1;
+                        let sinh = x;
+                        let term = x;
+                        let i = 1;
+                        // 相邻项同号，每次至少缩小两个数量级，按 sinh 的相对精度停止。
+                        while (BigNumber.getMag(term) > minMag) {
+                            term = MathPlus.realDivide(
+                                MathPlus.realTimes(term, square),
+                                new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {acc})
+                            );
+                            sinh = MathPlus.realPlus(sinh, term);
+                            i++;
+                        }
+                        const cosh = MathPlus.sqrt(MathPlus.realPlus(one, MathPlus.realTimes(sinh, sinh))).re;
+                        return [sinh, cosh];
+                    }
+
+                    const negative = x.isNegative();
+                    const exp = MathPlus.exp(negative ? MathPlus.oppositeNumber(x) : x).re;
+                    const inverse = MathPlus.realDivide(one, exp);
+                    const half = new BigNumber(5n, {pow: -1, acc});
+                    const sinh = MathPlus.realTimes(half, MathPlus.realMinus(exp, inverse));
+                    const cosh = MathPlus.realTimes(half, MathPlus.realPlus(exp, inverse));
+
+                    return [negative ? MathPlus.oppositeNumber(sinh) : sinh, cosh];
+                }
+
+                /**
                  * 计算一个 BigNumber 或 ComplexNumber 的相反数。
                  *
                  * @param {BigNumber|ComplexNumber|string|number} x - 需要取反的值；`BigNumber` 返回同类型新实例，
@@ -3857,50 +3901,6 @@
                     // 按对数自身的噪声判零，保留接近 1 的合法底数产生的小对数。
                     const lnA = Public.zeroCorrect(MathPlus.ln(a));
                     return MathPlus.divide(MathPlus.ln(b), lnA);
-                }
-
-                /**
-                 * 在输入的工作精度下同时计算实数双曲正弦和双曲余弦。
-                 * @private
-                 * @param {BigNumber} x - 实数自变量。
-                 * @returns {[BigNumber, BigNumber]} 依次为 sinh(x) 和 cosh(x)。
-                 */
-                static _realSinhCosh(x) {
-                    const acc = x.acc;
-                    const one = new BigNumber(1n, {acc});
-                    const mag = BigNumber.getMag(x);
-                    // 由 |x| < 10^(mag+1) 可知，极小时平方修正低于工作精度，也无需构造可能下溢的 x²。
-                    if (2 * (mag + 1) <= -acc) {
-                        return [x, one];
-                    }
-
-                    if (mag < -1) {
-                        const square = MathPlus.realTimes(x, x);
-                        const minMag = mag - acc - 1;
-                        let sinh = x;
-                        let term = x;
-                        let i = 1;
-                        // 相邻项同号，每次至少缩小两个数量级，按 sinh 的相对精度停止。
-                        while (BigNumber.getMag(term) > minMag) {
-                            term = MathPlus.realDivide(
-                                MathPlus.realTimes(term, square),
-                                new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {acc})
-                            );
-                            sinh = MathPlus.realPlus(sinh, term);
-                            i++;
-                        }
-                        const cosh = MathPlus.sqrt(MathPlus.realPlus(one, MathPlus.realTimes(sinh, sinh))).re;
-                        return [sinh, cosh];
-                    }
-
-                    const negative = x.isNegative();
-                    const exp = MathPlus.exp(negative ? MathPlus.oppositeNumber(x) : x).re;
-                    const inverse = MathPlus.realDivide(one, exp);
-                    const half = new BigNumber(5n, {pow: -1, acc});
-                    const sinh = MathPlus.realTimes(half, MathPlus.realMinus(exp, inverse));
-                    const cosh = MathPlus.realTimes(half, MathPlus.realPlus(exp, inverse));
-
-                    return [negative ? MathPlus.oppositeNumber(sinh) : sinh, cosh];
                 }
 
                 /**

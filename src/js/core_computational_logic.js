@@ -1080,6 +1080,50 @@
         }
 
         /**
+         * 在输入的工作精度下同时计算实数双曲正弦和双曲余弦。
+         * @private
+         * @param {BigNumber} x - 实数自变量。
+         * @returns {[BigNumber, BigNumber]} 依次为 sinh(x) 和 cosh(x)。
+         */
+        static _realSinhCosh(x) {
+            const acc = x.acc;
+            const one = new BigNumber(1n, {acc});
+            const mag = BigNumber.getMag(x);
+            // 由 |x| < 10^(mag+1) 可知，极小时平方修正低于工作精度，也无需构造可能下溢的 x²。
+            if (2 * (mag + 1) <= -acc) {
+                return [x, one];
+            }
+
+            if (mag < -1) {
+                const square = MathPlus.realTimes(x, x);
+                const minMag = mag - acc - 1;
+                let sinh = x;
+                let term = x;
+                let i = 1;
+                // 相邻项同号，每次至少缩小两个数量级，按 sinh 的相对精度停止。
+                while (BigNumber.getMag(term) > minMag) {
+                    term = MathPlus.realDivide(
+                        MathPlus.realTimes(term, square),
+                        new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {acc})
+                    );
+                    sinh = MathPlus.realPlus(sinh, term);
+                    i++;
+                }
+                const cosh = MathPlus.sqrt(MathPlus.realPlus(one, MathPlus.realTimes(sinh, sinh))).re;
+                return [sinh, cosh];
+            }
+
+            const negative = x.isNegative();
+            const exp = MathPlus.exp(negative ? MathPlus.oppositeNumber(x) : x).re;
+            const inverse = MathPlus.realDivide(one, exp);
+            const half = new BigNumber(5n, {pow: -1, acc});
+            const sinh = MathPlus.realTimes(half, MathPlus.realMinus(exp, inverse));
+            const cosh = MathPlus.realTimes(half, MathPlus.realPlus(exp, inverse));
+
+            return [negative ? MathPlus.oppositeNumber(sinh) : sinh, cosh];
+        }
+
+        /**
          * 计算一个 BigNumber 或 ComplexNumber 的相反数。
          *
          * @param {BigNumber|ComplexNumber|string|number} x - 需要取反的值；`BigNumber` 返回同类型新实例，
@@ -2389,49 +2433,6 @@
         }
 
         /**
-         * 在输入的工作精度下同时计算实数双曲正弦和双曲余弦。
-         * @private
-         * @param {BigNumber} x - 实数自变量。
-         * @returns {[BigNumber, BigNumber]} 依次为 sinh(x) 和 cosh(x)。
-         */
-        static _realSinhCosh(x) {
-            const acc = x.acc;
-            const one = new BigNumber(1n, {acc});
-            const mag = BigNumber.getMag(x);
-            // 由 |x| < 10^(mag+1) 可知，极小时平方修正低于工作精度，也无需构造可能下溢的 x²。
-            if (2 * (mag + 1) <= -acc) {
-                return [x, one];
-            }
-
-            if (mag < -1) {
-                const square = MathPlus.realTimes(x, x);
-                const minMag = mag - acc - 1;
-                let sinh = x;
-                let term = x;
-                let i = 1;
-                // 相邻项同号，每次至少缩小两个数量级，按 sinh 的相对精度停止。
-                while (BigNumber.getMag(term) > minMag) {
-                    term = MathPlus.realDivide(
-                        MathPlus.realTimes(term, square),
-                        new BigNumber(BigInt(2 * i) * BigInt(2 * i + 1), {acc})
-                    );
-                    sinh = MathPlus.realPlus(sinh, term);
-                    i++;
-                }
-                const cosh = MathPlus.sqrt(MathPlus.realPlus(one, MathPlus.realTimes(sinh, sinh))).re;
-                return [sinh, cosh];
-            }
-
-            const negative = x.isNegative();
-            const exp = MathPlus.exp(negative ? MathPlus.oppositeNumber(x) : x).re;
-            const inverse = MathPlus.realDivide(one, exp);
-            const half = new BigNumber(5n, {pow: -1, acc});
-            const sinh = MathPlus.realTimes(half, MathPlus.realMinus(exp, inverse));
-            const cosh = MathPlus.realTimes(half, MathPlus.realPlus(exp, inverse));
-            return [negative ? MathPlus.oppositeNumber(sinh) : sinh, cosh];
-        }
-
-        /**
          * 计算一个数的正弦。
          * - 该方法能够处理实数和复数输入，并返回主值。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 以弧度表示的实数或复数角；
@@ -3070,10 +3071,20 @@
             });
 
             // 先在正半平面计算，再由 Γ(z)Γ(1-z)=π/sin(πz) 反射回原参数。
+            // Re(z) ∈ [-0.5, 0) 时用 z! = (z + 1)! / (z + 1) 平移到 [0.5, 1)，
+            // 既避开近零处的反射与复数 sin 小参相消，也省去一次三角函数计算；
+            // Re(z) < -0.5 时再由 Γ(z)Γ(1-z) = π/sin(πz) 反射回原参数。
             let reflection = false;
+            let shiftedUp = false;
             if (calcNum.re.isNegative()) {
-                calcNum = MathPlus.oppositeNumber(calcNum);
-                reflection = true;
+                const half = new BigNumber([-1, 5n, calcAcc]);
+                if (!MathPlus.realPlus(calcNum.re, half).isNegative()) {
+                    calcNum = MathPlus.plus(calcNum, [0, 1n, calcAcc]);
+                    shiftedUp = true;
+                } else {
+                    calcNum = MathPlus.oppositeNumber(calcNum);
+                    reflection = true;
+                }
             }
 
             // 仅 Lanczos 级数求和保留 calcAcc，抵抗各项正负相消。
@@ -3111,7 +3122,10 @@
             );
 
             // 反射公式：对实部先按最近整数 k 归约，再用 workAcc 计算 sin(π(r + bi))，避免 440 位归约和极点相消。
-            if (reflection) {
+            if (shiftedUp) {
+                // workNum 已是 (input + 1) 在 workAcc 下的值，且 Re(workNum) ∈ [0.5, 1)，除法数值稳定。
+                result = MathPlus.divide(result, workNum);
+            } else if (reflection) {
                 const workPi = new BigNumber(CalcConfig.constants.pi, {acc: workAcc});
                 const workInput = new ComplexNumber(input, {acc: workAcc});
                 const numerator = MathPlus.times(workInput, workPi);
@@ -3152,7 +3166,7 @@
         /**
          * 计算 x 的伽玛函数 (Γ(x))。
          * - 伽玛函数是阶乘函数向复数和实数的推广，并返回主值。
-         * - 该实现利用了核心关系 Γ(x) = (x-1)!。
+         * - 一般使用 Γ(x) = (x-1)!，接近零的非零参数使用 Γ(x) = (x+1)! / (x+1) / x。
          * - 它将计算委托给库中已经实现的、能够处理复数和非整数的 `fact` 方法。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 伽玛函数参数；允许一般复数，
          *   但零和负整数是极点。实部较小时通过反射/递推移入 Lanczos 近似的稳定区域。
@@ -3162,6 +3176,16 @@
         static gamma(x) {
             const input = new ComplexNumber(x);
             const acc = input.acc;
+
+            // 接近零时改用 Γ(x) = (x+1)! / (x+1) / x，既避免 x - 1 舍入到极点 -1，
+            // 又保证 Re(x + 1) > 0.9，绕过 fact 的反射分支及复数 sin 的小参相消。
+            if (!input.isZero() && Math.max(BigNumber.getMag(input.re), BigNumber.getMag(input.im)) <= -2) {
+                const xPlus1 = MathPlus.plus(input, [0, 1n, acc]);
+                return MathPlus.divide(
+                    MathPlus.divide(MathPlus.fact(xPlus1), xPlus1),
+                    input
+                );
+            }
 
             return MathPlus.fact(MathPlus.plus(input, [0, -1n, acc]));
         }
@@ -4951,17 +4975,21 @@
                 return [mid1];
             }
 
-            const roots = [
-                MathPlus.plus(mid1, mid2),
-                MathPlus.minus(mid1, mid2)
-            ];
             if (deltaSign > 0n) {
-                return PowerFunctionTools._sort(roots);
+                // 先同号相加得到绝对值较大的根，再按根的乘积 c/a 求另一个根。
+                const largeRoot = mid1.re.isNegative() === mid2.re.isNegative()
+                                  ? MathPlus.plus(mid1, mid2)
+                                  : MathPlus.minus(mid1, mid2);
+                const smallRoot = MathPlus.divide(c, MathPlus.times(a, largeRoot));
+                return PowerFunctionTools._sort([largeRoot, smallRoot]);
             }
 
             // 末尾的 null 标记一对共轭复根。
-            roots.push(null);
-            return roots;
+            return [
+                MathPlus.plus(mid1, mid2),
+                MathPlus.minus(mid1, mid2),
+                null
+            ];
         }
 
         /**
