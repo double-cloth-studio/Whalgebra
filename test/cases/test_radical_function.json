@@ -197,7 +197,7 @@
         0
       ],
       "expected": {
-        "error": "[radicalFunctionTools] n can only be a positive integer."
+        "error": "[RadicalFunctionTools] n can only be a positive integer."
       }
     },
     {
@@ -209,7 +209,7 @@
         -2
       ],
       "expected": {
-        "error": "[radicalFunctionTools] n can only be a positive integer."
+        "error": "[RadicalFunctionTools] n can only be a positive integer."
       }
     },
     {
@@ -221,7 +221,7 @@
         2.5
       ],
       "expected": {
-        "error": "[radicalFunctionTools] n can only be a positive integer."
+        "error": "[RadicalFunctionTools] n can only be a positive integer."
       }
     },
     {
@@ -233,7 +233,7 @@
         "2+[i]"
       ],
       "expected": {
-        "error": "[radicalFunctionTools] n can only be a positive integer."
+        "error": "[RadicalFunctionTools] n can only be a positive integer."
       }
     },
     {
@@ -311,7 +311,7 @@
         "0"
       ],
       "expected": {
-        "error": "[radicalFunctionTools] n can only be a positive integer."
+        "error": "[RadicalFunctionTools] n can only be a positive integer."
       }
     }
   ]

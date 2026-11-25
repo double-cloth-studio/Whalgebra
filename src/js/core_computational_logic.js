@@ -2771,6 +2771,7 @@
                     throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: sin. Input: ${input.toString()}`);
                 }
 
+                result = MathPlus._withNoise(result, Math.max(BigNumber.getMag(mid), mid.noiseMag));
                 // 反复应用三倍角公式 sin(3x) = 3sin(x) - 4sin³(x) 来还原结果
                 for (; divideBy3 !== 0; divideBy3--) {
                     const squareOfResult = MathPlus.realTimes(result, result);
@@ -5547,51 +5548,44 @@
                 const z1 = MathPlus.cbrt(MathPlus.plus(mid1, mid2));
                 const z2 = MathPlus.cbrt(MathPlus.minus(mid1, mid2));
                 const midZ = MathPlus.plus(z1, z2);
-                const z = MathPlus.sqrt(MathPlus.plus(
-                    MathPlus.minus(MathPlus.times(D, D), MathPlus.times(A, 3)),
-                    MathPlus.minus(MathPlus.times(midZ, midZ), MathPlus.times(D, midZ))
+                // 仅对舍入后为负的被开方数执行判零，保留接近零的正值。
+                const correctNonnegative = (value, ...refs) =>
+                    value.re.isNegative() ? Public.zeroCorrect(value, ...refs) : value;
+                const termZ1 = MathPlus.times(D, D);
+                const termZ2 = MathPlus.times(A, 3);
+                const termZ3 = MathPlus.times(midZ, midZ);
+                const termZ4 = MathPlus.times(D, midZ);
+                const z = MathPlus.sqrt(correctNonnegative(
+                    MathPlus.plus(MathPlus.minus(termZ1, termZ2), MathPlus.minus(termZ3, termZ4)),
+                    termZ1, termZ2, termZ3, termZ4
                 ));
                 const mid4 = MathPlus.divide(b, MathPlus.times(a, -4));
                 const mid5 = MathPlus.divide(
                     MathPlus.times(
                         MathPlus.sgn(E),
                         MathPlus.sqrt(MathPlus.divide(
-                            MathPlus.plus(D, midZ),
+                            correctNonnegative(MathPlus.plus(D, midZ), D, midZ),
                             3
                         ))
                     ),
                     MathPlus.times(a, 4)
                 );
+                const termReal = MathPlus.times(MathPlus.plus(z, D), 2);
                 const mid6 = MathPlus.divide(
-                    MathPlus.sqrt(
-                        MathPlus.divide(
-                            MathPlus.minus(
-                                MathPlus.times(
-                                    MathPlus.plus(z, D),
-                                    2
-                                ),
-                                midZ
-                            ),
-                            3
-                        )
-                    ),
+                    MathPlus.sqrt(MathPlus.divide(
+                        correctNonnegative(MathPlus.minus(termReal, midZ), termReal, midZ),
+                        3
+                    )),
                     MathPlus.times(a, 4)
                 );
                 const root1 = MathPlus.plus(MathPlus.plus(mid4, mid5), mid6);
                 const root2 = MathPlus.minus(MathPlus.plus(mid4, mid5), mid6);
+                const termImaginary = MathPlus.times(MathPlus.minus(z, D), 2);
                 const im = MathPlus.divide(
-                    MathPlus.sqrt(
-                        MathPlus.divide(
-                            MathPlus.plus(
-                                MathPlus.times(
-                                    MathPlus.minus(z, D),
-                                    2
-                                ),
-                                midZ
-                            ),
-                            3
-                        )
-                    ),
+                    MathPlus.sqrt(MathPlus.divide(
+                        correctNonnegative(MathPlus.plus(termImaginary, midZ), termImaginary, midZ),
+                        3
+                    )),
                     MathPlus.times(a, 4)
                 ).re;
                 const re = MathPlus.minus(mid4, mid5).re;
@@ -6005,7 +5999,7 @@
             n = Public.integerCorrect(Public.zeroCorrect(MathPlus.calc(n)[0]));
 
             if (!n.onlyReal || n.re.power < 0 || !n.re.isPositive()) {
-                throw new Error('[radicalFunctionTools] n can only be a positive integer.');
+                throw new Error('[RadicalFunctionTools] n can only be a positive integer.');
             }
             if (z.isZero()) {
                 return {

@@ -4397,7 +4397,6 @@
 
             // 标准计算模式还需取消实时预览及其可能仍在运行的 Worker。
             if (PageConfig.currentMode === '0') {
-                HtmlTools.getHtml('#screen_0_display').classList.add('NoDisplay');
                 PrintManager.cancelMode0Preview();
                 if (PrintManager.mode0ScreenInCalc) {
                     WorkerTools.restart().catch((err) => {
@@ -5086,14 +5085,14 @@
         /**
          * 渲染指定回归模型的参数与决定系数。
          *
-         * @param {RegressionModelResult|'error'} RaList - 当前所选回归模型的完整结果，或字符串 `error`；
+         * @param {RegressionModelResult|'error'|null|undefined} RaList - 当前所选回归模型的结果，缺失时显示错误；
          *   参数数组顺序由模型定义，方法据此生成系数行和导出状态。
          * @returns {void}
          */
         static setMode1RaResults(RaList) {
             const content0 = HtmlTools.getHtml('#print_content_1_content_0');
 
-            if ([RaList, RaList.regressionEquation].includes('error')) {
+            if (RaList == null || RaList === 'error' || RaList.regressionEquation === 'error') {
                 const element = document.createElement('div');
                 HtmlTools.appendDOMs(element, ['_error_']);
                 content0.replaceChildren(element);

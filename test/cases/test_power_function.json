@@ -1581,7 +1581,7 @@
         "outputAccuracy": 16
       },
       "expected": {
-        "equation": "-2[x]^2+(-2E+120)[x]-2",
+        "equation": "-2[x]^2-(2E+120)[x]-2",
         "range": [
           "-inf",
           "5E+239"

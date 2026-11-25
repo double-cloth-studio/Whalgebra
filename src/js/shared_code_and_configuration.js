@@ -20,7 +20,7 @@
         // 仅供解析器使用，不能由用户直接输入。
         static _private_func = ['A', 'N', '&'];
         // 在 HTML 中以单个类名表示的词元。
-        static _htmlClass_len_one_func = ['[gamma]', '[toPolar]', '[degree]', '[cursor]', '[cdot]'];
+        static _htmlClass_len_one_func = ['[gamma]', '[toPolar]', '[degree]', '[cursor]', '[cdot]', '[syntax_error]'];
 
         static _baseNumbers = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.'];
         static _codeNumbers = ['[pi]', '[e]', '[i]', '[x]'];
@@ -204,7 +204,7 @@
         static zeroCorrect(x, ...refs) {
             const input = x instanceof ComplexNumber ? x : new ComplexNumber(x);
             const acc = input.acc;
-            const tol = Math.max(Math.floor(0.9 * acc), acc - 8);
+            const tol = Math.max(1, Math.floor(0.9 * acc), acc - 8);
 
             /**
              * 清理已落入累计噪声底限的分量，容差不超过当前精度的保护位。
@@ -360,7 +360,8 @@
             for (let i = strList.length - 1; i >= 0; i--) {
                 const currentCoefficient = strList[i];
                 if (currentCoefficient !== '0') {
-                    if (firstNoneZero && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
+                    const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(currentCoefficient);
+                    if (firstNoneZero && !negativeScientific && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
                         result += '+';
                     }
                     firstNoneZero = true;
@@ -370,12 +371,14 @@
                             result += asX;
                         } else if (currentCoefficient === '-1') {
                             result += `-${asX}`;
+                        } else if (negativeScientific) {
+                            result += `-(${currentCoefficient.slice(1)})${asX}`;
                         } else if (currentCoefficient.includes('E')) {
                             result += `(${currentCoefficient})${asX}`;
                         } else {
                             result += `${currentCoefficient}${asX}`;
                         }
-                    } else if (!currentCoefficient.includes('E')) {
+                    } else if (negativeScientific || !currentCoefficient.includes('E')) {
                         result += currentCoefficient;
                     } else {
                         result += strList.length === 1 ? currentCoefficient : `(${currentCoefficient})`;
@@ -406,6 +409,7 @@
          * @param {string} [asX='[x]'] - 插入表达式的变量词元或子表达式；格式化 `lnFunc`、
          *   `expFunc` 等模型时也用它替换自变量，因此调用方需自行提供必要的括号或内部词元。
          * @returns {string} 数学表达式；输入错误时返回 `error`。
+         * @throws {Error} 模型无效时抛出。
          */
         static funcToString(list, mode, asX = '[x]') {
             if (list.includes('error')) {
@@ -477,12 +481,15 @@
                     }
                     result += b.includes('E') ? `(${b})/${asX}` : `${b}/${asX}`;
                     if (a !== '0') {
-                        if (a[0] !== '-' || a.includes('E')) {
+                        const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(a);
+                        if (!negativeScientific && (a[0] !== '-' || a.includes('E'))) {
                             result += '+';
                         }
-                        result += a.includes('E') ? `(${a})` : a;
+                        result += a.includes('E') && !negativeScientific ? `(${a})` : a;
                     }
                     return result;
+                default:
+                    throw new Error(`[Public] Input error: Invalid mode '${mode}'.`);
             }
         }
 
@@ -644,7 +651,7 @@
                 }
 
                 // 从最长候选开始缩短，匹配函数名和常量。
-                const temp = str.slice(i, i + TokenConfig.MAX_TOKEN_LENGTH).match(/^[a-zA-Z\[\]]*/)[0];
+                const temp = str.slice(i, i + TokenConfig.MAX_TOKEN_LENGTH).match(/^[a-zA-Z0-9_\[\]]*/)[0];
                 let matched = false;
                 for (let len = temp.length; len > 0; len--) {
                     const subTemp = temp.slice(0, len);
@@ -1281,7 +1288,7 @@
          *
          * @param {number|undefined} acc - 计算使用的有效数字位数
          *   必须是 1 到 `_MAX_GLOBAL_CALC_ACCURACY`（含）之间的整数；`undefined` 重置为上限。
-         *   成功设置后会同步 Worker，且会重新解析随精度变化的常量与 Lanczos 系数。
+         *   成功设置后会同步 Worker，并在需要时将绝对输出精度限制到计算精度。
          * @returns {void}
          * @throws {Error} 精度无效时抛出。
          */

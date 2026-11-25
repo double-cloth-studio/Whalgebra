@@ -31,7 +31,7 @@
                 // 仅供解析器使用，不能由用户直接输入。
                 static _private_func = ['A', 'N', '&'];
                 // 在 HTML 中以单个类名表示的词元。
-                static _htmlClass_len_one_func = ['[gamma]', '[toPolar]', '[degree]', '[cursor]', '[cdot]'];
+                static _htmlClass_len_one_func = ['[gamma]', '[toPolar]', '[degree]', '[cursor]', '[cdot]', '[syntax_error]'];
 
                 static _baseNumbers = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.'];
                 static _codeNumbers = ['[pi]', '[e]', '[i]', '[x]'];
@@ -215,7 +215,7 @@
                 static zeroCorrect(x, ...refs) {
                     const input = x instanceof ComplexNumber ? x : new ComplexNumber(x);
                     const acc = input.acc;
-                    const tol = Math.max(Math.floor(0.9 * acc), acc - 8);
+                    const tol = Math.max(1, Math.floor(0.9 * acc), acc - 8);
 
                     /**
                      * 清理已落入累计噪声底限的分量，容差不超过当前精度的保护位。
@@ -371,7 +371,8 @@
                     for (let i = strList.length - 1; i >= 0; i--) {
                         const currentCoefficient = strList[i];
                         if (currentCoefficient !== '0') {
-                            if (firstNoneZero && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
+                            const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(currentCoefficient);
+                            if (firstNoneZero && !negativeScientific && (currentCoefficient[0] !== '-' || currentCoefficient.includes('E'))) {
                                 result += '+';
                             }
                             firstNoneZero = true;
@@ -381,12 +382,14 @@
                                     result += asX;
                                 } else if (currentCoefficient === '-1') {
                                     result += `-${asX}`;
+                                } else if (negativeScientific) {
+                                    result += `-(${currentCoefficient.slice(1)})${asX}`;
                                 } else if (currentCoefficient.includes('E')) {
                                     result += `(${currentCoefficient})${asX}`;
                                 } else {
                                     result += `${currentCoefficient}${asX}`;
                                 }
-                            } else if (!currentCoefficient.includes('E')) {
+                            } else if (negativeScientific || !currentCoefficient.includes('E')) {
                                 result += currentCoefficient;
                             } else {
                                 result += strList.length === 1 ? currentCoefficient : `(${currentCoefficient})`;
@@ -417,6 +420,7 @@
                  * @param {string} [asX='[x]'] - 插入表达式的变量词元或子表达式；格式化 `lnFunc`、
                  *   `expFunc` 等模型时也用它替换自变量，因此调用方需自行提供必要的括号或内部词元。
                  * @returns {string} 数学表达式；输入错误时返回 `error`。
+                 * @throws {Error} 模型无效时抛出。
                  */
                 static funcToString(list, mode, asX = '[x]') {
                     if (list.includes('error')) {
@@ -488,12 +492,15 @@
                             }
                             result += b.includes('E') ? `(${b})/${asX}` : `${b}/${asX}`;
                             if (a !== '0') {
-                                if (a[0] !== '-' || a.includes('E')) {
+                                const negativeScientific = /^-\d+(?:\.\d+)?E[+-]\d+$/.test(a);
+                                if (!negativeScientific && (a[0] !== '-' || a.includes('E'))) {
                                     result += '+';
                                 }
-                                result += a.includes('E') ? `(${a})` : a;
+                                result += a.includes('E') && !negativeScientific ? `(${a})` : a;
                             }
                             return result;
+                        default:
+                            throw new Error(`[Public] Input error: Invalid mode '${mode}'.`);
                     }
                 }
 
@@ -655,7 +662,7 @@
                         }
 
                         // 从最长候选开始缩短，匹配函数名和常量。
-                        const temp = str.slice(i, i + TokenConfig.MAX_TOKEN_LENGTH).match(/^[a-zA-Z\[\]]*/)[0];
+                        const temp = str.slice(i, i + TokenConfig.MAX_TOKEN_LENGTH).match(/^[a-zA-Z0-9_\[\]]*/)[0];
                         let matched = false;
                         for (let len = temp.length; len > 0; len--) {
                             const subTemp = temp.slice(0, len);
@@ -1292,7 +1299,7 @@
                  *
                  * @param {number|undefined} acc - 计算使用的有效数字位数
                  *   必须是 1 到 `_MAX_GLOBAL_CALC_ACCURACY`（含）之间的整数；`undefined` 重置为上限。
-                 *   成功设置后会同步 Worker，且会重新解析随精度变化的常量与 Lanczos 系数。
+                 *   成功设置后会同步 Worker，并在需要时将绝对输出精度限制到计算精度。
                  * @returns {void}
                  * @throws {Error} 精度无效时抛出。
                  */
@@ -3698,7 +3705,7 @@
 
                         // 原生 number 无法保留 2/3 等分数的精确值，按双精度的有效位数检查。
                         const noiseMag = typeof b === 'number' ? Math.max(absB.noiseMag, BigNumber.getMag(absB) - 15) :
-                            absB.noiseMag;
+                                         absB.noiseMag;
                         const fraction = oddDenominatorFraction(absB, noiseMag);
                         if (fraction) {
                             const workAcc = resultAcc + 10;
@@ -3747,7 +3754,7 @@
                                 im.noiseMag === -Infinity && reB.noiseMag === -Infinity) {
                                 // ±i 的整数幂以 4 为周期，无需展开超大指数。
                                 const residue = reB.power >= 2 ? 0n :
-                                    (reB.mantissa * (reB.power === 0 ? 1n : 10n)) & 3n;
+                                                (reB.mantissa * (reB.power === 0 ? 1n : 10n)) & 3n;
                                 return fastPow(inputA, residue, resultAcc);
                             }
 
@@ -3755,7 +3762,7 @@
                             const mag = Math.max(BigNumber.getMag(inputA.re), BigNumber.getMag(im));
                             // 缩放后估算 log10|a|，避免对原底数直接平方溢出。
                             const scaledLog = (part) => part.isZero() ? -Infinity :
-                                _estimateLog10BigInt(part.isNegative() ? -part.mantissa : part.mantissa) + (part.power - mag);
+                                                        _estimateLog10BigInt(part.isNegative() ? -part.mantissa : part.mantissa) + (part.power - mag);
                             const scaledRe = 10 ** scaledLog(inputA.re);
                             const scaledIm = 10 ** scaledLog(im);
                             const log10Norm = mag + Math.log10(Math.hypot(scaledRe, scaledIm));
@@ -3769,18 +3776,18 @@
                                     {pow: major.power, acc: precision});
                                 const one = new BigNumber(1n, {acc: precision});
                                 const scaledMinor = Math.abs(minor.power) <= Number.MAX_SAFE_INTEGER / 2
-                                    ? new BigNumber(minor, {acc: precision})
-                                    : new BigNumber(0n, {acc: precision});
+                                                    ? new BigNumber(minor, {acc: precision})
+                                                    : new BigNumber(0n, {acc: precision});
                                 const delta = MathPlus.realPlus(
                                     MathPlus.realTimes(MathPlus.realMinus(absMajor, one), MathPlus.realPlus(absMajor, one)),
                                     MathPlus.realTimes(scaledMinor, scaledMinor)
                                 );
                                 normGrows = delta.isPositive();
                                 const log10Delta = delta.isZero() ? -Infinity :
-                                    _estimateLog10BigInt(delta.isNegative() ? -delta.mantissa : delta.mantissa) +
-                                    delta.power;
+                                                   _estimateLog10BigInt(delta.isNegative() ? -delta.mantissa : delta.mantissa) +
+                                                       delta.power;
                                 log10AbsLog = log10Delta < -10 ? log10Delta - Math.log10(2 * Math.LN10) :
-                                    Math.log10(Math.abs(Math.log1p((normGrows ? 1 : -1) * 10 ** log10Delta)) / (2 * Math.LN10));
+                                              Math.log10(Math.abs(Math.log1p((normGrows ? 1 : -1) * 10 ** log10Delta)) / (2 * Math.LN10));
                             }
 
                             const sizeError = '[MathPlus] mathematical error: Result of power is too large to compute safely.';
@@ -4384,6 +4391,7 @@
                             throw new Error(`[MathPlus] mathematical error: Unreliable result, error source: sin. Input: ${input.toString()}`);
                         }
 
+                        result = MathPlus._withNoise(result, Math.max(BigNumber.getMag(mid), mid.noiseMag));
                         // 反复应用三倍角公式 sin(3x) = 3sin(x) - 4sin³(x) 来还原结果
                         for (; divideBy3 !== 0; divideBy3--) {
                             const squareOfResult = MathPlus.realTimes(result, result);
@@ -7161,51 +7169,45 @@
                         const z1 = MathPlus.cbrt(MathPlus.plus(mid1, mid2));
                         const z2 = MathPlus.cbrt(MathPlus.minus(mid1, mid2));
                         const midZ = MathPlus.plus(z1, z2);
-                        const z = MathPlus.sqrt(MathPlus.plus(
-                            MathPlus.minus(MathPlus.times(D, D), MathPlus.times(A, 3)),
-                            MathPlus.minus(MathPlus.times(midZ, midZ), MathPlus.times(D, midZ))
+                        // 仅对舍入后为负的被开方数执行判零，保留接近零的正值。
+                        const correctNonnegative = (value, ...refs) =>
+                            value.re.isNegative() ? Public.zeroCorrect(value, ...refs) : value;
+
+                        const termZ1 = MathPlus.times(D, D);
+                        const termZ2 = MathPlus.times(A, 3);
+                        const termZ3 = MathPlus.times(midZ, midZ);
+                        const termZ4 = MathPlus.times(D, midZ);
+                        const z = MathPlus.sqrt(correctNonnegative(
+                            MathPlus.plus(MathPlus.minus(termZ1, termZ2), MathPlus.minus(termZ3, termZ4)),
+                            termZ1, termZ2, termZ3, termZ4
                         ));
                         const mid4 = MathPlus.divide(b, MathPlus.times(a, -4));
                         const mid5 = MathPlus.divide(
                             MathPlus.times(
                                 MathPlus.sgn(E),
                                 MathPlus.sqrt(MathPlus.divide(
-                                    MathPlus.plus(D, midZ),
+                                    correctNonnegative(MathPlus.plus(D, midZ), D, midZ),
                                     3
                                 ))
                             ),
                             MathPlus.times(a, 4)
                         );
+                        const termReal = MathPlus.times(MathPlus.plus(z, D), 2);
                         const mid6 = MathPlus.divide(
-                            MathPlus.sqrt(
-                                MathPlus.divide(
-                                    MathPlus.minus(
-                                        MathPlus.times(
-                                            MathPlus.plus(z, D),
-                                            2
-                                        ),
-                                        midZ
-                                    ),
-                                    3
-                                )
-                            ),
+                            MathPlus.sqrt(MathPlus.divide(
+                                correctNonnegative(MathPlus.minus(termReal, midZ), termReal, midZ),
+                                3
+                            )),
                             MathPlus.times(a, 4)
                         );
                         const root1 = MathPlus.plus(MathPlus.plus(mid4, mid5), mid6);
                         const root2 = MathPlus.minus(MathPlus.plus(mid4, mid5), mid6);
+                        const termImaginary = MathPlus.times(MathPlus.minus(z, D), 2);
                         const im = MathPlus.divide(
-                            MathPlus.sqrt(
-                                MathPlus.divide(
-                                    MathPlus.plus(
-                                        MathPlus.times(
-                                            MathPlus.minus(z, D),
-                                            2
-                                        ),
-                                        midZ
-                                    ),
-                                    3
-                                )
-                            ),
+                            MathPlus.sqrt(MathPlus.divide(
+                                correctNonnegative(MathPlus.plus(termImaginary, midZ), termImaginary, midZ),
+                                3
+                            )),
                             MathPlus.times(a, 4)
                         ).re;
                         const re = MathPlus.minus(mid4, mid5).re;
@@ -7619,7 +7621,7 @@
                     n = Public.integerCorrect(Public.zeroCorrect(MathPlus.calc(n)[0]));
 
                     if (!n.onlyReal || n.re.power < 0 || !n.re.isPositive()) {
-                        throw new Error('[radicalFunctionTools] n can only be a positive integer.');
+                        throw new Error('[RadicalFunctionTools] n can only be a positive integer.');
                     }
                     if (z.isZero()) {
                         return {
@@ -8419,7 +8421,7 @@
                 /**
                  * 按 ID 取消单个任务。
                  *
-                 * @param {bigint} taskId - `_pendingTasks` 中的精确任务键；未知或已经完成的 ID 会被忽略，
+                 * @param {bigint} taskId - `_taskQueue` 中的精确任务键；未知或已经完成的 ID 会被忽略，
                  *   避免重复拒绝 Promise。
                  * @param {string} [errorName='CancellationError'] - 创建拒绝错误时写入 `Error.name` 的稳定名称；
                  *   超时调用使用 `TimeoutError`，主动取消使用默认名称，便于调用方分类处理。
@@ -13482,7 +13484,6 @@
 
                     // 标准计算模式还需取消实时预览及其可能仍在运行的 Worker。
                     if (PageConfig.currentMode === '0') {
-                        HtmlTools.getHtml('#screen_0_display').classList.add('NoDisplay');
                         PrintManager.cancelMode0Preview();
                         if (PrintManager.mode0ScreenInCalc) {
                             WorkerTools.restart().catch((err) => {
@@ -14166,14 +14167,14 @@
                 /**
                  * 渲染指定回归模型的参数与决定系数。
                  *
-                 * @param {RegressionModelResult|'error'} RaList - 当前所选回归模型的完整结果，或字符串 `error`；
+                 * @param {RegressionModelResult|'error'|null|undefined} RaList - 当前所选回归模型的结果，缺失时显示错误；
                  *   参数数组顺序由模型定义，方法据此生成系数行和导出状态。
                  * @returns {void}
                  */
                 static setMode1RaResults(RaList) {
                     const content0 = HtmlTools.getHtml('#print_content_1_content_0');
 
-                    if ([RaList, RaList.regressionEquation].includes('error')) {
+                    if (RaList == null || RaList === 'error' || RaList.regressionEquation === 'error') {
                         const element = document.createElement('div');
                         HtmlTools.appendDOMs(element, ['_error_']);
                         content0.replaceChildren(element);
@@ -16069,9 +16070,11 @@
                     }
 
                     if (document.fullscreenElement) {
-                        document.exitFullscreen?.().catch(() => {});
+                        document.exitFullscreen?.().catch(() => {
+                        });
                     } else {
-                        document.documentElement.requestFullscreen?.().catch(() => {});
+                        document.documentElement.requestFullscreen?.().catch(() => {
+                        });
                     }
                     return;
                 }

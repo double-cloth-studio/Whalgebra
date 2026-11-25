@@ -580,7 +580,7 @@
                 /**
                  * 按 ID 取消单个任务。
                  *
-                 * @param {bigint} taskId - `_pendingTasks` 中的精确任务键；未知或已经完成的 ID 会被忽略，
+                 * @param {bigint} taskId - `_taskQueue` 中的精确任务键；未知或已经完成的 ID 会被忽略，
                  *   避免重复拒绝 Promise。
                  * @param {string} [errorName='CancellationError'] - 创建拒绝错误时写入 `Error.name` 的稳定名称；
                  *   超时调用使用 `TimeoutError`，主动取消使用默认名称，便于调用方分类处理。

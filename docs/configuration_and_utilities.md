@@ -90,7 +90,7 @@ console.log(info.needKh);        // true
 | `zeroCorrect(x, ...refs)` | 按噪声、分量和可选参考尺度归零，返回复数对象 |
 | `integerCorrect(x)` | 修正精度范围内接近整数的结果 |
 | `idealizationToString(x, options)` | 按输出精度归整并格式化，分析工具和显示层使用 |
-| `funcToString(list, mode, asX)` | 将系数还原为表达式，具体顺序取决于 mode |
+| `funcToString(list, mode, asX)` | 将系数还原为表达式，具体顺序取决于 mode。非法模式抛出错误 |
 
 误差归整用于处理有限精度残差，不代表任意小数都应归零。调用时保留数值对象的精度与噪声信息，避免先转原生 Number 再转换回来。
 
