@@ -3816,7 +3816,7 @@
         }
 
         /**
-         * 使用调度场算法解析并计算高精度实数或复数表达式。
+         * 使用 Pratt 解析器编译并计算高精度实数或复数表达式。
          *
          * @param {string|number|bigint|ComplexNumber|BigNumber} expr - 要解析的内部数学表达式；非字符串数值
          *   会先转换为等价词元。表达式可包含 `[x]`、`[f]`、`[g]` 以及 `TokenConfig` 注册的函数。
@@ -3868,66 +3868,107 @@
                 throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Input is empty.');
             }
 
+            return MathPlus._compilePratt(MathPlus._prattTokenStream(MathPlus._normalizeExpressionTokens(expr)));
+        }
+
+        /**
+         * 将宽松输入转换为显式结构的词元，供 Pratt 解析器消费。
+         * @param {string} expr - 内部表达式。
+         * @returns {{tokens:string[],lastTokenInfo:object}} 已补全结构的词元及省略括号规则使用的末态。
+         * @private
+         */
+        static _normalizeExpressionTokens(expr) {
             expr = expr.replaceAll('[cdot]', '').replaceAll('**', '^').replace(/\s/g, '');
 
-            // --- 第一轮解析循环 ---
-            // 主要工作：
-            //   1. 插入隐式乘法运算符 ('&')。
-            //   2. 将一元 +/- 转换成 'N' (负号)。
-            //   3. 通过在内部将绝对值符号转换为 'A(...)'。
-            //   4. 跟踪括号嵌套，补全缺失的括号。
-            //   5. 添加括号消除表达式歧义，如 2/3pi -> 2/(3&pi)。
+            // 补齐隐式乘法、一元符号、绝对值和缺失括号，保留既有输入规则。
             let [output, input] = [[], Public.tokenizer(expr, {baseNumberMode: 'together'})];
             if (input[0] === 'error') {
                 throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${input[1]}).`);
             }
 
+            // 只允许在竖线前补齐原本缺失的右括号，保留完整括号内的嵌套绝对值语义。
+            const unmatchedParens = [];
+            const inputOffsets = [0];
+            for (let i = 0; i < input.length; i++) {
+                inputOffsets.push(inputOffsets[i] + input[i].length);
+                if (input[i] === '(') {
+                    unmatchedParens.push(i);
+                } else if (input[i] === ')') {
+                    unmatchedParens.pop();
+                }
+            }
+            const missingRightParens = new Set(unmatchedParens);
+            const openParens = [];
+
             let lastTokenInfo = {};
-            // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 为内层循环的括号记录。
+            // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 记录当前分母的括号层级。
             let kh = 0, minKh = 0, addKh = 0;
             let tempBracketIdx = -1; // 记录临时 隐式乘法前括号 应该插在哪个索引后面，-1 表示当前没有
-            const openAfter1 = [];   // 延迟插入 '(' 的计数表
+            let deferredImplicitLevel = null; // 输入结束时，等待内部缺失括号补齐后再关闭分母。
+            const openAfter = [];   // 延迟插入 '(' 的计数表
             const orderOfTimes = Public.getTokenInfo('*').priority;
             const orderOfInvisibleTimes = Public.getTokenInfo('&').priority;
             const absKhStack = []; // 栈用于跟踪绝对值符号的嵌套层级。
+            // 按输出括号层级记录最近的低优先级运算，避免每次隐式乘法都回溯整个前缀。
+            // 延迟左括号尚未展开，须按累计输出层级保留索引，与原回溯的括号计数一致。
+            const boundaryIndices = new Map();
+            let outputLevel = 0;
+            const pushToken = (token) => {
+                if (token === '(') {
+                    outputLevel++;
+                } else if (token === ')') {
+                    outputLevel--;
+                } else {
+                    const info = Public.getTokenInfo(token);
+                    if (info.class === 'func' && info.priority > orderOfInvisibleTimes) {
+                        boundaryIndices.set(outputLevel, output.length);
+                    }
+                }
+                output.push(token);
+            };
 
             for (let i = 0; i < input.length; i++) {
-                const currentToken = input[i];
+                let currentToken = input[i];
+                const absoluteParens = absKhStack[absKhStack.length - 1];
+                if (
+                    currentToken === '|' && absoluteParens > 0 &&
+                    !['front', 'middle'].includes(lastTokenInfo.funcPlace) &&
+                    !['(', ','].includes(lastTokenInfo.token) &&
+                    missingRightParens.has(openParens[openParens.length - 1])
+                ) {
+                    // 最内层左括号缺少配对时，其尚未闭合的外层左括号也都缺少配对。
+                    // 逐个按常规右括号处理，让隐式乘法先闭合；随后重新处理同一竖线。
+                    currentToken = ')';
+                    i -= 1;
+                }
                 const tokenInfo = Public.getTokenInfo(currentToken);
                 let currentPush = currentToken;
                 let closesAbsoluteValue = false;
 
                 if (tokenInfo.isPrivate) {
                     // 像 'log' 这样的二元前缀函数后面必须跟 '('。
-                    let position = 0;
-                    for (let j = 0; j < i; j++) {
-                        position += input[j].length;
-                    }
+                    const position = inputOffsets[i];
                     throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${position}).`);
                 }
                 if (lastTokenInfo.parameters === 2 && lastTokenInfo.funcPlace === 'front' && currentPush !== '(') {
-                    let position = 0;
-                    for (let j = 0; j < i; j++) {
-                        position += input[j].length;
-                    }
+                    const position = inputOffsets[i];
                     throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (${position}).`);
                 }
 
                 // --- 括号信息记录 ---
                 if (currentPush === '(') {
+                    openParens.push(i);
                     kh += 1;
                     if (absKhStack.length > 0) {
                         absKhStack[absKhStack.length - 1] += 1;
                     }
                 } else if (currentPush === ')') {
+                    openParens.pop();
                     kh -= 1;
                     if (absKhStack.length > 0) {
                         absKhStack[absKhStack.length - 1] -= 1;
                         if (absKhStack[absKhStack.length - 1] < 0) {
-                            let position = 0;
-                            for (let j = 0; j < i; j++) {
-                                position += input[j].length;
-                            }
+                            const position = inputOffsets[i];
                             throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Absolute value internal parentheses do not match (${position}).`);
                         }
                     }
@@ -3939,24 +3980,24 @@
                 // --- 隐式乘法插入 ---
                 if (lastTokenInfo.class === 'number' && tokenInfo.class === 'number') {
                     // 数字/常量、后缀函数和括号相邻时插入内部隐式乘法词元 `&`。
-                    output.push('&');
+                    pushToken('&');
                 } else if (
                     tokenInfo.funcPlace === 'front' &&
                     (lastTokenInfo.class === 'number' || lastTokenInfo.funcPlace === 'back')
                 ) {
-                    output.push('&');
+                    pushToken('&');
                 } else if (lastTokenInfo.funcPlace === 'back' && tokenInfo.class === 'number') {
-                    output.push('&');
+                    pushToken('&');
                 } else if (
                     currentPush === '(' &&
                     (lastTokenInfo.class === 'number' || lastTokenInfo.funcPlace === 'back' || lastTokenInfo.token === ')')
                 ) {
-                    output.push('&');
+                    pushToken('&');
                 } else if (
                     lastTokenInfo.token === ')' &&
                     (tokenInfo.class === 'number' || tokenInfo.funcPlace === 'front')
                 ) {
-                    output.push('&');
+                    pushToken('&');
                 }
 
                 // --- 处理正负号 ---
@@ -3997,12 +4038,12 @@
                         lastTokenInfo.token === ')' ||
                         lastTokenInfo.funcPlace === 'back'
                     ) {
-                        output.push('&');
+                        pushToken('&');
                     }
                     if (currentPush === '(') {
                         absKhStack.push(0);
                         kh += 1;
-                        output.push('A');
+                        pushToken('A');
                     }
                 }
 
@@ -4012,50 +4053,42 @@
                     (output[output.length - 1] === '&' || (output[output.length - 1] === 'A' && output[output.length - 2] === '&')) &&
                     tempBracketIdx === -1
                 ) {
-                    addKh = 0;
-                    for (let j = output.length - (output[output.length - 1] === '&' ? 2 : 3); j >= 0; j--) {
-                        const currentTokenJ = output[j];
-                        const tokenInfoJ = Public.getTokenInfo(currentTokenJ);
-
-                        if (currentTokenJ === '(') {
-                            addKh += 1;
-                        } else if (currentTokenJ === ')') {
-                            addKh -= 1;
-                        }
-
-                        if (
-                            tokenInfoJ.class === 'func' &&
-                            tokenInfoJ.priority > orderOfInvisibleTimes && // 低优先级词元结束隐式乘法的作用范围。
-                            addKh === 0
-                        ) {
-                            if (tokenInfoJ.priority <= orderOfTimes && currentTokenJ !== '*') {
-                                tempBracketIdx = j;
-                            }
-                            break;
-                        }
+                    const boundary = boundaryIndices.get(outputLevel);
+                    if (boundary !== undefined && output[boundary] !== '*' &&
+                        Public.getTokenInfo(output[boundary]).priority <= orderOfTimes) {
+                        tempBracketIdx = boundary;
                     }
                     addKh = currentPush === '(' ? kh - 1 : kh;
                 }
 
+                // 按转换后的一元负号判断边界，避免将函数负参数或负指数截断。
+                const currentInfo = Public.getTokenInfo(currentPush);
                 // 解决为隐式乘法添加的另一半括号
                 const hitBoundary =
-                    (tokenInfo.class === 'func' && tokenInfo.priority > orderOfInvisibleTimes && kh === addKh) ||
+                    (currentInfo.class === 'func' && currentInfo.priority > orderOfInvisibleTimes && kh === addKh) ||
                     (currentPush === ')' && kh < addKh) ||
                     (currentPush === ',' && kh === addKh);
 
                 if (tempBracketIdx !== -1 && (hitBoundary || i + 1 === input.length)) {
                     const needClose = hitBoundary
-                                      ? (currentPush === ')' || currentPush === ',' || tokenInfo.priority >= orderOfTimes)
+                                      ? (currentPush === ')' || currentPush === ',' || currentInfo.priority >= orderOfTimes)
                                       : true;
 
                     if (needClose) {
                         // 目前 token 优先级低于显式乘法，或已到达表达式末尾，需要补全括号
-                        openAfter1[tempBracketIdx] = (openAfter1[tempBracketIdx] || 0) + 1;
-                        if (i + 1 === input.length && !hitBoundary) {
-                            output.push(currentPush);
+                        openAfter[tempBracketIdx] = (openAfter[tempBracketIdx] || 0) + 1;
+                        if (i + 1 === input.length && !hitBoundary && kh > addKh) {
+                            deferredImplicitLevel = addKh;
+                        } else if (i + 1 === input.length && !hitBoundary) {
+                            // 分母包含末尾绝对值时，竖线与其右括号必须一起位于分母内。
+                            if (closesAbsoluteValue) {
+                                pushToken('|');
+                                closesAbsoluteValue = false;
+                            }
+                            pushToken(currentPush);
                             currentPush = ')';
                         } else {
-                            output.push(')');
+                            pushToken(')');
                         }
                     }
                     tempBracketIdx = -1;
@@ -4063,22 +4096,22 @@
 
                 // 绝对值内的隐式乘法先补全右括号，再写入闭合竖线。
                 if (closesAbsoluteValue) {
-                    output.push('|');
+                    pushToken('|');
                 }
                 if (i + 1 !== input.length) {
                     lastTokenInfo = Public.getTokenInfo(currentPush);
                 } else {
                     lastTokenInfo = {};
                 }
-                output.push(currentPush);
+                pushToken(currentPush);
             }
 
-            // 1) 一次性展开第一轮延迟插入的 '('
-            if (openAfter1.length > 0) {
+            // 1) 展开隐式乘法延迟插入的 '('
+            if (openAfter.length > 0) {
                 const expanded = [];
                 for (let i = 0; i < output.length; i++) {
                     expanded.push(output[i]);
-                    for (let k = 0; k < (openAfter1[i] || 0); k++) {
+                    for (let k = 0; k < (openAfter[i] || 0); k++) {
                         expanded.push('(');
                     }
                 }
@@ -4089,344 +4122,348 @@
             if (minKh < 0) {
                 output = Array(-minKh).fill('(').concat(output);
                 kh -= minKh;
+                if (deferredImplicitLevel !== null) {
+                    deferredImplicitLevel -= minKh;
+                }
             }
 
-            // 3) 闭合绝对值时用 push 替代 [...output, '|', ')']
+            const closeMissingParen = () => {
+                output.push(')');
+                kh -= 1;
+                if (kh === deferredImplicitLevel) {
+                    output.push(')');
+                    deferredImplicitLevel = null;
+                }
+            };
+            // 3) 先补齐绝对值及其内部括号，再关闭包含它的隐式乘法分母。
             for (let i = absKhStack.length - 1; i >= 0; i--) {
                 for (let j = 0; j < absKhStack[i]; j++) {
-                    output.push(')');
+                    closeMissingParen();
                 }
-                output.push('|', ')');
-                kh -= absKhStack[i] + 1;
+                output.push('|');
+                closeMissingParen();
             }
 
             // 4) 关闭剩余未闭合的常规括号。
             while (kh > 0) {
-                output.push(')');
-                kh -= 1;
+                closeMissingParen();
             }
 
-            // --- 第二轮解析循环 ---
-            // 其主要工作是为需要它的函数和运算符（如 `sin` 和 `^`）处理括号插入，
-            // 以确保正确的运算顺序，特别是当用户省略括号时，以进一步消除歧义。
-            // 例如 `sin x + 1` -> `sin(x) + 1`，而不是 `sin(x+1)`。
-            // 它使用一个临时标记系统：
-            //   - `#kh#`（一级条件）：未发现完整括号的未闭合一元前缀函数，如：sin2 -> sin(2)
-            //   - `#kh@`（二级条件）：发现完整括号的未闭合一元前缀函数，如：sin(2)A(5) -> sin((2)A(5))，假设二元中缀运算符 'A' 的优先级比 'sin' 高。
-            //   - `:kh#`（一级条件）：未发现完整括号的未闭合 '^'。
-            //   - `:kh@`（二级条件）：发现完整括号的未闭合 '^'。
-            [output, input] = [[], output];
-            let absAdd = false; // 跳过绝对值标记。
-            const orderOfSin = Public.getTokenInfo('sin').priority;
-            const orderOfPow = Public.getTokenInfo('^').priority;
-            const openAfter2 = [];
-            const markerMap = new Map(); // key: '#0#' / ':1@' 等, value: 索引数组(升序)
+            return {tokens: output, lastTokenInfo};
+        }
 
-            /**
-             * 记录括号或运算符插入标记的位置索引。
-             * @param {string} key - 标记类别键名。
-             * @param {number} idx - 字符或词元索引。
-             */
-            const addMarker = (key, idx) => {
-                let arr = markerMap.get(key);
-                if (!arr) {
-                    arr = [];
-                    markerMap.set(key, arr);
-                }
-                arr.push(idx);
+        /**
+         * 按绑定边界按需提供显式词元，保留省略括号时的既有显示约定。
+         * 尚未确定作用范围的函数和幂只缓存在当前读取器内，不修改源词元。
+         * @param {{tokens:string[],lastTokenInfo:object}} source - 宽松输入规范化后的词元及末态。
+         * @yields {string} 已补齐函数和幂括号的词元。
+         * @private
+         */
+        static *_prattTokenStream({tokens, lastTokenInfo}) {
+            const prefixPriority = Public.getTokenInfo('sin').priority;
+            const powerPriority = Public.getTokenInfo('^').priority;
+            const scopes = new Map();
+            let level = 0;
+            let pending = 0;
+            let order = 0;
+            let absoluteEnd = false;
+            let buffer = [];
+            // 保留尾随一元 + 后末态仍指向函数或幂时的边界行为。
+            let tail = {order: -1};
+
+            const append = (token) => {
+                const entry = {token, order: order++, opens: 0};
+                tail.next = entry;
+                tail = entry;
+                buffer.push(entry);
             };
-
-            /**
-             * 检查指定类别下是否还有未消费的标记索引。
-             * @param {string} key - 标记类别键名。
-             * @returns {boolean} 是否存在标记。
-             */
-            const hasMarker = (key) => {
-                const arr = markerMap.get(key);
-                return arr !== undefined && arr.length > 0;
+            const take = (scope, key) => {
+                const entries = scope[key];
+                scope[key] = [];
+                pending -= entries.length;
+                return entries;
             };
-
-            /**
-             * 提取并清空指定类别的所有插入位置索引。
-             * @param {string} key - 标记类别键名。
-             * @returns {number[]} 索引数组。
-             */
-            const takeMarker = (key) => {
-                const arr = markerMap.get(key);
-                if (!arr || arr.length === 0) {
-                    return [];
-                }
-                markerMap.delete(key);
-                return arr;
-            };
-
-            /**
-             * 将源类别的标记位置转移至目标类别，用于闭括号转移未闭合的隐式括号。
-             * @param {string} fromKey - 源标记类别。
-             * @param {string} toKey - 目标标记类别。
-             */
-            const moveMarker = (fromKey, toKey) => {
-                const arr = takeMarker(fromKey);
-                for (let i = 0; i < arr.length; i++) {
-                    addMarker(toKey, arr[i]);
+            const skipLastPower = (scope) => {
+                const a = scope.power.at(-1);
+                const b = scope.powerCertain.at(-1);
+                const aOrder = a?.order ?? -1;
+                const bOrder = b?.order ?? -1;
+                if (aOrder !== -1 || bOrder !== -1) {
+                    (aOrder > bOrder ? scope.power : scope.powerCertain).pop();
+                    pending--;
                 }
             };
-
-            /**
-             * 弹出同层级最新的幂运算符标记，确保右结合幂次在遇到新运算符时正确闭合。
-             * @param {number} level - 当前括号嵌套层级。
-             */
-            const popLastPowMarker = (level) => {
-                const arr1 = markerMap.get(`:${level}#`);
-                const arr2 = markerMap.get(`:${level}@`);
-                const last1 = arr1?.length ? arr1[arr1.length - 1] : -1;
-                const last2 = arr2?.length ? arr2[arr2.length - 1] : -1;
-                if (last1 === -1 && last2 === -1) {
-                    return;
-                }
-                if (last1 > last2) {
-                    arr1.pop();
-                } else {
-                    arr2.pop();
+            const close = (entries, force = false) => {
+                for (const entry of entries) {
+                    if (force || entry.next?.token !== '(' || tail.token !== ')') {
+                        entry.opens = (entry.opens || 0) + 1;
+                        append(')');
+                    }
                 }
             };
-
-            for (let i = 0; i < input.length; i++) {
-                const currentToken = input[i];
-                const tokenInfo = Public.getTokenInfo(currentToken);
-
-                if (currentToken === '|') {
-                    absAdd = true;
+            for (const token of tokens) {
+                if (token === '|') {
+                    absoluteEnd = true;
                     continue;
                 }
-
-                if (currentToken === '(') {
-                    kh += 1;
+                const info = Public.getTokenInfo(token);
+                if (token === '(') {
+                    level++;
                 }
+                const operatorBoundary = info.class === 'func' && info.funcPlace !== 'front';
+                const delimiter = token === ',' || token === ')';
+                const scope = scopes.get(level);
 
-                const funcCheck = tokenInfo.class === 'func' && tokenInfo.funcPlace !== 'front';
-                const tokenCheck = [',', ')'].includes(currentToken);
-
-                if (
-                    (((funcCheck && tokenInfo.priority > orderOfSin) || tokenCheck) && hasMarker(`#${kh}@`) /* 含有二级条件 */) || // for 'func_01_1'
-                    (((funcCheck && tokenInfo.priority > orderOfPow) || tokenCheck) && hasMarker(`:${kh}@`) /* 含有二级条件 */) // for '^'
-                ) {
-                    if (hasMarker(`:${kh}@`)) {
-                        popLastPowMarker(kh);
-                    }
-                    const indices = [
-                        ...takeMarker(`#${kh}#`),
-                        ...takeMarker(`#${kh}@`),
-                        ...takeMarker(`:${kh}#`),
-                        ...takeMarker(`:${kh}@`)
-                    ];
-                    for (let j = 0; j < indices.length; j++) {
-                        const idx = indices[j];
-                        openAfter2[idx] = (openAfter2[idx] || 0) + 1;
-                        output.push(')');
-                    }
-                }
-
-                if ((funcCheck || tokenCheck) && (hasMarker(`#${kh}#`) || hasMarker(`:${kh}#`))) {
-                    // for 'func_01_1'
-                    if (hasMarker(`#${kh}#`)) {
-                        if (tokenInfo.priority > orderOfSin) {
-                            const indices = takeMarker(`#${kh}#`);
-                            for (let j = 0; j < indices.length; j++) {
-                                const idx = indices[j];
-                                const needKh = !(output[idx + 1] === '(' && output[output.length - 1] === ')');
-                                if (needKh) {
-                                    openAfter2[idx] = (openAfter2[idx] || 0) + 1;
-                                    output.push(')');
-                                }
-                            }
-                        } else if (tokenInfo.priority < orderOfSin) {
-                            moveMarker(`#${kh}#`, `#${kh}@`);
+                if (scope && (operatorBoundary || delimiter)) {
+                    // 显式括号后的高优先级后缀会延长幂的作用范围。
+                    if (
+                        ((info.priority > prefixPriority || delimiter) && scope.prefixCertain.length) ||
+                        ((info.priority > powerPriority || delimiter) && scope.powerCertain.length)
+                    ) {
+                        if (scope.powerCertain.length) {
+                            skipLastPower(scope);
                         }
+                        close([
+                            ...take(scope, 'prefix'), ...take(scope, 'prefixCertain'),
+                            ...take(scope, 'power'), ...take(scope, 'powerCertain')
+                        ], true);
                     }
-
-                    // for '^'，除特殊标注外逻辑同理 for 'func_01_1'
-                    if (hasMarker(`:${kh}#`)) {
-                        if (tokenInfo.priority > orderOfPow) {
-                            popLastPowMarker(kh); // 跳过最后一个 '^'
-                            const indices = [...takeMarker(`:${kh}#`), ...takeMarker(`:${kh}@`)];
-                            for (let j = 0; j < indices.length; j++) {
-                                const idx = indices[j];
-                                const needKh = !(output[idx + 1] === '(' && output[output.length - 1] === ')');
-                                if (needKh) {
-                                    openAfter2[idx] = (openAfter2[idx] || 0) + 1;
-                                    output.push(')');
-                                }
-                            }
-                        } else if (tokenInfo.priority < orderOfPow) {
-                            moveMarker(`:${kh}#`, `:${kh}@`);
+                    if (info.priority > prefixPriority) {
+                        close(take(scope, 'prefix'));
+                    } else if (info.priority < prefixPriority) {
+                        const entries = take(scope, 'prefix');
+                        for (const entry of entries) {
+                            scope.prefixCertain.push(entry);
                         }
+                        pending += entries.length;
+                    }
+                    if (info.priority > powerPriority && scope.power.length) {
+                        skipLastPower(scope);
+                        close([...take(scope, 'power'), ...take(scope, 'powerCertain')]);
+                    } else if (info.priority < powerPriority) {
+                        const entries = take(scope, 'power');
+                        for (const entry of entries) {
+                            scope.powerCertain.push(entry);
+                        }
+                        pending += entries.length;
                     }
                 }
-
-                // 右括号记录，移到后面防止干扰括号判断。
-                if (currentToken === ')') {
-                    kh -= 1;
+                if (scope && !scope.prefix.length && !scope.prefixCertain.length &&
+                    !scope.power.length && !scope.powerCertain.length) {
+                    scopes.delete(level);
                 }
 
-                // 为需要添加括号的运算符添加标记
+                if (token === ')') {
+                    level--;
+                }
                 if (lastTokenInfo.needKh) {
-                    const markKey = (lastTokenInfo.token === '^' ? ':' : '#') + (currentToken === '(' ? kh - 1 : kh) + '#';
-                    addMarker(markKey, output.length - 1);
+                    const ownerLevel = token === '(' ? level - 1 : level;
+                    let owner = scopes.get(ownerLevel);
+                    if (!owner) {
+                        // Certain 保存遇到更高优先级运算后必须补齐括号的作用域。
+                        owner = {prefix: [], prefixCertain: [], power: [], powerCertain: []};
+                        scopes.set(ownerLevel, owner);
+                    }
+                    owner[lastTokenInfo.token === '^' ? 'power' : 'prefix'].push(tail);
+                    pending++;
                 }
-
-                if (absAdd) { // 跳过的绝对值标记。
-                    absAdd = false;
-                    output.push('|'); // 重新插入绝对值标记。
+                if (absoluteEnd) {
+                    absoluteEnd = false;
+                    append('|');
                 }
-
-                lastTokenInfo = tokenInfo;
-                output.push(currentToken);
+                lastTokenInfo = info;
+                append(token);
+                // 没有待定作用域时即可交给 Pratt 消费；末尾函数还要等待下一词元。
+                if (pending === 0 && !info.needKh) {
+                    for (const entry of buffer) {
+                        yield entry.token;
+                        for (let i = 0; i < entry.opens; i++) {
+                            yield '(';
+                        }
+                    }
+                    buffer = [];
+                }
             }
 
-            // 收集所有未结算的标记，按索引从大到小处理
             const remaining = [];
-            for (const [key, indices] of markerMap.entries()) {
-                const isPow = key[0] === ':';
-                const isSure = key[key.length - 1] === '@';
-                for (let i = 0; i < indices.length; i++) {
-                    remaining.push({idx: indices[i], isPow, isSure});
-                }
-            }
-            // 按索引降序排序剩余标记，从右向左插入以避免前面的插入破坏后续索引偏移。
-            remaining.sort((a, b) => b.idx - a.idx);
-
-            let theLast = true;
-            for (let i = 0; i < remaining.length; i++) {
-                const {idx, isPow, isSure} = remaining[i];
-                if (isPow && theLast) {
-                    theLast = false;
-                    continue;
-                }
-                if (isSure || !(output[idx + 1] === '(' && output[output.length - 1] === ')')) {
-                    openAfter2[idx] = (openAfter2[idx] || 0) + 1;
-                    output.push(')');
-                }
-            }
-
-            // 一次性展开第二轮延迟插入的 '('
-            if (openAfter2.length > 0) {
-                const expanded = [];
-                for (let i = 0; i < output.length; i++) {
-                    expanded.push(output[i]);
-                    for (let k = 0; k < (openAfter2[i] || 0); k++) {
-                        expanded.push('(');
+            for (const scope of scopes.values()) {
+                for (const key of ['prefix', 'prefixCertain', 'power', 'powerCertain']) {
+                    for (const entry of scope[key]) {
+                        remaining.push({entry, power: key.startsWith('power'), certain: key.endsWith('Certain')});
                     }
                 }
-                output = expanded;
             }
+            remaining.sort((a, b) => b.entry.order - a.entry.order);
+            let lastPower = true;
+            for (const {entry, power, certain} of remaining) {
+                if (power && lastPower) {
+                    lastPower = false;
+                } else {
+                    close([entry], certain);
+                }
+            }
+            for (const entry of buffer) {
+                yield entry.token;
+                for (let i = 0; i < entry.opens; i++) {
+                    yield '(';
+                }
+            }
+        }
 
-            // 将 input 指向处理后的 output。
-            input = output;
-
-            // 合成最终的 'output'，还原内部标记
-            output = output.join('');
-            output = output.replaceAll('A(', '|').replaceAll('|)', '|').replaceAll('&', '[cdot]').replaceAll('N', '-');
-
-            // --- 第三轮解析循环 ---
-            // 生成 RPN（逆波兰表示法），只跟踪栈深度以校验语法。
+        /**
+         * Pratt 解析：nud 读取操作数、括号和前缀函数，led 按绑定优先级读取中缀与后缀。
+         * 使用显式调用帧代替递归，深层括号、前缀函数和右结合幂均不消耗 JS 调用栈。
+         * @param {Iterable<string>} tokens - 按需补齐括号的词元流。
+         * @returns {{expr:string,rpn:Array<object>}} 规范化表达式和逆波兰指令。
+         * @private
+         */
+        static _compilePratt(tokens) {
+            const reader = tokens[Symbol.iterator]();
+            const output = [];
             const rpn = [];
-            const operatorStack = [];
             const methods = {
                 '+': 'plus', '-': 'minus', '*': 'times', '&': 'times', '/': 'divide',
-                '^': 'pow', 'E': 'exponential', '!': 'fact', '|': 'abs', 'A': 'abs',
+                '^': 'pow', 'E': 'exponential', '!': 'fact', 'A': 'abs',
                 'N': 'oppositeNumber', 'f': '_customFunc', 'g': '_customFunc'
             };
+            let current = reader.next();
+            let currentInfo = Public.getTokenInfo(current.value);
             let depth = 0;
-
-            // 栈内的 `~` 记录二元前缀函数已经遇到参数逗号，写入指令时去掉该标记。
-            const emitOperator = (rawToken) => {
-                const hasCommaMark = rawToken.endsWith('~');
-                const token = hasCommaMark ? rawToken.slice(0, -1) : rawToken;
-                const {funcPlace, parameters} = Public.getTokenInfo(token);
-                if (funcPlace === 'front' && parameters === 2 && !hasCommaMark) {
+            let invalidLocalDepth = false;
+            // 记录局部缺参，仍先保留既有的运算符、逗号和括号错误报告顺序。
+            const validateDepth = (baseDepth, expected = 1) => {
+                if (depth - baseDepth !== expected) {
+                    invalidLocalDepth = true;
+                }
+            };
+            const advance = () => {
+                output.push(current.value);
+                current = reader.next();
+                currentInfo = Public.getTokenInfo(current.value);
+            };
+            const emitOperator = (info, hasComma = false) => {
+                const {token, funcPlace, parameters} = info;
+                if (funcPlace === 'front' && parameters === 2 && !hasComma) {
                     throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Missing comma in binary function ${token}.`);
                 }
                 if (depth < parameters) {
                     throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Insufficient parameters for function ${token}.`);
                 }
                 depth += 1 - parameters;
-                const method = methods[token] ?? token.replace(/[\[\]]/g, '');
-                rpn.push({token, method, parameters});
+                rpn.push({token, method: methods[token] ?? token.replace(/[\[\]]/g, ''), parameters});
+            };
+            /**
+             * 显式声明两类调用帧的字段，避免数组仅按初始根括号帧推断类型。
+             * @typedef {object} PrattCompileFrame
+             * @property {'group'|'expression'} kind - 调用帧类型。
+             * @property {boolean} [root] - 是否为根括号帧。
+             * @property {PrattCompileFrame} [owner] - 所属二元前缀函数帧。
+             * @property {number} [argumentDepth] - 当前括号参数的起始栈深度。
+             * @property {string} [state] - 表达式解析状态。
+             * @property {number} [minBinding] - 最低绑定优先级。
+             * @property {number} [baseDepth] - 表达式的起始栈深度。
+             * @property {object} [operator] - 待读取参数的运算符信息。
+             * @property {boolean} [hasComma] - 是否已读取二元函数的逗号。
+             */
+            /** @type {PrattCompileFrame[]} */
+            const frames = [{kind: 'group', root: true, argumentDepth: 0}];
+            const expression = (minBinding, owner) => {
+                frames.push({kind: 'expression', state: 'start', minBinding, owner, baseDepth: depth});
             };
 
-            for (let i = 0; i < input.length; i++) {
-                const currentToken = input[i];
-                const tokenInfo = Public.getTokenInfo(currentToken);
-
-                if (tokenInfo.class === 'number') {
-                    rpn.push({operand: currentToken});
-                    depth++;
-                } else if (tokenInfo.class === 'func') {
-                    let topOfStack = operatorStack[operatorStack.length - 1];
-                    let topOfStackInfo = {};
-                    if (topOfStack !== undefined) {
-                        topOfStack = topOfStack.replace('~', '');
-                        topOfStackInfo = Public.getTokenInfo(topOfStack);
-                    }
-
-                    // 循环条件：当操作符栈不为空，栈顶不是左括号，且满足以下任一条件时，就将栈顶运算符弹出
-                    //   1. 栈顶运算符的优先级高于当前运算符。
-                    //   2. 优先级相同，且当前运算符是左结合的。
-                    while (
-                        topOfStack !== undefined && (
-                            topOfStackInfo.priority < tokenInfo.priority || // 栈顶优先级更高
-                            (topOfStackInfo.priority === tokenInfo.priority && tokenInfo.associativity === 'left') // 优先级相同且为左结合
-                        ) && tokenInfo.funcPlace !== 'front' // 防止提前出栈
-                        ) {
-                        // 使用 pop() 从栈顶弹出一个运算符，并写入指令序列。
-                        emitOperator(operatorStack.pop());
-                        // 更新栈顶元素以供下一次循环判断。
-                        topOfStack = operatorStack[operatorStack.length - 1];
-                        if (topOfStack !== undefined) {
-                            topOfStack = topOfStack.replace('~', '');
-                            topOfStackInfo = Public.getTokenInfo(topOfStack);
+            while (frames.length > 0) {
+                const frame = frames[frames.length - 1];
+                const token = current.value;
+                const info = currentInfo;
+                if (frame.kind === 'group') {
+                    if (token === '|') {
+                        // 竖线是显示标记，绝对值由内部 A(...) 指令执行。
+                        advance();
+                    } else if (token === ',') {
+                        if (!frame.owner || frame.owner.hasComma) {
+                            throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Commas mismatch or incorrect position.');
                         }
+                        validateDepth(frame.argumentDepth);
+                        frame.argumentDepth = depth;
+                        frame.owner.hasComma = true;
+                        advance();
+                    } else if (token === ')' || current.done) {
+                        if (!!frame.root !== current.done) {
+                            throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
+                        }
+                        validateDepth(frame.argumentDepth);
+                        if (token === ')') {
+                            advance();
+                        }
+                        frames.pop();
+                    } else {
+                        expression(-Infinity);
                     }
-
-                    operatorStack.push(currentToken);
-                } else if (currentToken === '(') {
-                    operatorStack.push(currentToken);
-                } else if (currentToken === ')') {
-                    while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                        emitOperator(operatorStack.pop());
-                    }
-                    if (operatorStack.length === 0) {
-                        throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
-                    }
-                    // 弹出并丢弃左括号 '('。
-                    operatorStack.pop();
-                } else if (currentToken === ',') {
-                    while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== '(') {
-                        emitOperator(operatorStack.pop());
-                    }
-                    const subTopOfStack = Public.getTokenInfo(operatorStack[operatorStack.length - 2]);
-                    if (operatorStack.length < 2 || !(subTopOfStack.funcPlace === 'front' && subTopOfStack.parameters === 2)) {
-                        throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Commas mismatch or incorrect position.');
-                    }
-                    // 标记这个函数已经被一个逗号匹配。
-                    operatorStack[operatorStack.length - 2] += '~';
+                    continue;
                 }
+
+                if (frame.state === 'prefix' || frame.state === 'infix') {
+                    emitOperator(frame.operator, frame.hasComma);
+                    frame.state = 'loop';
+                } else if (frame.state === 'atom') {
+                    frame.state = 'loop';
+                }
+
+                if (frame.state === 'start') {
+                    if (info?.class === 'number') {
+                        rpn.push({operand: token});
+                        depth++;
+                        advance();
+                        frame.state = 'loop';
+                        continue;
+                    }
+                    if (token === '(') {
+                        frame.state = 'atom';
+                        frames.push({kind: 'group', owner: frame.owner, argumentDepth: depth});
+                        advance();
+                        continue;
+                    }
+                    if (info?.funcPlace === 'front') {
+                        frame.operator = info;
+                        frame.state = 'prefix';
+                        advance();
+                        expression(-info.priority, info.parameters === 2 ? frame : undefined);
+                        continue;
+                    }
+                    frame.state = 'loop';
+                }
+
+                if (info?.funcPlace === 'front' || info?.class === 'number' || token === '(') {
+                    invalidLocalDepth = true;
+                    frame.state = 'atom';
+                    expression(frame.minBinding);
+                    continue;
+                }
+                if (info?.class === 'func') {
+                    // 配置中的 priority 越小越强，Pratt 的绑定值越大越强。
+                    const binding = -info.priority;
+                    if (binding >= frame.minBinding) {
+                        advance();
+                        if (info.funcPlace === 'back') {
+                            emitOperator(info);
+                        } else {
+                            frame.operator = info;
+                            frame.state = 'infix';
+                            expression(binding + (info.associativity === 'left' ? 1 : 0));
+                        }
+                        continue;
+                    }
+                }
+                validateDepth(frame.baseDepth, frame.owner ? 2 : 1);
+                frames.pop();
             }
 
-            while (operatorStack.length > 0) {
-                const operator = operatorStack.pop();
-                if (operator === '(') {
-                    throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
-                }
-                emitOperator(operator);
-            }
-
-            if (depth !== 1) {
+            if (depth !== 1 || invalidLocalDepth) {
                 throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The final stack should have exactly one value.');
             }
-
-            return {expr: output, rpn};
+            const expr = output.join('').replaceAll('A(', '|').replaceAll('|)', '|')
+                .replaceAll('&', '[cdot]').replaceAll('N', '-');
+            return {expr, rpn};
         }
 
         /**
@@ -4477,7 +4514,7 @@
                     stack.push(MathPlus[method](b));
                 }
             }
-            return MathPlus._complexInput(stack[0]);
+            return MathPlus._complexInput(stack[0], acc);
         }
     }
 
