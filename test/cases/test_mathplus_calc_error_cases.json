@@ -810,5 +810,83 @@
     "expected": {
       "error": "[MathPlus] syntax error: Insufficient parameters for function /."
     }
+  },
+  {
+    "description": [
+      "[scope-denominator:error] 嵌套分母仍拒绝非法表达式 1/2(1/3(2)+)（36 位）"
+    ],
+    "coeffs": [
+      "1/2(1/3(2)+)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[scope-denominator:error] 嵌套分母仍拒绝非法表达式 1/2log(2,1/3(2),4)（36 位）"
+    ],
+    "coeffs": [
+      "1/2log(2,1/3(2),4)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Commas mismatch or incorrect position."
+    }
+  },
+  {
+    "description": [
+      "[scope-denominator:error] 嵌套分母仍拒绝非法表达式 1/2(1/3())（36 位）"
+    ],
+    "coeffs": [
+      "1/2(1/3())",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[scope-denominator:error] 嵌套分母仍拒绝非法表达式 1/2(1/3(2)+)（220 位）"
+    ],
+    "coeffs": [
+      "1/2(1/3(2)+)",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[scope-denominator:error] 嵌套分母仍拒绝非法表达式 1/2log(2,1/3(2),4)（220 位）"
+    ],
+    "coeffs": [
+      "1/2log(2,1/3(2),4)",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Commas mismatch or incorrect position."
+    }
+  },
+  {
+    "description": [
+      "[scope-denominator:error] 嵌套分母仍拒绝非法表达式 1/2(1/3())（220 位）"
+    ],
+    "coeffs": [
+      "1/2(1/3())",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
   }
 ]

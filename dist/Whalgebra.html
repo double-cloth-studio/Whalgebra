@@ -2410,6 +2410,8 @@
                 static _ExpressionSyntaxError = class extends SyntaxError {
                     name = 'ExpressionSyntaxError';
                 };
+                // 只保留最近两份字符串函数体的指令；对应 f、g，避免跨次求值重复编译及缓存无限增长。
+                static _customFuncCache = new Map();
 
                 /**
                  * 阻止实例化静态工具类。
@@ -5291,7 +5293,24 @@
                         throw new Error(`[MathPlus] input error: Function ${token} is undefined or cyclically called.`);
                     }
                     const another = token === 'f' ? 'g' : 'f';
-                    const compiled = Array.isArray(body?.rpn) ? body : MathPlus.compile(body, {acc});
+                    let compiled = body;
+                    if (!Array.isArray(body?.rpn)) {
+                        if (typeof body === 'string') {
+                            compiled = MathPlus._customFuncCache.get(body);
+                            if (compiled === undefined) {
+                                compiled = MathPlus.compile(body, {acc});
+                                if (MathPlus._customFuncCache.size === 2) {
+                                    MathPlus._customFuncCache.delete(MathPlus._customFuncCache.keys().next().value);
+                                }
+                            } else {
+                                MathPlus._customFuncCache.delete(body);
+                            }
+                            // 字符串编译不绑定变量或精度，每次仍使用当前上下文执行指令。
+                            MathPlus._customFuncCache.set(body, compiled);
+                        } else {
+                            compiled = MathPlus.compile(body, {acc});
+                        }
+                    }
                     return MathPlus.evalRPN(compiled.rpn, {[another]: funcs[another], unknown, acc});
                 }
 
@@ -5325,33 +5344,27 @@
                     const openParens = [];
 
                     let lastTokenInfo = {};
-                    // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 记录当前分母的括号层级。
-                    let kh = 0, minKh = 0, addKh = 0;
-                    let tempBracketIdx = -1; // 记录临时 隐式乘法前括号 应该插在哪个索引后面，-1 表示当前没有
-                    let deferredImplicitLevel = null; // 输入结束时，等待内部缺失括号补齐后再关闭分母。
+                    // kh 记录输入括号层级，minKh 记录需要补齐的左括号个数。
+                    let kh = 0, minKh = 0, scopeLevel = 0;
+                    const implicitGroups = []; // 按嵌套顺序记录各作用域中待闭合的隐式乘法分组。
                     const openAfter = [];   // 延迟插入 '(' 的计数表
+
                     const orderOfTimes = Public.getTokenInfo('*').priority;
                     const orderOfInvisibleTimes = Public.getTokenInfo('&').priority;
                     const absKhStack = []; // 栈用于跟踪绝对值符号的嵌套层级。
-                    // 按输出括号层级记录最近的低优先级运算，避免每次隐式乘法都回溯整个前缀。
-                    // 延迟左括号尚未展开，须按累计输出层级保留索引，与原回溯的括号计数一致。
+                    // 只按实际输入作用域记录边界；延迟补入的分组括号不影响作用域生命周期。
                     const boundaryIndices = new Map();
-                    let outputLevel = 0;
+
                     const pushToken = (token) => {
-                        if (token === '(') {
-                            outputLevel++;
-                        } else if (token === ')') {
-                            outputLevel--;
-                        } else {
-                            const info = Public.getTokenInfo(token);
-                            if (info.class === 'func' && info.priority > orderOfInvisibleTimes) {
-                                boundaryIndices.set(outputLevel, output.length);
-                            }
+                        const info = Public.getTokenInfo(token);
+                        if (info.class === 'func' && info.priority > orderOfInvisibleTimes) {
+                            boundaryIndices.set(scopeLevel, output.length);
                         }
                         output.push(token);
                     };
 
                     for (let i = 0; i < input.length; i++) {
+                        scopeLevel = kh;
                         let currentToken = input[i];
                         const absoluteParens = absKhStack[absKhStack.length - 1];
                         if (
@@ -5475,47 +5488,32 @@
                         // 为了消除歧义。例如，`1/2x` 应该是 `1/(2&x)`。
                         if (
                             (output[output.length - 1] === '&' || (output[output.length - 1] === 'A' && output[output.length - 2] === '&')) &&
-                            tempBracketIdx === -1
+                            implicitGroups[implicitGroups.length - 1]?.level !== scopeLevel
                         ) {
-                            const boundary = boundaryIndices.get(outputLevel);
+                            const boundary = boundaryIndices.get(scopeLevel);
                             if (boundary !== undefined && output[boundary] !== '*' &&
                                 Public.getTokenInfo(output[boundary]).priority <= orderOfTimes) {
-                                tempBracketIdx = boundary;
+                                implicitGroups.push({boundary, level: scopeLevel});
                             }
-                            addKh = currentPush === '(' ? kh - 1 : kh;
                         }
 
                         // 按转换后的一元负号判断边界，避免将函数负参数或负指数截断。
                         const currentInfo = Public.getTokenInfo(currentPush);
                         // 解决为隐式乘法添加的另一半括号
-                        const hitBoundary =
-                            (currentInfo.class === 'func' && currentInfo.priority > orderOfInvisibleTimes && kh === addKh) ||
-                            (currentPush === ')' && kh < addKh) ||
-                            (currentPush === ',' && kh === addKh);
-
-                        if (tempBracketIdx !== -1 && (hitBoundary || i + 1 === input.length)) {
-                            const needClose = hitBoundary
-                                              ? (currentPush === ')' || currentPush === ',' || currentInfo.priority >= orderOfTimes)
-                                              : true;
-
-                            if (needClose) {
-                                // 目前 token 优先级低于显式乘法，或已到达表达式末尾，需要补全括号
-                                openAfter[tempBracketIdx] = (openAfter[tempBracketIdx] || 0) + 1;
-                                if (i + 1 === input.length && !hitBoundary && kh > addKh) {
-                                    deferredImplicitLevel = addKh;
-                                } else if (i + 1 === input.length && !hitBoundary) {
-                                    // 分母包含末尾绝对值时，竖线与其右括号必须一起位于分母内。
-                                    if (closesAbsoluteValue) {
-                                        pushToken('|');
-                                        closesAbsoluteValue = false;
-                                    }
-                                    pushToken(currentPush);
-                                    currentPush = ')';
-                                } else {
-                                    pushToken(')');
-                                }
+                        while (implicitGroups.length > 0) {
+                            const group = implicitGroups[implicitGroups.length - 1];
+                            const hitBoundary =
+                                (currentInfo.class === 'func' && currentInfo.priority > orderOfInvisibleTimes && kh === group.level) ||
+                                (currentPush === ')' && kh < group.level) ||
+                                (currentPush === ',' && kh === group.level);
+                            if (!hitBoundary) {
+                                break;
                             }
-                            tempBracketIdx = -1;
+                            implicitGroups.pop();
+                            if (currentPush === ')' || currentPush === ',' || currentInfo.priority >= orderOfTimes) {
+                                openAfter[group.boundary] = (openAfter[group.boundary] || 0) + 1;
+                                pushToken(')');
+                            }
                         }
 
                         // 绝对值内的隐式乘法先补全右括号，再写入闭合竖线。
@@ -5528,7 +5526,27 @@
                             lastTokenInfo = {};
                         }
                         pushToken(currentPush);
+                        if (kh > scopeLevel) {
+                            boundaryIndices.delete(kh);
+                        } else if (kh < scopeLevel) {
+                            boundaryIndices.delete(scopeLevel);
+                        } else if (currentPush === ',') {
+                            boundaryIndices.delete(scopeLevel);
+                        }
                     }
+
+                    // 末尾仍打开的分组先登记左括号；右括号须等待内部缺失括号和绝对值补齐。
+                    for (const group of implicitGroups) {
+                        openAfter[group.boundary] = (openAfter[group.boundary] || 0) + 1;
+                    }
+
+                    const closeImplicitGroups = () => {
+                        while (implicitGroups[implicitGroups.length - 1]?.level === kh) {
+                            output.push(')');
+                            implicitGroups.pop();
+                        }
+                    };
+                    closeImplicitGroups();
 
                     // 1) 展开隐式乘法延迟插入的 '('
                     if (openAfter.length > 0) {
@@ -5546,18 +5564,15 @@
                     if (minKh < 0) {
                         output = Array(-minKh).fill('(').concat(output);
                         kh -= minKh;
-                        if (deferredImplicitLevel !== null) {
-                            deferredImplicitLevel -= minKh;
+                        for (const group of implicitGroups) {
+                            group.level -= minKh;
                         }
                     }
 
                     const closeMissingParen = () => {
                         output.push(')');
                         kh -= 1;
-                        if (kh === deferredImplicitLevel) {
-                            output.push(')');
-                            deferredImplicitLevel = null;
-                        }
+                        closeImplicitGroups();
                     };
                     // 3) 先补齐绝对值及其内部括号，再关闭包含它的隐式乘法分母。
                     for (let i = absKhStack.length - 1; i >= 0; i--) {

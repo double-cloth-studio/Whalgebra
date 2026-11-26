@@ -137,6 +137,10 @@ case 文件可直接是数组；需要统一配置时，用对象包裹。推荐
 
 这些用例还保存 `referenceExpr`，用显式乘法与括号独立核对数学期望。`expression_compile.test.js` 同时断言原输入与回显的完整逆波兰指令一致、回显可重新计算，以及语法检查模式和计算模式输出相同。可单独运行 `node --test test/node/expression_compile.test.js`。
 
+`[scope-denominator]` 用例覆盖多个同级括号、逗号参数边界、嵌套隐式乘法分母、缺失括号与绝对值的补全，以及实数和复数输入。`1/2(1/3[x])` 应回显为 `1/(2[cdot](1/(3[cdot][x])))`；`(1/2[x])(3[x])` 的回显重新计算须与原输入一致。对应错误用例使用 `[scope-denominator:error]`。Node 专项还检查一万层嵌套分母完整与缺失闭合符号时均可编译。
+
+`[custom-compile-cache]` 覆盖字符串函数体的重复与交叉调用。Node 专项检查跨次求值只编译一次最近两份字符串函数体、切换变量与精度、修改函数绑定，以及缓存后仍能拒绝未定义函数和循环调用。
+
 ## MathPlus 静态函数用例（4）
 
 执行 `MathPlus[c.function](...args)`，再按当前配置序列化结果。

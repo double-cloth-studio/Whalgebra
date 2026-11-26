@@ -32,6 +32,70 @@ test("数表 999 点只编译一次各函数体，包括被调用的函数", asy
     assert.equal(table.varList[999], "[print_content_omit]");
 });
 
+test("字符串函数体跨次求值复用编译结果，变量、精度和函数绑定保持独立", async () => {
+    const {MathPlus} = await createCalcCoreWindow();
+    const root = MathPlus.compile("f([x])+f([x]+1)+g([x])");
+    const f = "g([x])+1", g = "[x]^2+1/7";
+    const compiledF = MathPlus.compile(f), compiledG = MathPlus.compile(g);
+    const compiled = [];
+    const compile = MathPlus.compile;
+    MathPlus.compile = (expr, options) => {
+        compiled.push(expr);
+        return compile(expr, options);
+    };
+    for (const acc of [36, 220, 36]) {
+        for (const unknown of [2, -3]) {
+            const value = MathPlus.evalRPN(root.rpn, {f, g, unknown, acc});
+            const reference = MathPlus.evalRPN(root.rpn, {f: compiledF, g: compiledG, unknown, acc});
+            assert.equal(value.toString(), reference.toString());
+            assert.equal(value.acc, acc);
+        }
+    }
+    assert.deepEqual(compiled, [f, g]);
+
+    // 已缓存 f 的指令仍须读取新的 g，且不得掩盖未定义函数或递归环。
+    const single = compile("f(2)");
+    assert.equal(MathPlus.evalRPN(single.rpn, {f, g: "[x]+2"}).toString(), "5");
+    assert.throws(() => MathPlus.evalRPN(single.rpn, {f}), /Function g is undefined or cyclically called/);
+    assert.throws(() => MathPlus.evalRPN(single.rpn, {f, g: "f([x])"}), /Function f is undefined or cyclically called/);
+    assert.equal(MathPlus.evalRPN(single.rpn, {f: "[x]+3"}).toString(), "5");
+    assert.equal(MathPlus.evalRPN(single.rpn, {f, g: "[x]+2"}).toString(), "5");
+    assert.ok(MathPlus._customFuncCache.size <= 2);
+});
+
+test("多个同级括号与嵌套分母在不同变量值下保持指令和回显一致", async () => {
+    const {MathPlus} = await createCalcCoreWindow();
+    const cases = [
+        ["(1/2[x])(3[x])", "(1/(2*[x]))*(3*[x])"],
+        ["(1/2[x])(3[x])(4[x])", "(1/(2*[x]))*(3*[x])*(4*[x])"],
+        ["log(1/2[x],3[x])", "log(1/(2*[x]),3*[x])"],
+        ["log(1/2,2[x])", "log(1/2,2*[x])"],
+        ["log(2,8/2)(3[x])", "log(2,8/2)*(3*[x])"],
+        ["1/2(1/3[x])", "1/(2*(1/(3*[x])))"],
+        ["1/2(1/3[x]+1/4[x])", "1/(2*(1/(3*[x])+1/(4*[x])))"],
+        ["1/2(1/3[x](1/4[x]))", "1/(2*(1/(3*[x]*(1/(4*[x])))))"],
+        ["1/2(1/3[x]", "1/(2*(1/(3*[x])))"],
+        ["1/2|1/3[x]", "1/(2*abs(1/(3*[x])))"],
+        ["1/2(1/3|[x]", "1/(2*(1/(3*abs([x]))))"],
+        ["2)1/2(1/3[x]", "2*1/(2*(1/(3*[x])))"]
+    ];
+    const instructions = rpn => JSON.stringify(Array.from(rpn, ({operand, method, parameters}) =>
+        method ? [method, parameters] : operand));
+    for (const [input, reference] of cases) {
+        const compiled = MathPlus.compile(input);
+        assert.equal(instructions(compiled.rpn), instructions(MathPlus.compile(reference).rpn), input);
+        assert.equal(JSON.stringify(compiled.rpn), JSON.stringify(MathPlus.compile(compiled.expr).rpn), input);
+        for (const acc of [36, 220]) {
+            assert.equal(MathPlus.calc(input, {mode: "syntaxCheck", acc})[1], compiled.expr, input);
+            for (const unknown of [2, -3, "[i]"]) {
+                const options = {unknown, acc};
+                assert.equal(MathPlus.calc(input, options)[0].toString(), MathPlus.calc(reference, options)[0].toString(), input);
+                assert.equal(MathPlus.calc(compiled.expr, options)[0].toString(), MathPlus.calc(reference, options)[0].toString(), input);
+            }
+        }
+    }
+});
+
 test("极小复数的模长按可表示的最低指数舍入", async () => {
     const {MathPlus} = await createCalcCoreWindow();
     const power = Number.MIN_SAFE_INTEGER;
@@ -159,4 +223,9 @@ test("Pratt 编译支持一万层括号、前缀函数和右结合幂", async ()
     assert.equal(powers.rpn.length, 2 * count + 1);
     assert.equal(powers.rpn[count].operand, "1");
     assert.equal(powers.rpn[count + 1].token, "^");
+    for (const suffix of [")".repeat(count), ""]) {
+        const denominators = MathPlus.compile("1/2(".repeat(count) + "1" + suffix);
+        assert.equal(denominators.expr, "1/(2[cdot](".repeat(count) + "1" + "))".repeat(count));
+        assert.equal(denominators.rpn.length, 4 * count + 1);
+    }
 });
