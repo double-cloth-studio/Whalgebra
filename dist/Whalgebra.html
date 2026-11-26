@@ -5274,6 +5274,28 @@
                 }
 
                 /**
+                 * 计算用户定义的 f(x) 或 g(x)，并保留相互引用的上下文。
+                 *
+                 * @private
+                 * @param {'f'|'g'} token - 本次要进入的自定义函数名；用于选择表达式并保留另一函数的引用。
+                 * @param {object} funcs - `f`、`g` 的原始表达式或编译结果；被调用函数可引用另一项。
+                 *   缺失当前 `token` 对应表达式时视为未定义函数。
+                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} unknown - 代入表达式中 `[x]` 的值；
+                 *   复数和高精度表示原样进入递归计算上下文。
+                 * @param {number} acc - 递归求值使用的正整数有效位数；沿用外层计算精度，避免嵌套调用降精度。
+                 * @returns {ComplexNumber} 函数值。
+                 */
+                static _customFunc(token, funcs, unknown, acc) {
+                    const body = funcs[token];
+                    if (body === undefined) {
+                        throw new Error(`[MathPlus] input error: Function ${token} is undefined or cyclically called.`);
+                    }
+                    const another = token === 'f' ? 'g' : 'f';
+                    const compiled = Array.isArray(body?.rpn) ? body : MathPlus.compile(body, {acc});
+                    return MathPlus.evalRPN(compiled.rpn, {[another]: funcs[another], unknown, acc});
+                }
+
+                /**
                  * 将宽松输入转换为显式结构的词元，供 Pratt 解析器消费。
                  * @param {string} expr - 内部表达式。
                  * @returns {{tokens:string[],lastTokenInfo:object}} 已补全结构的词元及省略括号规则使用的末态。
@@ -5870,28 +5892,6 @@
                             yield '(';
                         }
                     }
-                }
-
-                /**
-                 * 计算用户定义的 f(x) 或 g(x)，并保留相互引用的上下文。
-                 *
-                 * @private
-                 * @param {'f'|'g'} token - 本次要进入的自定义函数名；用于选择表达式并保留另一函数的引用。
-                 * @param {object} funcs - `f`、`g` 的原始表达式或编译结果；被调用函数可引用另一项。
-                 *   缺失当前 `token` 对应表达式时视为未定义函数。
-                 * @param {string|number|bigint|BigNumber|ComplexNumber|Array} unknown - 代入表达式中 `[x]` 的值；
-                 *   复数和高精度表示原样进入递归计算上下文。
-                 * @param {number} acc - 递归求值使用的正整数有效位数；沿用外层计算精度，避免嵌套调用降精度。
-                 * @returns {ComplexNumber} 函数值。
-                 */
-                static _customFunc(token, funcs, unknown, acc) {
-                    const body = funcs[token];
-                    if (body === undefined) {
-                        throw new Error(`[MathPlus] input error: Function ${token} is undefined or cyclically called.`);
-                    }
-                    const another = token === 'f' ? 'g' : 'f';
-                    const compiled = Array.isArray(body?.rpn) ? body : MathPlus.compile(body, {acc});
-                    return MathPlus.evalRPN(compiled.rpn, {[another]: funcs[another], unknown, acc});
                 }
 
                 /**
