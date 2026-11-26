@@ -5668,16 +5668,6 @@
                             }
                         }
                     };
-                    const drain = function* () {
-                        for (const entry of buffer) {
-                            yield entry.token;
-                            for (let i = 0; i < entry.opens; i++) {
-                                yield '(';
-                            }
-                        }
-                        buffer = [];
-                    };
-
                     for (const token of tokens) {
                         if (token === '|') {
                             absoluteEnd = true;
@@ -5748,7 +5738,13 @@
                         append(token);
                         // 没有待定作用域时即可交给 Pratt 消费；末尾函数还要等待下一词元。
                         if (pending === 0 && !info.needKh) {
-                            yield* drain();
+                            for (const entry of buffer) {
+                                yield entry.token;
+                                for (let i = 0; i < entry.opens; i++) {
+                                    yield '(';
+                                }
+                            }
+                            buffer = [];
                         }
                     }
 
@@ -5769,7 +5765,12 @@
                             close([entry], certain);
                         }
                     }
-                    yield* drain();
+                    for (const entry of buffer) {
+                        yield entry.token;
+                        for (let i = 0; i < entry.opens; i++) {
+                            yield '(';
+                        }
+                    }
                 }
 
                 /**
@@ -5789,10 +5790,12 @@
                         'N': 'oppositeNumber', 'f': '_customFunc', 'g': '_customFunc'
                     };
                     let current = reader.next();
+                    let currentInfo = Public.getTokenInfo(current.value);
                     let depth = 0;
                     const advance = () => {
                         output.push(current.value);
                         current = reader.next();
+                        currentInfo = Public.getTokenInfo(current.value);
                     };
                     const emitOperator = (info, hasComma = false) => {
                         const {token, funcPlace, parameters} = info;
@@ -5813,7 +5816,7 @@
                     while (frames.length > 0) {
                         const frame = frames[frames.length - 1];
                         const token = current.value;
-                        const info = Public.getTokenInfo(token);
+                        const info = currentInfo;
                         if (frame.kind === 'group') {
                             if (token === '|') {
                                 // 竖线是显示标记，绝对值由内部 A(...) 指令执行。
