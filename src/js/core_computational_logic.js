@@ -989,132 +989,6 @@
         }
 
         /**
-         * 计算用户定义的 f(x) 或 g(x)，并保留相互引用的上下文。
-         *
-         * @private
-         * @param {'f'|'g'} token - 本次要进入的自定义函数名；用于选择表达式并保留另一函数的引用。
-         * @param {object} funcs - `f`、`g` 的原始表达式或编译结果；被调用函数可引用另一项。
-         *   缺失当前 `token` 对应表达式时视为未定义函数。
-         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} unknown - 代入表达式中 `[x]` 的值；
-         *   复数和高精度表示原样进入递归计算上下文。
-         * @param {number} acc - 递归求值使用的正整数有效位数；沿用外层计算精度，避免嵌套调用降精度。
-         * @returns {ComplexNumber} 函数值。
-         */
-        static _customFunc(token, funcs, unknown, acc) {
-            const body = funcs[token];
-            if (body === undefined) {
-                throw new Error(`[MathPlus] input error: Function ${token} is undefined or cyclically called.`);
-            }
-            const another = token === 'f' ? 'g' : 'f';
-            const compiled = Array.isArray(body?.rpn) ? body : MathPlus.compile(body, {acc});
-            return MathPlus.evalRPN(compiled.rpn, {[another]: funcs[another], unknown, acc});
-        }
-
-        /**
-         * 利用周期和对称性将角度归约到 [0, π/2]，同时记录符号。
-         *
-         * @private
-         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} angle - 以弧度表示的纯实角度；
-         *   使用其实部进行周期归约，调用方负责分派非实数输入。
-         * @param {'sin'|'cos'} name - 选择需要保留的象限符号规则；只接受 `sin` 或 `cos`。
-         * @returns {[BigNumber, 1n|-1n]} 二元组：第 0 项是落在 `[0, π/2]` 的纯实弧度值，
-         *   第 1 项是依据原角度象限和 `name` 得到的符号乘子；调用方将级数结果乘以该因子复原。
-         * @throws {Error} 角度过大而无法保证精度时抛出。
-         */
-        static _toLessThanHalfPi(angle, name) {
-            const input = MathPlus._arithmeticInput(angle);
-            angle = input instanceof BigNumber ? input : input.re;
-            const acc = angle.acc;
-
-            const typeFactor = name === 'sin' ? 1n : -1n;
-            let changeSign = 1n;
-
-            if (angle.isNegative()) {
-                angle = MathPlus.oppositeNumber(angle);
-
-                // sin(-x) = -sin(x) -> 变号 (1 * -1)
-                // cos(-x) =  cos(x) -> 不变 (-1 * -1 = 1)
-                changeSign = -typeFactor;
-            }
-
-            const originalAngle = angle;
-            let reduced = false;
-
-            const highPrecisionAcc = -CalcConfig.constants.invTwoPi[0];
-            if (!MathPlus.minus(angle, [highPrecisionAcc >> 1, 1n, acc]).re.isNegative()) {
-                if (!MathPlus.minus(angle, [highPrecisionAcc, 1n, acc]).re.isNegative()) {
-                    throw new Error(`[MathPlus] Input value (${angle.toString()}) is too large.`);
-                }
-                console.warn('[MathPlus] Unexpected loss of precision occurred in trigonometric calculations.');
-            }
-            const highPrecisionRe = new BigNumber(angle, {acc: highPrecisionAcc});
-            const highPrecisionTwo = new BigNumber(2n, {acc: highPrecisionAcc});
-            const highPrecisionPi = BigNumber.approximateConstant(CalcConfig.constants.pi, highPrecisionAcc);
-            const twoPi = MathPlus.realTimes(highPrecisionTwo, highPrecisionPi);
-            const inversePeriod = BigNumber.approximateConstant(CalcConfig.constants.invTwoPi, highPrecisionAcc);
-            const n = MathPlus.floor(MathPlus.realTimes(highPrecisionRe, inversePeriod));
-            angle = highPrecisionRe;
-            if (!n.isZero()) {
-                reduced = true;
-                angle = MathPlus.realMinus(angle, MathPlus.realTimes(n.re, twoPi));
-            }
-
-            // invTwoPi 的末位舍入可能令商相差一个周期；在高精度下把残余值校正回 [0, 2π)。
-            while (angle.isNegative()) {
-                reduced = true;
-                angle = MathPlus.realPlus(angle, twoPi);
-            }
-            while (!MathPlus.realMinus(angle, twoPi).isNegative()) {
-                reduced = true;
-                angle = MathPlus.realMinus(angle, twoPi);
-            }
-
-            // 利用 cos(x) = cos(2π - x)，将 re 从 (π, 2π) 映射到 (0, π)
-            if (MathPlus.realMinus(angle, highPrecisionPi).isPositive()) {
-                reduced = true;
-                angle = MathPlus.realMinus(twoPi, angle);
-
-                // sin(2π - x) = -sin(x) -> 变号
-                // cos(2π - x) =  cos(x) -> 不变
-                // 逻辑推导：
-                // if sin (1):  -1 * 1 * current = -current (变)
-                // if cos (-1): -1 * -1 * current = current (不变)
-                changeSign = -typeFactor * changeSign;
-            }
-
-            // 利用 cos(x) = -cos(π - x)，将 re 从 [π/2, π] 映射到 [0, π/2]
-            if (!MathPlus.realMinus(MathPlus.realTimes(angle, highPrecisionTwo), highPrecisionPi).isNegative()) {
-                reduced = true;
-                angle = MathPlus.realMinus(highPrecisionPi, angle);
-
-                // sin(π - x) = sin(x)  -> 不变
-                // cos(π - x) = -cos(x) -> 变号
-                // 逻辑推导：
-                // if sin (1):  1 * current = current (不变)
-                // if cos (-1): -1 * current = -current (变)
-                changeSign = typeFactor * changeSign;
-            }
-
-            if (reduced) {
-                angle = new BigNumber(angle, {acc: acc});
-                // 只清理相位误差内的残差，精确大角度的量级不能作为相对判零基准。
-                const noiseMag = Math.max(
-                    originalAngle.noiseMag,
-                    angle.noiseMag,
-                    BigNumber.getMag(originalAngle) - highPrecisionAcc
-                );
-                if (!angle.isZero() && BigNumber.getMag(angle) <= noiseMag + 4) {
-                    angle = new BigNumber([0, 0n, acc]);
-                }
-            } else {
-                // 未归约时保留原角度的精度和噪声信息。
-                angle = originalAngle;
-            }
-
-            return [angle, changeSign];
-        }
-
-        /**
          * 在输入的工作精度下同时计算实数双曲正弦和双曲余弦。
          * @private
          * @param {BigNumber} x - 实数自变量。
@@ -1161,208 +1035,6 @@
             const cosh = MathPlus.realTimes(half, MathPlus.realPlus(exp, inverse));
 
             return [negative ? MathPlus.oppositeNumber(sinh) : sinh, cosh];
-        }
-
-        /**
-         * 按向下取整的商计算实数余数；非零余数沿用除数符号。
-         * 被除数指数较大时用模幂约简；对齐除数时所需的位数由被除数尾数长度限定。
-         *
-         * @private
-         * @param {BigNumber} a - 被除数。
-         * @param {BigNumber} b - 非零除数。
-         * @param {number} acc - 结果的有效位数。
-         * @returns {BigNumber} 实数余数；除数的噪声按商的数量级传播，可靠除数的上边界附近可按容差归零。
-         */
-        static _realMod(a, b, acc) {
-            if (a.isZero()) {
-                return new BigNumber(0n, {acc});
-            }
-
-            const oppositeSigns = a.isNegative() !== b.isNegative();
-            const absA = a.isNegative() ? -a.mantissa : a.mantissa;
-            const absB = b.isNegative() ? -b.mantissa : b.mantissa;
-            const lenA = BigNumber.decimalLengthBigInt(absA);
-            const lenB = BigNumber.decimalLengthBigInt(absB);
-            const powerA = BigInt(a.power);
-            const powerB = BigInt(b.power);
-
-            const magB = powerB + BigInt(lenB - 1);
-            const magDiff = powerA + BigInt(lenA - 1) - magB;
-            const effectiveDigits = Math.max(1, Math.floor(0.9 * acc), acc - 8);
-            const margin = Math.min(4, Math.max(0, acc - effectiveDigits));
-            const edgeMargin = Math.min(2, margin);
-            const divisorIsReliable = b.noiseMag === -Infinity || b.noiseMag + margin < Number(magB);
-
-            // 除数噪声乘以商后的量级与被除数噪声取较大值，零商无需传播除数噪声。
-            const noiseForQuotient = (quotientMag) => Math.max(
-                a.noiseMag,
-                quotientMag === -Infinity || b.noiseMag === -Infinity ? -Infinity : quotientMag + b.noiseMag
-            );
-            const nearUpperEdge = (distance, quotientMag) => {
-                const noise = noiseForQuotient(quotientMag);
-                if (!Number.isFinite(noise) || !divisorIsReliable) {
-                    return false;
-                }
-                const tolerancePower = BigInt(Math.floor(noise + edgeMargin)) + 1n;
-                // 容差至少比除数低两个数量级，以免把正常余数吸附为零。
-                if (tolerancePower > magB - 2n) {
-                    return false;
-                }
-
-                return MathPlus._modSign([...distance, [-1n, tolerancePower]]) < 0n;
-            };
-
-            if (magDiff < 0n) {
-                // 此时商只可能是 0 或 -1；直接保留尾量，避免按巨大的指数差对齐。
-                if (oppositeSigns) {
-                    if (nearUpperEdge([[absA, powerA]], 0)) {
-                        return new BigNumber(0n, {acc});
-                    }
-                    return MathPlus._modWithTail(b.mantissa, b.power, a.mantissa, a.power, acc, noiseForQuotient(0));
-                }
-                if (nearUpperEdge([[absB, powerB], [-absA, powerA]], 0)) {
-                    return new BigNumber(0n, {acc});
-                }
-                return new BigNumber(a, {acc});
-            }
-
-            const power = Math.min(a.power, b.power);
-            const shiftA = powerA - BigInt(power);
-            const shiftB = powerB - BigInt(power);
-            // 数量级较小的被除数已提前处理；仅在 shiftB > 0 时对齐除数，位数最多为 lenA。
-            const divisor = shiftB === 0n ? absB : absB * BigNumber.pow10(Number(shiftB));
-            let remainder;
-            let quotientMag = -Infinity;
-
-            if (shiftA > 0n) {
-                remainder = MathPlus._modScale(absA, shiftA, divisor);
-                if (b.noiseMag !== -Infinity && remainder !== 0n) {
-                    // 仅在传播除数噪声时精确确定商的数量级，无需构造完整商。
-                    let mag = magDiff;
-                    if (MathPlus._modSign([[absA, powerA], [-absB, powerB + mag]]) < 0n) {
-                        mag--;
-                    }
-                    if (oppositeSigns && MathPlus._modSign([
-                        [absA, powerA], [-absB, powerB + mag + 1n], [absB, powerB]
-                    ]) > 0n) {
-                        mag++;
-                    }
-                    quotientMag = mag < 0n ? -Infinity : Number(mag);
-                }
-            } else {
-                remainder = absA % divisor;
-                if (b.noiseMag !== -Infinity && remainder !== 0n) {
-                    const quotient = absA / divisor + (oppositeSigns ? 1n : 0n);
-                    quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
-                }
-            }
-
-            if (remainder === 0n) {
-                return new BigNumber(0n, {acc});
-            }
-            const magnitude = oppositeSigns ? divisor - remainder : remainder;
-            if (nearUpperEdge([[divisor - magnitude, BigInt(power)]], Math.max(0, quotientMag))) {
-                return new BigNumber(0n, {acc});
-            }
-
-            return new BigNumber(b.isNegative() ? -magnitude : magnitude, {
-                pow: power,
-                acc,
-                noiseMag: noiseForQuotient(quotientMag)
-            });
-        }
-
-        /**
-         * 用模快速幂计算缩放后的余数，避免展开十进制幂。
-         * @private
-         * @param {bigint} mantissa - 待缩放的尾数。
-         * @param {bigint} shift - 非负十进制指数。
-         * @param {bigint} modulus - 正整数模数。
-         * @returns {bigint} 缩放后的余数。
-         */
-        static _modScale(mantissa, shift, modulus) {
-            let result = mantissa % modulus;
-            let base = 10n % modulus;
-            while (shift > 0n && result !== 0n) {
-                if ((shift & 1n) !== 0n) {
-                    result = (result * base) % modulus;
-                }
-                shift >>= 1n;
-                base = (base * base) % modulus;
-            }
-            return result;
-        }
-
-        /**
-         * 比较至多三个十进制项的和与零，只对齐数量级接近的项。
-         * @private
-         * @param {Array<[bigint, bigint]>} terms - 各项的尾数和十进制指数。
-         * @returns {bigint} 和的符号，为 -1n、0n 或 1n。
-         */
-        static _modSign(terms) {
-            let remaining = terms
-                .filter(([mantissa]) => mantissa !== 0n)
-                .map(([mantissa, power]) => [mantissa, power, power + BigInt(BigNumber.decimalLengthBigInt(mantissa) - 1)]);
-
-            while (remaining.length > 1) {
-                remaining.sort((a, b) => a[2] === b[2] ? 0 : a[2] > b[2] ? -1 : 1);
-                const [a, b] = remaining;
-                if (a[2] - b[2] >= 2n) {
-                    return a[0] < 0n ? -1n : 1n;
-                }
-                const power = a[1] < b[1] ? a[1] : b[1];
-                const sum = a[0] * BigNumber.pow10(Number(a[1] - power)) +
-                    b[0] * BigNumber.pow10(Number(b[1] - power));
-                remaining = remaining.slice(2);
-                if (sum !== 0n) {
-                    remaining.push([sum, power, power + BigInt(BigNumber.decimalLengthBigInt(sum) - 1)]);
-                }
-            }
-
-            const mantissa = remaining[0]?.[0] ?? 0n;
-            return mantissa < 0n ? -1n : mantissa > 0n ? 1n : 0n;
-        }
-
-        /**
-         * 将整数残差与小数尾合并，在返回时统一舍入。
-         * @private
-         * @param {bigint} mantissa - 整数残差的尾数。
-         * @param {number} power - 整数残差的十进制指数。
-         * @param {bigint} tail - 小数尾的尾数。
-         * @param {number} tailPower - 小数尾的十进制指数。
-         * @param {number} acc - 结果精度。
-         * @param {number} noiseMag - 已传播的噪声量级上界。
-         * @returns {BigNumber} 合并后的实数余数。
-         */
-        static _modWithTail(mantissa, power, tail, tailPower, acc, noiseMag) {
-            if (mantissa === 0n) {
-                return new BigNumber(tail, {acc, pow: tailPower, noiseMag});
-            }
-
-            if (tail !== 0n) {
-                const commonPower = Math.min(power, tailPower);
-                const gap = BigInt(power) - BigInt(tailPower);
-                const digits = BigNumber.decimalLengthBigInt(mantissa);
-                const tailDigits = BigNumber.decimalLengthBigInt(tail);
-
-                if (gap <= BigInt(acc + tailDigits + 1)) {
-                    mantissa = mantissa * BigNumber.pow10(power - commonPower) +
-                        tail * BigNumber.pow10(tailPower - commonPower);
-                    power = commonPower;
-                } else {
-                    noiseMag = Math.max(noiseMag, tailPower + tailDigits - 1);
-                    if (digits > acc) {
-                        const unit = BigNumber.pow10(digits - acc);
-                        const remainder = mantissa % unit;
-                        // 极小尾项只会改变恰好落在舍入中点时的取舍方向。
-                        if (remainder * 2n === unit || remainder * 2n === -unit) {
-                            mantissa += tail < 0n ? -1n : 1n;
-                        }
-                    }
-                }
-            }
-
-            return new BigNumber(mantissa, {acc, pow: power, noiseMag});
         }
 
         /**
@@ -1745,6 +1417,208 @@
                 MathPlus.realDivide(numerator.re, denominator.re),
                 MathPlus.realDivide(numerator.im, denominator.re)
             ]);
+        }
+
+        /**
+         * 按向下取整的商计算实数余数；非零余数沿用除数符号。
+         * 被除数指数较大时用模幂约简；对齐除数时所需的位数由被除数尾数长度限定。
+         *
+         * @private
+         * @param {BigNumber} a - 被除数。
+         * @param {BigNumber} b - 非零除数。
+         * @param {number} acc - 结果的有效位数。
+         * @returns {BigNumber} 实数余数；除数的噪声按商的数量级传播，可靠除数的上边界附近可按容差归零。
+         */
+        static _realMod(a, b, acc) {
+            if (a.isZero()) {
+                return new BigNumber(0n, {acc});
+            }
+
+            const oppositeSigns = a.isNegative() !== b.isNegative();
+            const absA = a.isNegative() ? -a.mantissa : a.mantissa;
+            const absB = b.isNegative() ? -b.mantissa : b.mantissa;
+            const lenA = BigNumber.decimalLengthBigInt(absA);
+            const lenB = BigNumber.decimalLengthBigInt(absB);
+            const powerA = BigInt(a.power);
+            const powerB = BigInt(b.power);
+
+            const magB = powerB + BigInt(lenB - 1);
+            const magDiff = powerA + BigInt(lenA - 1) - magB;
+            const effectiveDigits = Math.max(1, Math.floor(0.9 * acc), acc - 8);
+            const margin = Math.min(4, Math.max(0, acc - effectiveDigits));
+            const edgeMargin = Math.min(2, margin);
+            const divisorIsReliable = b.noiseMag === -Infinity || b.noiseMag + margin < Number(magB);
+
+            // 除数噪声乘以商后的量级与被除数噪声取较大值，零商无需传播除数噪声。
+            const noiseForQuotient = (quotientMag) => Math.max(
+                a.noiseMag,
+                quotientMag === -Infinity || b.noiseMag === -Infinity ? -Infinity : quotientMag + b.noiseMag
+            );
+            const nearUpperEdge = (distance, quotientMag) => {
+                const noise = noiseForQuotient(quotientMag);
+                if (!Number.isFinite(noise) || !divisorIsReliable) {
+                    return false;
+                }
+                const tolerancePower = BigInt(Math.floor(noise + edgeMargin)) + 1n;
+                // 容差至少比除数低两个数量级，以免把正常余数吸附为零。
+                if (tolerancePower > magB - 2n) {
+                    return false;
+                }
+
+                return MathPlus._modSign([...distance, [-1n, tolerancePower]]) < 0n;
+            };
+
+            if (magDiff < 0n) {
+                // 此时商只可能是 0 或 -1；直接保留尾量，避免按巨大的指数差对齐。
+                if (oppositeSigns) {
+                    if (nearUpperEdge([[absA, powerA]], 0)) {
+                        return new BigNumber(0n, {acc});
+                    }
+                    return MathPlus._modWithTail(b.mantissa, b.power, a.mantissa, a.power, acc, noiseForQuotient(0));
+                }
+                if (nearUpperEdge([[absB, powerB], [-absA, powerA]], 0)) {
+                    return new BigNumber(0n, {acc});
+                }
+                return new BigNumber(a, {acc});
+            }
+
+            const power = Math.min(a.power, b.power);
+            const shiftA = powerA - BigInt(power);
+            const shiftB = powerB - BigInt(power);
+            // 数量级较小的被除数已提前处理；仅在 shiftB > 0 时对齐除数，位数最多为 lenA。
+            const divisor = shiftB === 0n ? absB : absB * BigNumber.pow10(Number(shiftB));
+            let remainder;
+            let quotientMag = -Infinity;
+
+            if (shiftA > 0n) {
+                remainder = MathPlus._modScale(absA, shiftA, divisor);
+                if (b.noiseMag !== -Infinity && remainder !== 0n) {
+                    // 仅在传播除数噪声时精确确定商的数量级，无需构造完整商。
+                    let mag = magDiff;
+                    if (MathPlus._modSign([[absA, powerA], [-absB, powerB + mag]]) < 0n) {
+                        mag--;
+                    }
+                    if (oppositeSigns && MathPlus._modSign([
+                        [absA, powerA], [-absB, powerB + mag + 1n], [absB, powerB]
+                    ]) > 0n) {
+                        mag++;
+                    }
+                    quotientMag = mag < 0n ? -Infinity : Number(mag);
+                }
+            } else {
+                remainder = absA % divisor;
+                if (b.noiseMag !== -Infinity && remainder !== 0n) {
+                    const quotient = absA / divisor + (oppositeSigns ? 1n : 0n);
+                    quotientMag = quotient === 0n ? -Infinity : BigNumber.decimalLengthBigInt(quotient) - 1;
+                }
+            }
+
+            if (remainder === 0n) {
+                return new BigNumber(0n, {acc});
+            }
+            const magnitude = oppositeSigns ? divisor - remainder : remainder;
+            if (nearUpperEdge([[divisor - magnitude, BigInt(power)]], Math.max(0, quotientMag))) {
+                return new BigNumber(0n, {acc});
+            }
+
+            return new BigNumber(b.isNegative() ? -magnitude : magnitude, {
+                pow: power,
+                acc,
+                noiseMag: noiseForQuotient(quotientMag)
+            });
+        }
+
+        /**
+         * 用模快速幂计算缩放后的余数，避免展开十进制幂。
+         * @private
+         * @param {bigint} mantissa - 待缩放的尾数。
+         * @param {bigint} shift - 非负十进制指数。
+         * @param {bigint} modulus - 正整数模数。
+         * @returns {bigint} 缩放后的余数。
+         */
+        static _modScale(mantissa, shift, modulus) {
+            let result = mantissa % modulus;
+            let base = 10n % modulus;
+            while (shift > 0n && result !== 0n) {
+                if ((shift & 1n) !== 0n) {
+                    result = (result * base) % modulus;
+                }
+                shift >>= 1n;
+                base = (base * base) % modulus;
+            }
+            return result;
+        }
+
+        /**
+         * 比较至多三个十进制项的和与零，只对齐数量级接近的项。
+         * @private
+         * @param {Array<[bigint, bigint]>} terms - 各项的尾数和十进制指数。
+         * @returns {bigint} 和的符号，为 -1n、0n 或 1n。
+         */
+        static _modSign(terms) {
+            let remaining = terms
+                .filter(([mantissa]) => mantissa !== 0n)
+                .map(([mantissa, power]) => [mantissa, power, power + BigInt(BigNumber.decimalLengthBigInt(mantissa) - 1)]);
+
+            while (remaining.length > 1) {
+                remaining.sort((a, b) => a[2] === b[2] ? 0 : a[2] > b[2] ? -1 : 1);
+                const [a, b] = remaining;
+                if (a[2] - b[2] >= 2n) {
+                    return a[0] < 0n ? -1n : 1n;
+                }
+                const power = a[1] < b[1] ? a[1] : b[1];
+                const sum = a[0] * BigNumber.pow10(Number(a[1] - power)) +
+                    b[0] * BigNumber.pow10(Number(b[1] - power));
+                remaining = remaining.slice(2);
+                if (sum !== 0n) {
+                    remaining.push([sum, power, power + BigInt(BigNumber.decimalLengthBigInt(sum) - 1)]);
+                }
+            }
+
+            const mantissa = remaining[0]?.[0] ?? 0n;
+            return mantissa < 0n ? -1n : mantissa > 0n ? 1n : 0n;
+        }
+
+        /**
+         * 将整数残差与小数尾合并，在返回时统一舍入。
+         * @private
+         * @param {bigint} mantissa - 整数残差的尾数。
+         * @param {number} power - 整数残差的十进制指数。
+         * @param {bigint} tail - 小数尾的尾数。
+         * @param {number} tailPower - 小数尾的十进制指数。
+         * @param {number} acc - 结果精度。
+         * @param {number} noiseMag - 已传播的噪声量级上界。
+         * @returns {BigNumber} 合并后的实数余数。
+         */
+        static _modWithTail(mantissa, power, tail, tailPower, acc, noiseMag) {
+            if (mantissa === 0n) {
+                return new BigNumber(tail, {acc, pow: tailPower, noiseMag});
+            }
+
+            if (tail !== 0n) {
+                const commonPower = Math.min(power, tailPower);
+                const gap = BigInt(power) - BigInt(tailPower);
+                const digits = BigNumber.decimalLengthBigInt(mantissa);
+                const tailDigits = BigNumber.decimalLengthBigInt(tail);
+
+                if (gap <= BigInt(acc + tailDigits + 1)) {
+                    mantissa = mantissa * BigNumber.pow10(power - commonPower) +
+                        tail * BigNumber.pow10(tailPower - commonPower);
+                    power = commonPower;
+                } else {
+                    noiseMag = Math.max(noiseMag, tailPower + tailDigits - 1);
+                    if (digits > acc) {
+                        const unit = BigNumber.pow10(digits - acc);
+                        const remainder = mantissa % unit;
+                        // 极小尾项只会改变恰好落在舍入中点时的取舍方向。
+                        if (remainder * 2n === unit || remainder * 2n === -unit) {
+                            mantissa += tail < 0n ? -1n : 1n;
+                        }
+                    }
+                }
+            }
+
+            return new BigNumber(mantissa, {acc, pow: power, noiseMag});
         }
 
         /**
@@ -2887,6 +2761,110 @@
         }
 
         /**
+         * 利用周期和对称性将角度归约到 [0, π/2]，同时记录符号。
+         *
+         * @private
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} angle - 以弧度表示的纯实角度；
+         *   使用其实部进行周期归约，调用方负责分派非实数输入。
+         * @param {'sin'|'cos'} name - 选择需要保留的象限符号规则；只接受 `sin` 或 `cos`。
+         * @returns {[BigNumber, 1n|-1n]} 二元组：第 0 项是落在 `[0, π/2]` 的纯实弧度值，
+         *   第 1 项是依据原角度象限和 `name` 得到的符号乘子；调用方将级数结果乘以该因子复原。
+         * @throws {Error} 角度过大而无法保证精度时抛出。
+         */
+        static _toLessThanHalfPi(angle, name) {
+            const input = MathPlus._arithmeticInput(angle);
+            angle = input instanceof BigNumber ? input : input.re;
+            const acc = angle.acc;
+
+            const typeFactor = name === 'sin' ? 1n : -1n;
+            let changeSign = 1n;
+
+            if (angle.isNegative()) {
+                angle = MathPlus.oppositeNumber(angle);
+
+                // sin(-x) = -sin(x) -> 变号 (1 * -1)
+                // cos(-x) =  cos(x) -> 不变 (-1 * -1 = 1)
+                changeSign = -typeFactor;
+            }
+
+            const originalAngle = angle;
+            let reduced = false;
+
+            const highPrecisionAcc = -CalcConfig.constants.invTwoPi[0];
+            if (!MathPlus.minus(angle, [highPrecisionAcc >> 1, 1n, acc]).re.isNegative()) {
+                if (!MathPlus.minus(angle, [highPrecisionAcc, 1n, acc]).re.isNegative()) {
+                    throw new Error(`[MathPlus] Input value (${angle.toString()}) is too large.`);
+                }
+                console.warn('[MathPlus] Unexpected loss of precision occurred in trigonometric calculations.');
+            }
+            const highPrecisionRe = new BigNumber(angle, {acc: highPrecisionAcc});
+            const highPrecisionTwo = new BigNumber(2n, {acc: highPrecisionAcc});
+            const highPrecisionPi = BigNumber.approximateConstant(CalcConfig.constants.pi, highPrecisionAcc);
+            const twoPi = MathPlus.realTimes(highPrecisionTwo, highPrecisionPi);
+            const inversePeriod = BigNumber.approximateConstant(CalcConfig.constants.invTwoPi, highPrecisionAcc);
+            const n = MathPlus.floor(MathPlus.realTimes(highPrecisionRe, inversePeriod));
+            angle = highPrecisionRe;
+            if (!n.isZero()) {
+                reduced = true;
+                angle = MathPlus.realMinus(angle, MathPlus.realTimes(n.re, twoPi));
+            }
+
+            // invTwoPi 的末位舍入可能令商相差一个周期；在高精度下把残余值校正回 [0, 2π)。
+            while (angle.isNegative()) {
+                reduced = true;
+                angle = MathPlus.realPlus(angle, twoPi);
+            }
+            while (!MathPlus.realMinus(angle, twoPi).isNegative()) {
+                reduced = true;
+                angle = MathPlus.realMinus(angle, twoPi);
+            }
+
+            // 利用 cos(x) = cos(2π - x)，将 re 从 (π, 2π) 映射到 (0, π)
+            if (MathPlus.realMinus(angle, highPrecisionPi).isPositive()) {
+                reduced = true;
+                angle = MathPlus.realMinus(twoPi, angle);
+
+                // sin(2π - x) = -sin(x) -> 变号
+                // cos(2π - x) =  cos(x) -> 不变
+                // 逻辑推导：
+                // if sin (1):  -1 * 1 * current = -current (变)
+                // if cos (-1): -1 * -1 * current = current (不变)
+                changeSign = -typeFactor * changeSign;
+            }
+
+            // 利用 cos(x) = -cos(π - x)，将 re 从 [π/2, π] 映射到 [0, π/2]
+            if (!MathPlus.realMinus(MathPlus.realTimes(angle, highPrecisionTwo), highPrecisionPi).isNegative()) {
+                reduced = true;
+                angle = MathPlus.realMinus(highPrecisionPi, angle);
+
+                // sin(π - x) = sin(x)  -> 不变
+                // cos(π - x) = -cos(x) -> 变号
+                // 逻辑推导：
+                // if sin (1):  1 * current = current (不变)
+                // if cos (-1): -1 * current = -current (变)
+                changeSign = typeFactor * changeSign;
+            }
+
+            if (reduced) {
+                angle = new BigNumber(angle, {acc: acc});
+                // 只清理相位误差内的残差，精确大角度的量级不能作为相对判零基准。
+                const noiseMag = Math.max(
+                    originalAngle.noiseMag,
+                    angle.noiseMag,
+                    BigNumber.getMag(originalAngle) - highPrecisionAcc
+                );
+                if (!angle.isZero() && BigNumber.getMag(angle) <= noiseMag + 4) {
+                    angle = new BigNumber([0, 0n, acc]);
+                }
+            } else {
+                // 未归约时保留原角度的精度和噪声信息。
+                angle = originalAngle;
+            }
+
+            return [angle, changeSign];
+        }
+
+        /**
          * 计算一个数的正弦。
          * - 该方法能够处理实数和复数输入，并返回主值。
          * @param {string|number|bigint|BigNumber|ComplexNumber|Array} x - 以弧度表示的实数或复数角；
@@ -3816,62 +3794,6 @@
         }
 
         /**
-         * 使用 Pratt 解析器编译并计算高精度实数或复数表达式。
-         *
-         * @param {string|number|bigint|ComplexNumber|BigNumber} expr - 要解析的内部数学表达式；非字符串数值
-         *   会先转换为等价词元。表达式可包含 `[x]`、`[f]`、`[g]` 以及 `TokenConfig` 注册的函数。
-         * @param {object} [options={}] - 本次解析上下文；仅在递归求值中传递，不修改全局函数定义。
-         * @param {string|number|bigint|ComplexNumber|BigNumber} [options.unknown] - 代入 `[x]` 的值；
-         *   表达式实际引用 `[x]` 而该项缺失时会按未定义变量处理。
-         * @param {string} [options.f] - `[f]` 的函数体，可包含 `[x]` 并调用 `[g]`；只提供 `g` 时
-         *   `[f]` 仍保持未定义。
-         * @param {string} [options.g] - `[g]` 的函数体，可包含 `[x]` 并调用 `[f]`；与 `f` 一同传入时
-         *   支持调用另一函数；求值时移除已进入的函数绑定，阻止循环调用。
-         * @param {'calc'|'syntaxCheck'} [options.mode='calc'] - `calc` 执行运算并返回数值；`syntaxCheck`
-         *   只验证和规范化表达式，不应依赖其数值结果。
-         * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 本次解析及所有嵌套运算使用的正整数
-         *   有效位数；不会改写 `CalcConfig.globalCalcAccuracy`。
-         * @returns {[ComplexNumber, string]} 二元组：第 0 项是表达式值；字符串在 `syntaxCheck` 模式下
-         *   返回指定精度的零占位，直接传入的数值仍返回其数值。第 1 项是补全隐式结构后的内部表达式。
-         * @throws {Error} 语法、词元或计算无效时抛出。
-         */
-        static calc(expr, {unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy} = {}) {
-            const compiled = MathPlus.compile(expr, {acc});
-            const result = mode === 'calc' || Public.typeOf(expr) !== 'string'
-                           ? MathPlus.evalRPN(compiled.rpn, {unknown, f, g, acc})
-                           : new ComplexNumber([0, 0n, acc]);
-            return [result, compiled.expr];
-        }
-
-        /**
-         * 规范化表达式并生成已校验的逆波兰指令。变量和常量在求值时按上下文绑定。
-         *
-         * @param {string|number|bigint|ComplexNumber|BigNumber} expr - 内部表达式或数值。
-         * @param {object} [options={}] - 数值输入的规范化选项。
-         * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 数值输入格式化前的有效位数。
-         * @returns {{expr:string,rpn:Array<{operand:string|number|bigint|ComplexNumber|BigNumber}|{token:string,method:string,parameters:number}>}}
-         *   `expr` 是规范化表达式；`rpn` 中的操作数入栈，运算指令按 `parameters` 取出操作数并调用 `method`。
-         * @throws {SyntaxError} 字符串含非法词元、分隔符错位或求值栈深度不符合语法时抛出，错误名为 `ExpressionSyntaxError`。
-         * @throws {Error} 输入类型不受支持或数值输入无法格式化时抛出。
-         */
-        static compile(expr, {acc = CalcConfig.globalCalcAccuracy} = {}) {
-            const inputType = Public.typeOf(expr);
-            if (['number', 'bigint', 'complexnumber', 'bignumber'].includes(inputType)) {
-                const val = MathPlus._complexInput(expr, acc);
-                return {expr: val.toString(), rpn: [{operand: expr}]};
-            }
-            if (inputType !== 'string') {
-                throw new Error('[MathPlus] Disallowed input type.');
-            }
-
-            if (expr === '') {
-                throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Input is empty.');
-            }
-
-            return MathPlus._compilePratt(MathPlus._prattTokenStream(MathPlus._normalizeExpressionTokens(expr)));
-        }
-
-        /**
          * 将宽松输入转换为显式结构的词元，供 Pratt 解析器消费。
          * @param {string} expr - 内部表达式。
          * @returns {{tokens:string[],lastTokenInfo:object}} 已补全结构的词元及省略括号规则使用的末态。
@@ -4153,164 +4075,6 @@
         }
 
         /**
-         * 按绑定边界按需提供显式词元，保留省略括号时的既有显示约定。
-         * 尚未确定作用范围的函数和幂只缓存在当前读取器内，不修改源词元。
-         * @param {{tokens:string[],lastTokenInfo:object}} source - 宽松输入规范化后的词元及末态。
-         * @yields {string} 已补齐函数和幂括号的词元。
-         * @private
-         */
-        static *_prattTokenStream({tokens, lastTokenInfo}) {
-            const prefixPriority = Public.getTokenInfo('sin').priority;
-            const powerPriority = Public.getTokenInfo('^').priority;
-            const scopes = new Map();
-            let level = 0;
-            let pending = 0;
-            let order = 0;
-            let absoluteEnd = false;
-            let buffer = [];
-            // 保留尾随一元 + 后末态仍指向函数或幂时的边界行为。
-            let tail = {order: -1};
-
-            const append = (token) => {
-                const entry = {token, order: order++, opens: 0};
-                tail.next = entry;
-                tail = entry;
-                buffer.push(entry);
-            };
-            const take = (scope, key) => {
-                const entries = scope[key];
-                scope[key] = [];
-                pending -= entries.length;
-                return entries;
-            };
-            const skipLastPower = (scope) => {
-                const a = scope.power.at(-1);
-                const b = scope.powerCertain.at(-1);
-                const aOrder = a?.order ?? -1;
-                const bOrder = b?.order ?? -1;
-                if (aOrder !== -1 || bOrder !== -1) {
-                    (aOrder > bOrder ? scope.power : scope.powerCertain).pop();
-                    pending--;
-                }
-            };
-            const close = (entries, force = false) => {
-                for (const entry of entries) {
-                    if (force || entry.next?.token !== '(' || tail.token !== ')') {
-                        entry.opens = (entry.opens || 0) + 1;
-                        append(')');
-                    }
-                }
-            };
-            for (const token of tokens) {
-                if (token === '|') {
-                    absoluteEnd = true;
-                    continue;
-                }
-                const info = Public.getTokenInfo(token);
-                if (token === '(') {
-                    level++;
-                }
-                const operatorBoundary = info.class === 'func' && info.funcPlace !== 'front';
-                const delimiter = token === ',' || token === ')';
-                const scope = scopes.get(level);
-
-                if (scope && (operatorBoundary || delimiter)) {
-                    // 显式括号后的高优先级后缀会延长幂的作用范围。
-                    if (
-                        ((info.priority > prefixPriority || delimiter) && scope.prefixCertain.length) ||
-                        ((info.priority > powerPriority || delimiter) && scope.powerCertain.length)
-                    ) {
-                        if (scope.powerCertain.length) {
-                            skipLastPower(scope);
-                        }
-                        close([
-                            ...take(scope, 'prefix'), ...take(scope, 'prefixCertain'),
-                            ...take(scope, 'power'), ...take(scope, 'powerCertain')
-                        ], true);
-                    }
-                    if (info.priority > prefixPriority) {
-                        close(take(scope, 'prefix'));
-                    } else if (info.priority < prefixPriority) {
-                        const entries = take(scope, 'prefix');
-                        for (const entry of entries) {
-                            scope.prefixCertain.push(entry);
-                        }
-                        pending += entries.length;
-                    }
-                    if (info.priority > powerPriority && scope.power.length) {
-                        skipLastPower(scope);
-                        close([...take(scope, 'power'), ...take(scope, 'powerCertain')]);
-                    } else if (info.priority < powerPriority) {
-                        const entries = take(scope, 'power');
-                        for (const entry of entries) {
-                            scope.powerCertain.push(entry);
-                        }
-                        pending += entries.length;
-                    }
-                }
-                if (scope && !scope.prefix.length && !scope.prefixCertain.length &&
-                    !scope.power.length && !scope.powerCertain.length) {
-                    scopes.delete(level);
-                }
-
-                if (token === ')') {
-                    level--;
-                }
-                if (lastTokenInfo.needKh) {
-                    const ownerLevel = token === '(' ? level - 1 : level;
-                    let owner = scopes.get(ownerLevel);
-                    if (!owner) {
-                        // Certain 保存遇到更高优先级运算后必须补齐括号的作用域。
-                        owner = {prefix: [], prefixCertain: [], power: [], powerCertain: []};
-                        scopes.set(ownerLevel, owner);
-                    }
-                    owner[lastTokenInfo.token === '^' ? 'power' : 'prefix'].push(tail);
-                    pending++;
-                }
-                if (absoluteEnd) {
-                    absoluteEnd = false;
-                    append('|');
-                }
-                lastTokenInfo = info;
-                append(token);
-                // 没有待定作用域时即可交给 Pratt 消费；末尾函数还要等待下一词元。
-                if (pending === 0 && !info.needKh) {
-                    for (const entry of buffer) {
-                        yield entry.token;
-                        for (let i = 0; i < entry.opens; i++) {
-                            yield '(';
-                        }
-                    }
-                    buffer = [];
-                }
-            }
-
-            const remaining = [];
-            for (const scope of scopes.values()) {
-                for (const key of ['prefix', 'prefixCertain', 'power', 'powerCertain']) {
-                    for (const entry of scope[key]) {
-                        remaining.push({entry, power: key.startsWith('power'), certain: key.endsWith('Certain')});
-                    }
-                }
-            }
-            remaining.sort((a, b) => b.entry.order - a.entry.order);
-            let lastPower = true;
-            for (const {entry, power, certain} of remaining) {
-                if (power && lastPower) {
-                    lastPower = false;
-                } else {
-                    close([entry], certain);
-                }
-            }
-            for (const entry of buffer) {
-                yield entry.token;
-                for (let i = 0; i < entry.opens; i++) {
-                    yield '(';
-                }
-            }
-        }
-
-        /**
          * Pratt 解析：nud 读取操作数、括号和前缀函数，led 按绑定优先级读取中缀与后缀。
          * 使用显式调用帧代替递归，深层括号、前缀函数和右结合幂均不消耗 JS 调用栈。
          * @param {Iterable<string>} tokens - 按需补齐括号的词元流。
@@ -4467,6 +4231,190 @@
         }
 
         /**
+         * 按绑定边界按需提供显式词元，保留省略括号时的既有显示约定。
+         * 尚未确定作用范围的函数和幂只缓存在当前读取器内，不修改源词元。
+         * @param {{tokens:string[],lastTokenInfo:object}} source - 宽松输入规范化后的词元及末态。
+         * @yields {string} 已补齐函数和幂括号的词元。
+         * @private
+         */
+        static* _prattTokenStream({tokens, lastTokenInfo}) {
+            const prefixPriority = Public.getTokenInfo('sin').priority;
+            const powerPriority = Public.getTokenInfo('^').priority;
+            const scopes = new Map();
+            let level = 0;
+            let pending = 0;
+            let order = 0;
+            let absoluteEnd = false;
+            let buffer = [];
+            // 保留尾随一元 + 后末态仍指向函数或幂时的边界行为。
+            let tail = {order: -1};
+
+            const append = (token) => {
+                const entry = {token, order: order++, opens: 0};
+                tail.next = entry;
+                tail = entry;
+                buffer.push(entry);
+            };
+            const take = (scope, key) => {
+                const entries = scope[key];
+                scope[key] = [];
+                pending -= entries.length;
+                return entries;
+            };
+            const skipLastPower = (scope) => {
+                const a = scope.power.at(-1);
+                const b = scope.powerCertain.at(-1);
+                const aOrder = a?.order ?? -1;
+                const bOrder = b?.order ?? -1;
+                if (aOrder !== -1 || bOrder !== -1) {
+                    (aOrder > bOrder ? scope.power : scope.powerCertain).pop();
+                    pending--;
+                }
+            };
+            const close = (entries, force = false) => {
+                for (const entry of entries) {
+                    if (force || entry.next?.token !== '(' || tail.token !== ')') {
+                        entry.opens = (entry.opens || 0) + 1;
+                        append(')');
+                    }
+                }
+            };
+            for (const token of tokens) {
+                if (token === '|') {
+                    absoluteEnd = true;
+                    continue;
+                }
+                const info = Public.getTokenInfo(token);
+                if (token === '(') {
+                    level++;
+                }
+                const operatorBoundary = info.class === 'func' && info.funcPlace !== 'front';
+                const delimiter = token === ',' || token === ')';
+                const scope = scopes.get(level);
+
+                if (scope && (operatorBoundary || delimiter)) {
+                    // 显式括号后的高优先级后缀会延长幂的作用范围。
+                    if (
+                        ((info.priority > prefixPriority || delimiter) && scope.prefixCertain.length) ||
+                        ((info.priority > powerPriority || delimiter) && scope.powerCertain.length)
+                    ) {
+                        if (scope.powerCertain.length) {
+                            skipLastPower(scope);
+                        }
+                        close([
+                            ...take(scope, 'prefix'), ...take(scope, 'prefixCertain'),
+                            ...take(scope, 'power'), ...take(scope, 'powerCertain')
+                        ], true);
+                    }
+                    if (info.priority > prefixPriority) {
+                        close(take(scope, 'prefix'));
+                    } else if (info.priority < prefixPriority) {
+                        const entries = take(scope, 'prefix');
+                        for (const entry of entries) {
+                            scope.prefixCertain.push(entry);
+                        }
+                        pending += entries.length;
+                    }
+                    if (info.priority > powerPriority && scope.power.length) {
+                        skipLastPower(scope);
+                        close([...take(scope, 'power'), ...take(scope, 'powerCertain')]);
+                    } else if (info.priority < powerPriority) {
+                        const entries = take(scope, 'power');
+                        for (const entry of entries) {
+                            scope.powerCertain.push(entry);
+                        }
+                        pending += entries.length;
+                    }
+                }
+                if (scope && !scope.prefix.length && !scope.prefixCertain.length &&
+                    !scope.power.length && !scope.powerCertain.length) {
+                    scopes.delete(level);
+                }
+
+                if (token === ')') {
+                    level--;
+                }
+                if (lastTokenInfo.needKh) {
+                    const ownerLevel = token === '(' ? level - 1 : level;
+                    let owner = scopes.get(ownerLevel);
+                    if (!owner) {
+                        // Certain 保存遇到更高优先级运算后必须补齐括号的作用域。
+                        owner = {prefix: [], prefixCertain: [], power: [], powerCertain: []};
+                        scopes.set(ownerLevel, owner);
+                    }
+                    owner[lastTokenInfo.token === '^' ? 'power' : 'prefix'].push(tail);
+                    pending++;
+                }
+                if (absoluteEnd) {
+                    absoluteEnd = false;
+                    append('|');
+                }
+                lastTokenInfo = info;
+                append(token);
+                // 没有待定作用域时即可交给 Pratt 消费；末尾函数还要等待下一词元。
+                if (pending === 0 && !info.needKh) {
+                    for (const entry of buffer) {
+                        yield entry.token;
+                        for (let i = 0; i < entry.opens; i++) {
+                            yield '(';
+                        }
+                    }
+                    buffer = [];
+                }
+            }
+
+            const remaining = [];
+            for (const scope of scopes.values()) {
+                for (const key of ['prefix', 'prefixCertain', 'power', 'powerCertain']) {
+                    for (const entry of scope[key]) {
+                        remaining.push({
+                            entry,
+                            power: key.startsWith('power'),
+                            certain: key.endsWith('Certain')
+                        });
+                    }
+                }
+            }
+            remaining.sort((a, b) => b.entry.order - a.entry.order);
+            let lastPower = true;
+            for (const {entry, power, certain} of remaining) {
+                if (power && lastPower) {
+                    lastPower = false;
+                } else {
+                    close([entry], certain);
+                }
+            }
+            for (const entry of buffer) {
+                yield entry.token;
+                for (let i = 0; i < entry.opens; i++) {
+                    yield '(';
+                }
+            }
+        }
+
+        /**
+         * 计算用户定义的 f(x) 或 g(x)，并保留相互引用的上下文。
+         *
+         * @private
+         * @param {'f'|'g'} token - 本次要进入的自定义函数名；用于选择表达式并保留另一函数的引用。
+         * @param {object} funcs - `f`、`g` 的原始表达式或编译结果；被调用函数可引用另一项。
+         *   缺失当前 `token` 对应表达式时视为未定义函数。
+         * @param {string|number|bigint|BigNumber|ComplexNumber|Array} unknown - 代入表达式中 `[x]` 的值；
+         *   复数和高精度表示原样进入递归计算上下文。
+         * @param {number} acc - 递归求值使用的正整数有效位数；沿用外层计算精度，避免嵌套调用降精度。
+         * @returns {ComplexNumber} 函数值。
+         */
+        static _customFunc(token, funcs, unknown, acc) {
+            const body = funcs[token];
+            if (body === undefined) {
+                throw new Error(`[MathPlus] input error: Function ${token} is undefined or cyclically called.`);
+            }
+            const another = token === 'f' ? 'g' : 'f';
+            const compiled = Array.isArray(body?.rpn) ? body : MathPlus.compile(body, {acc});
+            return MathPlus.evalRPN(compiled.rpn, {[another]: funcs[another], unknown, acc});
+        }
+
+        /**
          * 在指定上下文中执行已编译的逆波兰指令。
          *
          * @param {Array<object>} rpn - `MathPlus.compile` 返回的指令序列。
@@ -4515,6 +4463,62 @@
                 }
             }
             return MathPlus._complexInput(stack[0], acc);
+        }
+
+        /**
+         * 规范化表达式并生成已校验的逆波兰指令。变量和常量在求值时按上下文绑定。
+         *
+         * @param {string|number|bigint|ComplexNumber|BigNumber} expr - 内部表达式或数值。
+         * @param {object} [options={}] - 数值输入的规范化选项。
+         * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 数值输入格式化前的有效位数。
+         * @returns {{expr:string,rpn:Array<{operand:string|number|bigint|ComplexNumber|BigNumber}|{token:string,method:string,parameters:number}>}}
+         *   `expr` 是规范化表达式；`rpn` 中的操作数入栈，运算指令按 `parameters` 取出操作数并调用 `method`。
+         * @throws {SyntaxError} 字符串含非法词元、分隔符错位或求值栈深度不符合语法时抛出，错误名为 `ExpressionSyntaxError`。
+         * @throws {Error} 输入类型不受支持或数值输入无法格式化时抛出。
+         */
+        static compile(expr, {acc = CalcConfig.globalCalcAccuracy} = {}) {
+            const inputType = Public.typeOf(expr);
+            if (['number', 'bigint', 'complexnumber', 'bignumber'].includes(inputType)) {
+                const val = MathPlus._complexInput(expr, acc);
+                return {expr: val.toString(), rpn: [{operand: expr}]};
+            }
+            if (inputType !== 'string') {
+                throw new Error('[MathPlus] Disallowed input type.');
+            }
+
+            if (expr === '') {
+                throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Input is empty.');
+            }
+
+            return MathPlus._compilePratt(MathPlus._prattTokenStream(MathPlus._normalizeExpressionTokens(expr)));
+        }
+
+        /**
+         * 使用 Pratt 解析器编译并计算高精度实数或复数表达式。
+         *
+         * @param {string|number|bigint|ComplexNumber|BigNumber} expr - 要解析的内部数学表达式；非字符串数值
+         *   会先转换为等价词元。表达式可包含 `[x]`、`[f]`、`[g]` 以及 `TokenConfig` 注册的函数。
+         * @param {object} [options={}] - 本次解析上下文；仅在递归求值中传递，不修改全局函数定义。
+         * @param {string|number|bigint|ComplexNumber|BigNumber} [options.unknown] - 代入 `[x]` 的值；
+         *   表达式实际引用 `[x]` 而该项缺失时会按未定义变量处理。
+         * @param {string} [options.f] - `[f]` 的函数体，可包含 `[x]` 并调用 `[g]`；只提供 `g` 时
+         *   `[f]` 仍保持未定义。
+         * @param {string} [options.g] - `[g]` 的函数体，可包含 `[x]` 并调用 `[f]`；与 `f` 一同传入时
+         *   支持调用另一函数；求值时移除已进入的函数绑定，阻止循环调用。
+         * @param {'calc'|'syntaxCheck'} [options.mode='calc'] - `calc` 执行运算并返回数值；`syntaxCheck`
+         *   只验证和规范化表达式，不应依赖其数值结果。
+         * @param {number} [options.acc=CalcConfig.globalCalcAccuracy] - 本次解析及所有嵌套运算使用的正整数
+         *   有效位数；不会改写 `CalcConfig.globalCalcAccuracy`。
+         * @returns {[ComplexNumber, string]} 二元组：第 0 项是表达式值；字符串在 `syntaxCheck` 模式下
+         *   返回指定精度的零占位，直接传入的数值仍返回其数值。第 1 项是补全隐式结构后的内部表达式。
+         * @throws {Error} 语法、词元或计算无效时抛出。
+         */
+        static calc(expr, {unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy} = {}) {
+            const compiled = MathPlus.compile(expr, {acc});
+            const result = mode === 'calc' || Public.typeOf(expr) !== 'string'
+                           ? MathPlus.evalRPN(compiled.rpn, {unknown, f, g, acc})
+                           : new ComplexNumber([0, 0n, acc]);
+            return [result, compiled.expr];
         }
     }
 
