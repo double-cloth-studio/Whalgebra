@@ -2410,7 +2410,12 @@
                 static _ExpressionSyntaxError = class extends SyntaxError {
                     name = 'ExpressionSyntaxError';
                 };
-                // 只保留最近两份字符串函数体的指令；对应 f、g，避免跨次求值重复编译及缓存无限增长。
+
+                /**
+                 * @private
+                 *
+                 * 表达式解析只保留最近两份字符串函数体的指令；对应 f、g，避免跨次求值重复编译及缓存无限增长。
+                 */
                 static _customFuncCache = new Map();
 
                 /**
