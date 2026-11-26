@@ -446,5 +446,369 @@
     "expected": {
       "error": "[MathPlus] mathematical error: Division by zero."
     }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 二元函数逗号不能出现在普通括号中"
+    ],
+    "coeffs": [
+      "log(2,(3,4))",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Commas mismatch or incorrect position."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 逗号不能跳过内层未完成的二元函数"
+    ],
+    "coeffs": [
+      "log(2,nroot(16),4)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Missing comma in binary function nroot."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 二元函数参数之间必须有逗号"
+    ],
+    "coeffs": [
+      "nroot(16)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Missing comma in binary function nroot."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 二元函数第二参数不能为空"
+    ],
+    "coeffs": [
+      "nroot(16,)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function nroot."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 二元函数参数过多"
+    ],
+    "coeffs": [
+      "nroot(16,2,3)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Commas mismatch or incorrect position."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 二元函数缺少左括号"
+    ],
+    "coeffs": [
+      "log2",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (3)."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 二元函数嵌套位置缺少左括号"
+    ],
+    "coeffs": [
+      "nroot(16,log2)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (12)."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 绝对值内不允许提前关闭外部括号"
+    ],
+    "coeffs": [
+      "|1)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Absolute value internal parentheses do not match (2)."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 孤立阶乘参数不足"
+    ],
+    "coeffs": [
+      "!",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function !."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 孤立幂参数不足"
+    ],
+    "coeffs": [
+      "^",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function ^."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 函数之后非法后缀的报错顺序"
+    ],
+    "coeffs": [
+      "sin!2",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function !."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 嵌套空括号没有操作数"
+    ],
+    "coeffs": [
+      "(())",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: The final stack should have exactly one value."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 空绝对值没有操作数"
+    ],
+    "coeffs": [
+      "||",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function A."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 中缀运算缺少右操作数"
+    ],
+    "coeffs": [
+      "1+",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function +."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 小数后再次出现小数点"
+    ],
+    "coeffs": [
+      "1..2",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Illegal input (2)."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 科学记数法缺少指数"
+    ],
+    "coeffs": [
+      "1E",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function E."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 不允许直接输入内部负号词元"
+    ],
+    "coeffs": [
+      "2N3",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Illegal input (1)."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 不允许直接输入内部隐式乘法词元"
+    ],
+    "coeffs": [
+      "2&3",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Illegal input (1)."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 未闭合中括号常数"
+    ],
+    "coeffs": [
+      "[pi",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Illegal input (0)."
+    }
+  },
+  {
+    "description": [
+      "[parser-regression:error] 数学非法字符不能被静默忽略"
+    ],
+    "coeffs": [
+      "sqrt(4)@",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Illegal input (7)."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：log(1/2abs-2+,2)（36 位）"
+    ],
+    "coeffs": [
+      "log(1/2abs-2+,2)",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function +."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：log(1/2abs-2+,2)（220 位）"
+    ],
+    "coeffs": [
+      "log(1/2abs-2+,2)",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function +."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：1/2abs2^-（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：1/2abs2^-（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：1/2|-（36 位）"
+    ],
+    "coeffs": [
+      "1/2|-",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：1/2|-（220 位）"
+    ],
+    "coeffs": [
+      "1/2|-",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：1/2||（36 位）"
+    ],
+    "coeffs": [
+      "1/2||",
+      36,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:error] 分母参数不完整仍应报错：1/2||（220 位）"
+    ],
+    "coeffs": [
+      "1/2||",
+      220,
+      12
+    ],
+    "expected": {
+      "error": "[MathPlus] syntax error: Insufficient parameters for function /."
+    }
   }
 ]

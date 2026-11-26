@@ -2363,5 +2363,2347 @@
       "result": "1",
       "expr": "cos(-1E-300*[i])"
     }
+  },
+  {
+    "description": [
+      "[parser-regression] 绝对值结束前补齐函数括号（36 位）"
+    ],
+    "coeffs": [
+      "|abs(1/2|+1",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1.5",
+      "expr": "|abs(1/2)|+1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 绝对值结束前补齐函数括号（220 位）"
+    ],
+    "coeffs": [
+      "|abs(1/2|+1",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1.5",
+      "expr": "|abs(1/2)|+1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 绝对值结束前补齐多层括号（36 位）"
+    ],
+    "coeffs": [
+      "|abs((1/2|+1",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1.5",
+      "expr": "|abs((1/2))|+1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 绝对值结束前补齐多层括号（220 位）"
+    ],
+    "coeffs": [
+      "|abs((1/2|+1",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1.5",
+      "expr": "|abs((1/2))|+1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 内外两层绝对值与缺失括号（36 位）"
+    ],
+    "coeffs": [
+      "||abs((-1/2|+1|",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1.5",
+      "expr": "||abs((-1/2))|+1|"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 内外两层绝对值与缺失括号（220 位）"
+    ],
+    "coeffs": [
+      "||abs((-1/2|+1|",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1.5",
+      "expr": "||abs((-1/2))|+1|"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元函数在绝对值结束前补齐括号（36 位）"
+    ],
+    "coeffs": [
+      "|log(2,1/2^3|+1",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "|log(2,1/2^3)|+1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元函数在绝对值结束前补齐括号（220 位）"
+    ],
+    "coeffs": [
+      "|log(2,1/2^3|+1",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "|log(2,1/2^3)|+1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 补齐括号后继续执行绝对值外乘法（36 位）"
+    ],
+    "coeffs": [
+      "|sqrt(4|*3",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "|sqrt(4)|*3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 补齐括号后继续执行绝对值外乘法（220 位）"
+    ],
+    "coeffs": [
+      "|sqrt(4|*3",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "|sqrt(4)|*3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 绝对值内完整括号保留嵌套竖线（36 位）"
+    ],
+    "coeffs": [
+      "|(2|-3|)|",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "|(2[cdot]|-3|)|"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 绝对值内完整括号保留嵌套竖线（220 位）"
+    ],
+    "coeffs": [
+      "|(2|-3|)|",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "|(2[cdot]|-3|)|"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 相邻完整绝对值隐式相乘（36 位）"
+    ],
+    "coeffs": [
+      "|-2||-3|",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "|-2|[cdot]|-3|"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 相邻完整绝对值隐式相乘（220 位）"
+    ],
+    "coeffs": [
+      "|-2||-3|",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "|-2|[cdot]|-3|"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数中的原始括号问题与正自变量（36 位）"
+    ],
+    "coeffs": [
+      "f(3)",
+      36,
+      12,
+      "calc",
+      "output",
+      "|sin(1/2[x]|+1"
+    ],
+    "expected": {
+      "result": "1.16589613269",
+      "expr": "f(3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数中的原始括号问题与正自变量（220 位）"
+    ],
+    "coeffs": [
+      "f(3)",
+      220,
+      12,
+      "calc",
+      "output",
+      "|sin(1/2[x]|+1"
+    ],
+    "expected": {
+      "result": "1.16589613269",
+      "expr": "f(3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数中的原始括号问题与负自变量（36 位）"
+    ],
+    "coeffs": [
+      "f(-3)",
+      36,
+      12,
+      "calc",
+      "output",
+      "|sin(1/2[x]|+1"
+    ],
+    "expected": {
+      "result": "1.16589613269",
+      "expr": "f(-3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数中的原始括号问题与负自变量（220 位）"
+    ],
+    "coeffs": [
+      "f(-3)",
+      220,
+      12,
+      "calc",
+      "output",
+      "|sin(1/2[x]|+1"
+    ],
+    "expected": {
+      "result": "1.16589613269",
+      "expr": "f(-3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 左结合除法（36 位）"
+    ],
+    "coeffs": [
+      "8/4/2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1",
+      "expr": "8/4/2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 左结合除法（220 位）"
+    ],
+    "coeffs": [
+      "8/4/2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1",
+      "expr": "8/4/2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 显式乘除同级从左向右（36 位）"
+    ],
+    "coeffs": [
+      "8/4*2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "8/4*2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 显式乘除同级从左向右（220 位）"
+    ],
+    "coeffs": [
+      "8/4*2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "8/4*2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 隐式乘法并入分母（36 位）"
+    ],
+    "coeffs": [
+      "8/2(2+2)",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1",
+      "expr": "8/(2[cdot](2+2))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 隐式乘法并入分母（220 位）"
+    ],
+    "coeffs": [
+      "8/2(2+2)",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "1",
+      "expr": "8/(2[cdot](2+2))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 显式乘法与隐式乘法区分（36 位）"
+    ],
+    "coeffs": [
+      "8/2*(2+2)",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "16",
+      "expr": "8/2*(2+2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 显式乘法与隐式乘法区分（220 位）"
+    ],
+    "coeffs": [
+      "8/2*(2+2)",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "16",
+      "expr": "8/2*(2+2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 幂运算右结合（36 位）"
+    ],
+    "coeffs": [
+      "2^3^2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "512",
+      "expr": "2^(3^2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 幂运算右结合（220 位）"
+    ],
+    "coeffs": [
+      "2^3^2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "512",
+      "expr": "2^(3^2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 各指数有括号时仍右结合（36 位）"
+    ],
+    "coeffs": [
+      "2^(3)^(2)",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "512",
+      "expr": "2^(3)^(2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 各指数有括号时仍右结合（220 位）"
+    ],
+    "coeffs": [
+      "2^(3)^(2)",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "512",
+      "expr": "2^(3)^(2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 括号改变幂结合顺序（36 位）"
+    ],
+    "coeffs": [
+      "(2^3)^2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "64",
+      "expr": "(2^3)^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 括号改变幂结合顺序（220 位）"
+    ],
+    "coeffs": [
+      "(2^3)^2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "64",
+      "expr": "(2^3)^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负号低于幂（36 位）"
+    ],
+    "coeffs": [
+      "-2^2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-4",
+      "expr": "-2^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负号低于幂（220 位）"
+    ],
+    "coeffs": [
+      "-2^2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-4",
+      "expr": "-2^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负底数显式括号（36 位）"
+    ],
+    "coeffs": [
+      "(-2)^2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "(-2)^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负底数显式括号（220 位）"
+    ],
+    "coeffs": [
+      "(-2)^2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "(-2)^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负指数与右结合幂（36 位）"
+    ],
+    "coeffs": [
+      "2^-2^2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.0625",
+      "expr": "2^(-2^2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负指数与右结合幂（220 位）"
+    ],
+    "coeffs": [
+      "2^-2^2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.0625",
+      "expr": "2^(-2^2)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负指数与后缀阶乘（36 位）"
+    ],
+    "coeffs": [
+      "2^-3!",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.015625",
+      "expr": "2^-3!"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负指数与后缀阶乘（220 位）"
+    ],
+    "coeffs": [
+      "2^-3!",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.015625",
+      "expr": "2^-3!"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 连续阶乘（36 位）"
+    ],
+    "coeffs": [
+      "3!!",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "720",
+      "expr": "3!!"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 连续阶乘（220 位）"
+    ],
+    "coeffs": [
+      "3!!",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "720",
+      "expr": "3!!"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 一元函数先于其后的阶乘（36 位）"
+    ],
+    "coeffs": [
+      "sqrt4!",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "sqrt(4)!"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 一元函数先于其后的阶乘（220 位）"
+    ],
+    "coeffs": [
+      "sqrt4!",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "sqrt(4)!"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负数前缀函数先于幂（36 位）"
+    ],
+    "coeffs": [
+      "floor-1.5^2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "floor(-1.5)^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负数前缀函数先于幂（220 位）"
+    ],
+    "coeffs": [
+      "floor-1.5^2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "floor(-1.5)^2"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 连用一元正负号（36 位）"
+    ],
+    "coeffs": [
+      "2+-+3",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-1",
+      "expr": "2+-3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 连用一元正负号（220 位）"
+    ],
+    "coeffs": [
+      "2+-+3",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-1",
+      "expr": "2+-3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元减号后的一元负号（36 位）"
+    ],
+    "coeffs": [
+      "2--3",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "5",
+      "expr": "2--3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元减号后的一元负号（220 位）"
+    ],
+    "coeffs": [
+      "2--3",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "5",
+      "expr": "2--3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 未定义函数在语法检查时不求值（36 位）"
+    ],
+    "coeffs": [
+      "f([x])+1/0",
+      36,
+      12,
+      "syntaxCheck",
+      "output"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "f([x])+1/0"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 未定义函数在语法检查时不求值（220 位）"
+    ],
+    "coeffs": [
+      "f([x])+1/0",
+      220,
+      12,
+      "syntaxCheck",
+      "output"
+    ],
+    "expected": {
+      "result": "0",
+      "expr": "f([x])+1/0"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 嵌套二元函数的逗号归属（36 位）"
+    ],
+    "coeffs": [
+      "log(2,nroot(256,2))",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "log(2,nroot(256,2))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 嵌套二元函数的逗号归属（220 位）"
+    ],
+    "coeffs": [
+      "log(2,nroot(256,2))",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "log(2,nroot(256,2))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元函数作为根指数（36 位）"
+    ],
+    "coeffs": [
+      "nroot(256,log(2,16))",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "nroot(256,log(2,16))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元函数作为根指数（220 位）"
+    ],
+    "coeffs": [
+      "nroot(256,log(2,16))",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "nroot(256,log(2,16))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元函数缺失右括号自动补齐（36 位）"
+    ],
+    "coeffs": [
+      "log(2,nroot(256,2",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "log(2,nroot(256,2))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 二元函数缺失右括号自动补齐（220 位）"
+    ],
+    "coeffs": [
+      "log(2,nroot(256,2",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "4",
+      "expr": "log(2,nroot(256,2))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 缺失左括号补齐（36 位）"
+    ],
+    "coeffs": [
+      "2+3)*4",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "20",
+      "expr": "(2+3)*4"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 缺失左括号补齐（220 位）"
+    ],
+    "coeffs": [
+      "2+3)*4",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "20",
+      "expr": "(2+3)*4"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 多个缺失右括号补齐（36 位）"
+    ],
+    "coeffs": [
+      "2((3+4",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "14",
+      "expr": "2[cdot]((3+4))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 多个缺失右括号补齐（220 位）"
+    ],
+    "coeffs": [
+      "2((3+4",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "14",
+      "expr": "2[cdot]((3+4))"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数和隐式乘法分母（36 位）"
+    ],
+    "coeffs": [
+      "f(2)+g(3)",
+      36,
+      12,
+      "calc",
+      "output",
+      "1/(2[x])",
+      "[x]^2"
+    ],
+    "expected": {
+      "result": "9.25",
+      "expr": "f(2)+g(3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数和隐式乘法分母（220 位）"
+    ],
+    "coeffs": [
+      "f(2)+g(3)",
+      220,
+      12,
+      "calc",
+      "output",
+      "1/(2[x])",
+      "[x]^2"
+    ],
+    "expected": {
+      "result": "9.25",
+      "expr": "f(2)+g(3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数调用另一函数（36 位）"
+    ],
+    "coeffs": [
+      "f(3)",
+      36,
+      12,
+      "calc",
+      "output",
+      "g([x])+2",
+      "[x]^2"
+    ],
+    "expected": {
+      "result": "11",
+      "expr": "f(3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 自定义函数调用另一函数（220 位）"
+    ],
+    "coeffs": [
+      "f(3)",
+      220,
+      12,
+      "calc",
+      "output",
+      "g([x])+2",
+      "[x]^2"
+    ],
+    "expected": {
+      "result": "11",
+      "expr": "f(3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 小数与科学记数法的精确加法（36 位）"
+    ],
+    "coeffs": [
+      ".1+.2+1E-1",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.4",
+      "expr": ".1+.2+1E-1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 小数与科学记数法的精确加法（220 位）"
+    ],
+    "coeffs": [
+      ".1+.2+1E-1",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.4",
+      "expr": ".1+.2+1E-1"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负科学记数法指数（36 位）"
+    ],
+    "coeffs": [
+      "2E-3+3E-3",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.005",
+      "expr": "2E-3+3E-3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 负科学记数法指数（220 位）"
+    ],
+    "coeffs": [
+      "2E-3+3E-3",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "0.005",
+      "expr": "2E-3+3E-3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 复数共轭乘法（36 位）"
+    ],
+    "coeffs": [
+      "(3+4[i])conj(3+4[i])",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "25",
+      "expr": "(3+4[cdot][i])[cdot]conj(3+4[cdot][i])"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 复数共轭乘法（220 位）"
+    ],
+    "coeffs": [
+      "(3+4[i])conj(3+4[i])",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "25",
+      "expr": "(3+4[cdot][i])[cdot]conj(3+4[cdot][i])"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 模运算余数随负除数取负号（36 位）"
+    ],
+    "coeffs": [
+      "7mod(-3)",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-2",
+      "expr": "7mod(-3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 模运算余数随负除数取负号（220 位）"
+    ],
+    "coeffs": [
+      "7mod(-3)",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-2",
+      "expr": "7mod(-3)"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 模运算负被除数与正除数（36 位）"
+    ],
+    "coeffs": [
+      "(-7)mod3",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "(-7)mod3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 模运算负被除数与正除数（220 位）"
+    ],
+    "coeffs": [
+      "(-7)mod3",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "(-7)mod3"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 分量分别向下取整（36 位）"
+    ],
+    "coeffs": [
+      "floor(-1.2+2.8[i])",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-2+2[i]",
+      "expr": "floor(-1.2+2.8[cdot][i])"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 分量分别向下取整（220 位）"
+    ],
+    "coeffs": [
+      "floor(-1.2+2.8[i])",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-2+2[i]",
+      "expr": "floor(-1.2+2.8[cdot][i])"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 分量分别向上取整（36 位）"
+    ],
+    "coeffs": [
+      "ceil(-1.2+2.8[i])",
+      36,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-1+3[i]",
+      "expr": "ceil(-1.2+2.8[cdot][i])"
+    }
+  },
+  {
+    "description": [
+      "[parser-regression] 分量分别向上取整（220 位）"
+    ],
+    "coeffs": [
+      "ceil(-1.2+2.8[i])",
+      220,
+      12,
+      "calc",
+      "output"
+    ],
+    "expected": {
+      "result": "-1+3[i]",
+      "expr": "ceil(-1.2+2.8[cdot][i])"
+    }
+  },
+  {
+    "description": [
+      "[implicit-denominator:negative-prefix] 隐式乘法分母内的前缀函数接受负参数，规范化保留完整参数"
+    ],
+    "coeffs": [
+      "1/2abs-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]abs(-2))"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator:negative-prefix] 隐式乘法分母内的前缀函数接受负参数，规范化保留完整参数（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]abs(-2))"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator:negative-power] 隐式乘法分母内函数后的负指数提前关闭分母，负指数保持在分母内"
+    ],
+    "coeffs": [
+      "1/2abs2^-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^-2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator:negative-power] 隐式乘法分母内函数后的负指数提前关闭分母，负指数保持在分母内（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^-2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator:negative-power] 隐式乘法分母内括号后的负指数保持在分母内"
+    ],
+    "coeffs": [
+      "1/2(2)^-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot](2)^-2)"
+    },
+    "referenceExpr": "1/(2*(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator:negative-power] 隐式乘法分母内括号后的负指数保持在分母内（220 位）"
+    ],
+    "coeffs": [
+      "1/2(2)^-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot](2)^-2)"
+    },
+    "referenceExpr": "1/(2*(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator:absolute-value] 隐式乘法分母内绝对值在分母右括号内正确闭合"
+    ],
+    "coeffs": [
+      "1/2|-2|",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|-2|)"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator:absolute-value] 隐式乘法分母内绝对值在分母右括号内正确闭合（220 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|-2|)"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀负参数后接加法（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs-2+1",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "1.25",
+      "expr": "1/(2[cdot]abs(-2))+1"
+    },
+    "referenceExpr": "1/(2*abs(-2))+1"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀负参数后接加法（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs-2+1",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "1.25",
+      "expr": "1/(2[cdot]abs(-2))+1"
+    },
+    "referenceExpr": "1/(2*abs(-2))+1"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀负参数后接显式乘法（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs-2*3",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.75",
+      "expr": "1/(2[cdot]abs(-2))*3"
+    },
+    "referenceExpr": "1/(2*abs(-2))*3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀负参数后接显式乘法（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs-2*3",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.75",
+      "expr": "1/(2[cdot]abs(-2))*3"
+    },
+    "referenceExpr": "1/(2*abs(-2))*3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀负参数后接显式除法（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs-2/3",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.0833333333333",
+      "expr": "1/(2[cdot]abs(-2))/3"
+    },
+    "referenceExpr": "1/(2*abs(-2))/3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀负参数后接显式除法（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs-2/3",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.0833333333333",
+      "expr": "1/(2[cdot]abs(-2))/3"
+    },
+    "referenceExpr": "1/(2*abs(-2))/3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数后接加法（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2+1",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "3",
+      "expr": "1/(2[cdot]abs(2)^-2)+1"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))+1"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数后接加法（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2+1",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "3",
+      "expr": "1/(2[cdot]abs(2)^-2)+1"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))+1"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数后接显式乘法（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2*3",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "1/(2[cdot]abs(2)^-2)*3"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))*3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数后接显式乘法（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2*3",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "6",
+      "expr": "1/(2[cdot]abs(2)^-2)*3"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))*3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数后接显式除法（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2/4",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "1/(2[cdot]abs(2)^-2)/4"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))/4"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数后接显式除法（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2/4",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "1/(2[cdot]abs(2)^-2)/4"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))/4"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数与右结合幂（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2^2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "8",
+      "expr": "1/(2[cdot]abs(2)^(-2^2))"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-(2^2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 负指数与右结合幂（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^-2^2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "8",
+      "expr": "1/(2[cdot]abs(2)^(-2^2))"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-(2^2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 指数连续负号（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^--2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.125",
+      "expr": "1/(2[cdot]abs(2)^--2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 指数连续负号（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^--2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.125",
+      "expr": "1/(2[cdot]abs(2)^--2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 指数连续正负号（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^+-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^-2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 指数连续正负号（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^+-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^-2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀函数连续负号（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs--2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]abs(--2))"
+    },
+    "referenceExpr": "1/(2*abs(2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀函数连续负号（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs--2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]abs(--2))"
+    },
+    "referenceExpr": "1/(2*abs(2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀函数连续正负号（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs+-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]abs(-2))"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 前缀函数连续正负号（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs+-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]abs(-2))"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 二元函数参数中的负指数（36 位）"
+    ],
+    "coeffs": [
+      "log(2,1/2abs2^-2)",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "1",
+      "expr": "log(2,1/(2[cdot]abs(2)^-2))"
+    },
+    "referenceExpr": "log(2,1/(2*abs(2)^(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 二元函数参数中的负指数（220 位）"
+    ],
+    "coeffs": [
+      "log(2,1/2abs2^-2)",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "1",
+      "expr": "log(2,1/(2[cdot]abs(2)^-2))"
+    },
+    "referenceExpr": "log(2,1/(2*abs(2)^(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 外层函数中的负参数（36 位）"
+    ],
+    "coeffs": [
+      "abs(1/2abs-2)",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "abs(1/(2[cdot]abs(-2)))"
+    },
+    "referenceExpr": "abs(1/(2*abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 外层函数中的负参数（220 位）"
+    ],
+    "coeffs": [
+      "abs(1/2abs-2)",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "abs(1/(2[cdot]abs(-2)))"
+    },
+    "referenceExpr": "abs(1/(2*abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接加法（36 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|+1",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "1.25",
+      "expr": "1/(2[cdot]|-2|)+1"
+    },
+    "referenceExpr": "1/(2*abs(-2))+1"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接加法（220 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|+1",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "1.25",
+      "expr": "1/(2[cdot]|-2|)+1"
+    },
+    "referenceExpr": "1/(2*abs(-2))+1"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接显式乘法（36 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|*3",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.75",
+      "expr": "1/(2[cdot]|-2|)*3"
+    },
+    "referenceExpr": "1/(2*abs(-2))*3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接显式乘法（220 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|*3",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.75",
+      "expr": "1/(2[cdot]|-2|)*3"
+    },
+    "referenceExpr": "1/(2*abs(-2))*3"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接显式除法（36 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|/4",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.0625",
+      "expr": "1/(2[cdot]|-2|)/4"
+    },
+    "referenceExpr": "1/(2*abs(-2))/4"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接显式除法（220 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|/4",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.0625",
+      "expr": "1/(2[cdot]|-2|)/4"
+    },
+    "referenceExpr": "1/(2*abs(-2))/4"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接幂（36 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|^2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.125",
+      "expr": "1/(2[cdot]|-2|^2)"
+    },
+    "referenceExpr": "1/(2*abs(-2)^2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值后接幂（220 位）"
+    ],
+    "coeffs": [
+      "1/2|-2|^2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.125",
+      "expr": "1/(2[cdot]|-2|^2)"
+    },
+    "referenceExpr": "1/(2*abs(-2)^2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值内部减法（36 位）"
+    ],
+    "coeffs": [
+      "1/2|1-3|",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|1-3|)"
+    },
+    "referenceExpr": "1/(2*abs(1-3))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 绝对值内部减法（220 位）"
+    ],
+    "coeffs": [
+      "1/2|1-3|",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|1-3|)"
+    },
+    "referenceExpr": "1/(2*abs(1-3))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 嵌套绝对值（36 位）"
+    ],
+    "coeffs": [
+      "1/2||-2||",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]||-2||)"
+    },
+    "referenceExpr": "1/(2*abs(abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 嵌套绝对值（220 位）"
+    ],
+    "coeffs": [
+      "1/2||-2||",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]||-2||)"
+    },
+    "referenceExpr": "1/(2*abs(abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失绝对值竖线（36 位）"
+    ],
+    "coeffs": [
+      "1/2|-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|-2|)"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失绝对值竖线（220 位）"
+    ],
+    "coeffs": [
+      "1/2|-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|-2|)"
+    },
+    "referenceExpr": "1/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失嵌套绝对值竖线（36 位）"
+    ],
+    "coeffs": [
+      "1/2||-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]||-2||)"
+    },
+    "referenceExpr": "1/(2*abs(abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失嵌套绝对值竖线（220 位）"
+    ],
+    "coeffs": [
+      "1/2||-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]||-2||)"
+    },
+    "referenceExpr": "1/(2*abs(abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失括号和绝对值竖线（36 位）"
+    ],
+    "coeffs": [
+      "1/2|(1-3",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|(1-3)|)"
+    },
+    "referenceExpr": "1/(2*abs(1-3))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失括号和绝对值竖线（220 位）"
+    ],
+    "coeffs": [
+      "1/2|(1-3",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot]|(1-3)|)"
+    },
+    "referenceExpr": "1/(2*abs(1-3))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失普通括号（36 位）"
+    ],
+    "coeffs": [
+      "1/2(2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot](2))"
+    },
+    "referenceExpr": "1/(2*2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 末尾缺失普通括号（220 位）"
+    ],
+    "coeffs": [
+      "1/2(2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "1/(2[cdot](2))"
+    },
+    "referenceExpr": "1/(2*2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 分母位于未闭合绝对值内（36 位）"
+    ],
+    "coeffs": [
+      "|1/2abs-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "|1/(2[cdot]abs(-2))|"
+    },
+    "referenceExpr": "abs(1/(2*abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 分母位于未闭合绝对值内（220 位）"
+    ],
+    "coeffs": [
+      "|1/2abs-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "|1/(2[cdot]abs(-2))|"
+    },
+    "referenceExpr": "abs(1/(2*abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 未闭合外层括号和分母绝对值（36 位）"
+    ],
+    "coeffs": [
+      "(1/2|-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "(1/(2[cdot]|-2|))"
+    },
+    "referenceExpr": "(1/(2*abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 未闭合外层括号和分母绝对值（220 位）"
+    ],
+    "coeffs": [
+      "(1/2|-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.25",
+      "expr": "(1/(2[cdot]|-2|))"
+    },
+    "referenceExpr": "(1/(2*abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 二元函数逗号关闭分母（36 位）"
+    ],
+    "coeffs": [
+      "log(1/2abs2^-2,8)",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "3",
+      "expr": "log(1/(2[cdot]abs(2)^-2),8)"
+    },
+    "referenceExpr": "log(1/(2*abs(2)^(-2)),8)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 二元函数逗号关闭分母（220 位）"
+    ],
+    "coeffs": [
+      "log(1/2abs2^-2,8)",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "3",
+      "expr": "log(1/(2[cdot]abs(2)^-2),8)"
+    },
+    "referenceExpr": "log(1/(2*abs(2)^(-2)),8)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 显式负指数括号保持原行为（36 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^(-2)",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^(-2))"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 显式负指数括号保持原行为（220 位）"
+    ],
+    "coeffs": [
+      "1/2abs2^(-2)",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^(-2))"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 显式分母括号保持原行为（36 位）"
+    ],
+    "coeffs": [
+      "1/(2abs2^-2)",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^-2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 显式分母括号保持原行为（220 位）"
+    ],
+    "coeffs": [
+      "1/(2abs2^-2)",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "2",
+      "expr": "1/(2[cdot]abs(2)^-2)"
+    },
+    "referenceExpr": "1/(2*abs(2)^(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 补齐左括号后按对应层级关闭分母：2)1/2|-2（36 位）"
+    ],
+    "coeffs": [
+      "2)1/2|-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "(2)[cdot]1/(2[cdot]|-2|)"
+    },
+    "referenceExpr": "2/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 补齐左括号后按对应层级关闭分母：2)1/2|-2（220 位）"
+    ],
+    "coeffs": [
+      "2)1/2|-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "(2)[cdot]1/(2[cdot]|-2|)"
+    },
+    "referenceExpr": "2/(2*abs(-2))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 补齐左括号后按对应层级关闭分母：2)1/2(2（36 位）"
+    ],
+    "coeffs": [
+      "2)1/2(2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "(2)[cdot]1/(2[cdot](2))"
+    },
+    "referenceExpr": "2/(2*2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 补齐左括号后按对应层级关闭分母：2)1/2(2（220 位）"
+    ],
+    "coeffs": [
+      "2)1/2(2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "(2)[cdot]1/(2[cdot](2))"
+    },
+    "referenceExpr": "2/(2*2)"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 补齐左括号后按对应层级关闭分母：2))1/2||-2（36 位）"
+    ],
+    "coeffs": [
+      "2))1/2||-2",
+      36,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "((2))[cdot]1/(2[cdot]||-2||)"
+    },
+    "referenceExpr": "2/(2*abs(abs(-2)))"
+  },
+  {
+    "description": [
+      "[implicit-denominator] 补齐左括号后按对应层级关闭分母：2))1/2||-2（220 位）"
+    ],
+    "coeffs": [
+      "2))1/2||-2",
+      220,
+      12
+    ],
+    "expected": {
+      "result": "0.5",
+      "expr": "((2))[cdot]1/(2[cdot]||-2||)"
+    },
+    "referenceExpr": "2/(2*abs(abs(-2)))"
   }
 ]
