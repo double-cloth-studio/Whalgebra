@@ -5382,6 +5382,7 @@
                     // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 为内层循环的括号记录。
                     let kh = 0, minKh = 0, addKh = 0;
                     let tempBracketIdx = -1; // 记录临时 隐式乘法前括号 应该插在哪个索引后面，-1 表示当前没有
+                    let deferredImplicitLevel = null; // 输入结束时，等待内部缺失括号补齐后再关闭分母。
                     const openAfter = [];   // 延迟插入 '(' 的计数表
                     const orderOfTimes = Public.getTokenInfo('*').priority;
                     const orderOfInvisibleTimes = Public.getTokenInfo('&').priority;
@@ -5547,21 +5548,30 @@
                             addKh = currentPush === '(' ? kh - 1 : kh;
                         }
 
+                        // 按转换后的一元负号判断边界，避免将函数负参数或负指数截断。
+                        const currentInfo = Public.getTokenInfo(currentPush);
                         // 解决为隐式乘法添加的另一半括号
                         const hitBoundary =
-                            (tokenInfo.class === 'func' && tokenInfo.priority > orderOfInvisibleTimes && kh === addKh) ||
+                            (currentInfo.class === 'func' && currentInfo.priority > orderOfInvisibleTimes && kh === addKh) ||
                             (currentPush === ')' && kh < addKh) ||
                             (currentPush === ',' && kh === addKh);
 
                         if (tempBracketIdx !== -1 && (hitBoundary || i + 1 === input.length)) {
                             const needClose = hitBoundary
-                                              ? (currentPush === ')' || currentPush === ',' || tokenInfo.priority >= orderOfTimes)
+                                              ? (currentPush === ')' || currentPush === ',' || currentInfo.priority >= orderOfTimes)
                                               : true;
 
                             if (needClose) {
                                 // 目前 token 优先级低于显式乘法，或已到达表达式末尾，需要补全括号
                                 openAfter[tempBracketIdx] = (openAfter[tempBracketIdx] || 0) + 1;
-                                if (i + 1 === input.length && !hitBoundary) {
+                                if (i + 1 === input.length && !hitBoundary && kh > addKh) {
+                                    deferredImplicitLevel = addKh;
+                                } else if (i + 1 === input.length && !hitBoundary) {
+                                    // 分母包含末尾绝对值时，竖线与其右括号必须一起位于分母内。
+                                    if (closesAbsoluteValue) {
+                                        output.push('|');
+                                        closesAbsoluteValue = false;
+                                    }
                                     output.push(currentPush);
                                     currentPush = ')';
                                 } else {
@@ -5599,21 +5609,31 @@
                     if (minKh < 0) {
                         output = Array(-minKh).fill('(').concat(output);
                         kh -= minKh;
+                        if (deferredImplicitLevel !== null) {
+                            deferredImplicitLevel -= minKh;
+                        }
                     }
 
-                    // 3) 闭合绝对值时用 push 替代 [...output, '|', ')']
+                    const closeMissingParen = () => {
+                        output.push(')');
+                        kh -= 1;
+                        if (kh === deferredImplicitLevel) {
+                            output.push(')');
+                            deferredImplicitLevel = null;
+                        }
+                    };
+                    // 3) 先补齐绝对值及其内部括号，再关闭包含它的隐式乘法分母。
                     for (let i = absKhStack.length - 1; i >= 0; i--) {
                         for (let j = 0; j < absKhStack[i]; j++) {
-                            output.push(')');
+                            closeMissingParen();
                         }
-                        output.push('|', ')');
-                        kh -= absKhStack[i] + 1;
+                        output.push('|');
+                        closeMissingParen();
                     }
 
                     // 4) 关闭剩余未闭合的常规括号。
                     while (kh > 0) {
-                        output.push(')');
-                        kh -= 1;
+                        closeMissingParen();
                     }
 
                     return {tokens: output, lastTokenInfo};

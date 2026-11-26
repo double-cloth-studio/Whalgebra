@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
 import test from "node:test";
 import {createCalcCoreWindow} from "./helpers/calc_core.js";
 
@@ -56,13 +57,36 @@ test("Pratt 编译保留规范化文本和前中后缀运算的指令顺序", as
         ["2[toPolar]-3E-2", "2[toPolar]-3E-2", ["2", "3", "N", "[toPolar]", "2", "N", "E"]],
         ["2)3", "(2)[cdot]3", ["2", "3", "&"]],
         ["|(2|3|)|", "|(2[cdot]|3|)|", ["2", "3", "A", "&", "A"]],
-        // 旧版对不完整函数的显示文本与求值顺序有特殊约定，重构仍须保留。
-        ["1/2sin-2", "1/(2[cdot]sin()-2)", ["1", "2", "2", "N", "sin", "&", "/"]]
+        // 函数的负参数须完整保留在隐式乘法分母内。
+        ["1/2sin-2", "1/(2[cdot]sin(-2))", ["1", "2", "2", "N", "sin", "&", "/"]]
     ];
     for (const [input, expr, instructions] of cases) {
         const compiled = MathPlus.compile(input);
         assert.equal(compiled.expr, expr, input);
         assert.deepEqual(Array.from(compiled.rpn, ({operand, token}) => operand ?? token), instructions, input);
+    }
+});
+
+test("隐式乘法分母的负参数、负指数和绝对值在规范化后保持语义", async () => {
+    const {MathPlus, CalcTools} = await createCalcCoreWindow();
+    const cases = JSON.parse(await readFile(new URL("../cases/test_mathplus_calc_normal_cases.json", import.meta.url), "utf8"));
+    const regressions = cases.filter(c => c.referenceExpr);
+    assert.ok(regressions.length > 0, "缺少隐式乘法分母回归用例");
+    for (const c of regressions) {
+        const [input, calcAcc, outputAcc] = c.coeffs;
+        const options = {calcAcc, outputAcc};
+        // 显式乘法与括号独立验证数值；回显重新编译后须保留全部指令。
+        assert.equal(CalcTools.exec(c.referenceExpr, options).result, c.expected.result, input);
+        const actual = CalcTools.exec(input, options);
+        assert.equal(actual.result, c.expected.result, input);
+        assert.equal(actual.expr, c.expected.expr, input);
+        assert.equal(CalcTools.exec(actual.expr, options).result, c.expected.result, input);
+        const compiled = MathPlus.compile(input);
+        assert.equal(JSON.stringify(MathPlus.compile(actual.expr).rpn), JSON.stringify(compiled.rpn), input);
+        const [placeholder, expr] = MathPlus.calc(input, {mode: "syntaxCheck", acc: calcAcc});
+        assert.equal(placeholder.toString(), "0", input);
+        assert.equal(placeholder.acc, calcAcc, input);
+        assert.equal(expr, c.expected.expr, input);
     }
 });
 
