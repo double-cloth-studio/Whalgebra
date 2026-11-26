@@ -5362,6 +5362,18 @@
                         throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${input[1]}).`);
                     }
 
+                    // 只允许在竖线前补齐原本缺失的右括号，保留完整括号内的嵌套绝对值语义。
+                    const unmatchedParens = [];
+                    for (let i = 0; i < input.length; i++) {
+                        if (input[i] === '(') {
+                            unmatchedParens.push(i);
+                        } else if (input[i] === ')') {
+                            unmatchedParens.pop();
+                        }
+                    }
+                    const missingRightParens = new Set(unmatchedParens);
+                    const openParens = [];
+
                     let lastTokenInfo = {};
                     // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 为内层循环的括号记录。
                     let kh = 0, minKh = 0, addKh = 0;
@@ -5372,7 +5384,19 @@
                     const absKhStack = []; // 栈用于跟踪绝对值符号的嵌套层级。
 
                     for (let i = 0; i < input.length; i++) {
-                        const currentToken = input[i];
+                        let currentToken = input[i];
+                        const absoluteParens = absKhStack[absKhStack.length - 1];
+                        if (
+                            currentToken === '|' && absoluteParens > 0 &&
+                            !['front', 'middle'].includes(lastTokenInfo.funcPlace) &&
+                            !['(', ','].includes(lastTokenInfo.token) &&
+                            missingRightParens.has(openParens[openParens.length - 1])
+                        ) {
+                            // 最内层左括号缺少配对时，其尚未闭合的外层左括号也都缺少配对。
+                            // 逐个按常规右括号处理，让隐式乘法先闭合；随后重新处理同一竖线。
+                            currentToken = ')';
+                            i -= 1;
+                        }
                         const tokenInfo = Public.getTokenInfo(currentToken);
                         let currentPush = currentToken;
                         let closesAbsoluteValue = false;
@@ -5395,11 +5419,13 @@
 
                         // --- 括号信息记录 ---
                         if (currentPush === '(') {
+                            openParens.push(i);
                             kh += 1;
                             if (absKhStack.length > 0) {
                                 absKhStack[absKhStack.length - 1] += 1;
                             }
                         } else if (currentPush === ')') {
+                            openParens.pop();
                             kh -= 1;
                             if (absKhStack.length > 0) {
                                 absKhStack[absKhStack.length - 1] -= 1;
