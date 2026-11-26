@@ -5368,7 +5368,9 @@
 
                     // 只允许在竖线前补齐原本缺失的右括号，保留完整括号内的嵌套绝对值语义。
                     const unmatchedParens = [];
+                    const inputOffsets = [0];
                     for (let i = 0; i < input.length; i++) {
+                        inputOffsets.push(inputOffsets[i] + input[i].length);
                         if (input[i] === '(') {
                             unmatchedParens.push(i);
                         } else if (input[i] === ')') {
@@ -5379,7 +5381,7 @@
                     const openParens = [];
 
                     let lastTokenInfo = {};
-                    // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 为内层循环的括号记录。
+                    // kh 记录全局括号，minKh 记录需要添加左括号的个数，addKh 记录当前分母的括号层级。
                     let kh = 0, minKh = 0, addKh = 0;
                     let tempBracketIdx = -1; // 记录临时 隐式乘法前括号 应该插在哪个索引后面，-1 表示当前没有
                     let deferredImplicitLevel = null; // 输入结束时，等待内部缺失括号补齐后再关闭分母。
@@ -5387,6 +5389,23 @@
                     const orderOfTimes = Public.getTokenInfo('*').priority;
                     const orderOfInvisibleTimes = Public.getTokenInfo('&').priority;
                     const absKhStack = []; // 栈用于跟踪绝对值符号的嵌套层级。
+                    // 按输出括号层级记录最近的低优先级运算，避免每次隐式乘法都回溯整个前缀。
+                    // 延迟左括号尚未展开，须按累计输出层级保留索引，与原回溯的括号计数一致。
+                    const boundaryIndices = new Map();
+                    let outputLevel = 0;
+                    const pushToken = (token) => {
+                        if (token === '(') {
+                            outputLevel++;
+                        } else if (token === ')') {
+                            outputLevel--;
+                        } else {
+                            const info = Public.getTokenInfo(token);
+                            if (info.class === 'func' && info.priority > orderOfInvisibleTimes) {
+                                boundaryIndices.set(outputLevel, output.length);
+                            }
+                        }
+                        output.push(token);
+                    };
 
                     for (let i = 0; i < input.length; i++) {
                         let currentToken = input[i];
@@ -5408,17 +5427,11 @@
 
                         if (tokenInfo.isPrivate) {
                             // 像 'log' 这样的二元前缀函数后面必须跟 '('。
-                            let position = 0;
-                            for (let j = 0; j < i; j++) {
-                                position += input[j].length;
-                            }
+                            const position = inputOffsets[i];
                             throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Illegal input (${position}).`);
                         }
                         if (lastTokenInfo.parameters === 2 && lastTokenInfo.funcPlace === 'front' && currentPush !== '(') {
-                            let position = 0;
-                            for (let j = 0; j < i; j++) {
-                                position += input[j].length;
-                            }
+                            const position = inputOffsets[i];
                             throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: A prefix binary function must be followed by a left parenthesis (${position}).`);
                         }
 
@@ -5435,10 +5448,7 @@
                             if (absKhStack.length > 0) {
                                 absKhStack[absKhStack.length - 1] -= 1;
                                 if (absKhStack[absKhStack.length - 1] < 0) {
-                                    let position = 0;
-                                    for (let j = 0; j < i; j++) {
-                                        position += input[j].length;
-                                    }
+                                    const position = inputOffsets[i];
                                     throw new MathPlus._ExpressionSyntaxError(`[MathPlus] syntax error: Absolute value internal parentheses do not match (${position}).`);
                                 }
                             }
@@ -5450,24 +5460,24 @@
                         // --- 隐式乘法插入 ---
                         if (lastTokenInfo.class === 'number' && tokenInfo.class === 'number') {
                             // 数字/常量、后缀函数和括号相邻时插入内部隐式乘法词元 `&`。
-                            output.push('&');
+                            pushToken('&');
                         } else if (
                             tokenInfo.funcPlace === 'front' &&
                             (lastTokenInfo.class === 'number' || lastTokenInfo.funcPlace === 'back')
                         ) {
-                            output.push('&');
+                            pushToken('&');
                         } else if (lastTokenInfo.funcPlace === 'back' && tokenInfo.class === 'number') {
-                            output.push('&');
+                            pushToken('&');
                         } else if (
                             currentPush === '(' &&
                             (lastTokenInfo.class === 'number' || lastTokenInfo.funcPlace === 'back' || lastTokenInfo.token === ')')
                         ) {
-                            output.push('&');
+                            pushToken('&');
                         } else if (
                             lastTokenInfo.token === ')' &&
                             (tokenInfo.class === 'number' || tokenInfo.funcPlace === 'front')
                         ) {
-                            output.push('&');
+                            pushToken('&');
                         }
 
                         // --- 处理正负号 ---
@@ -5508,12 +5518,12 @@
                                 lastTokenInfo.token === ')' ||
                                 lastTokenInfo.funcPlace === 'back'
                             ) {
-                                output.push('&');
+                                pushToken('&');
                             }
                             if (currentPush === '(') {
                                 absKhStack.push(0);
                                 kh += 1;
-                                output.push('A');
+                                pushToken('A');
                             }
                         }
 
@@ -5523,27 +5533,10 @@
                             (output[output.length - 1] === '&' || (output[output.length - 1] === 'A' && output[output.length - 2] === '&')) &&
                             tempBracketIdx === -1
                         ) {
-                            addKh = 0;
-                            for (let j = output.length - (output[output.length - 1] === '&' ? 2 : 3); j >= 0; j--) {
-                                const currentTokenJ = output[j];
-                                const tokenInfoJ = Public.getTokenInfo(currentTokenJ);
-
-                                if (currentTokenJ === '(') {
-                                    addKh += 1;
-                                } else if (currentTokenJ === ')') {
-                                    addKh -= 1;
-                                }
-
-                                if (
-                                    tokenInfoJ.class === 'func' &&
-                                    tokenInfoJ.priority > orderOfInvisibleTimes && // 低优先级词元结束隐式乘法的作用范围。
-                                    addKh === 0
-                                ) {
-                                    if (tokenInfoJ.priority <= orderOfTimes && currentTokenJ !== '*') {
-                                        tempBracketIdx = j;
-                                    }
-                                    break;
-                                }
+                            const boundary = boundaryIndices.get(outputLevel);
+                            if (boundary !== undefined && output[boundary] !== '*' &&
+                                Public.getTokenInfo(output[boundary]).priority <= orderOfTimes) {
+                                tempBracketIdx = boundary;
                             }
                             addKh = currentPush === '(' ? kh - 1 : kh;
                         }
@@ -5569,13 +5562,13 @@
                                 } else if (i + 1 === input.length && !hitBoundary) {
                                     // 分母包含末尾绝对值时，竖线与其右括号必须一起位于分母内。
                                     if (closesAbsoluteValue) {
-                                        output.push('|');
+                                        pushToken('|');
                                         closesAbsoluteValue = false;
                                     }
-                                    output.push(currentPush);
+                                    pushToken(currentPush);
                                     currentPush = ')';
                                 } else {
-                                    output.push(')');
+                                    pushToken(')');
                                 }
                             }
                             tempBracketIdx = -1;
@@ -5583,14 +5576,14 @@
 
                         // 绝对值内的隐式乘法先补全右括号，再写入闭合竖线。
                         if (closesAbsoluteValue) {
-                            output.push('|');
+                            pushToken('|');
                         }
                         if (i + 1 !== input.length) {
                             lastTokenInfo = Public.getTokenInfo(currentPush);
                         } else {
                             lastTokenInfo = {};
                         }
-                        output.push(currentPush);
+                        pushToken(currentPush);
                     }
 
                     // 1) 展开隐式乘法延迟插入的 '('
@@ -5735,6 +5728,10 @@
                                 pending += entries.length;
                             }
                         }
+                        if (scope && !scope.prefix.length && !scope.prefixCertain.length &&
+                            !scope.power.length && !scope.powerCertain.length) {
+                            scopes.delete(level);
+                        }
 
                         if (token === ')') {
                             level--;
@@ -5812,6 +5809,13 @@
                     let current = reader.next();
                     let currentInfo = Public.getTokenInfo(current.value);
                     let depth = 0;
+                    let invalidLocalDepth = false;
+                    // 记录局部缺参，仍先保留既有的运算符、逗号和括号错误报告顺序。
+                    const validateDepth = (baseDepth, expected = 1) => {
+                        if (depth - baseDepth !== expected) {
+                            invalidLocalDepth = true;
+                        }
+                    };
                     const advance = () => {
                         output.push(current.value);
                         current = reader.next();
@@ -5828,9 +5832,23 @@
                         depth += 1 - parameters;
                         rpn.push({token, method: methods[token] ?? token.replace(/[\[\]]/g, ''), parameters});
                     };
-                    const frames = [{kind: 'group', root: true}];
+                    /**
+                     * 显式声明两类调用帧的字段，避免数组仅按初始根括号帧推断类型。
+                     * @typedef {object} PrattCompileFrame
+                     * @property {'group'|'expression'} kind - 调用帧类型。
+                     * @property {boolean} [root] - 是否为根括号帧。
+                     * @property {PrattCompileFrame} [owner] - 所属二元前缀函数帧。
+                     * @property {number} [argumentDepth] - 当前括号参数的起始栈深度。
+                     * @property {string} [state] - 表达式解析状态。
+                     * @property {number} [minBinding] - 最低绑定优先级。
+                     * @property {number} [baseDepth] - 表达式的起始栈深度。
+                     * @property {object} [operator] - 待读取参数的运算符信息。
+                     * @property {boolean} [hasComma] - 是否已读取二元函数的逗号。
+                     */
+                    /** @type {PrattCompileFrame[]} */
+                    const frames = [{kind: 'group', root: true, argumentDepth: 0}];
                     const expression = (minBinding, owner) => {
-                        frames.push({kind: 'expression', state: 'start', minBinding, owner});
+                        frames.push({kind: 'expression', state: 'start', minBinding, owner, baseDepth: depth});
                     };
 
                     while (frames.length > 0) {
@@ -5845,12 +5863,15 @@
                                 if (!frame.owner || frame.owner.hasComma) {
                                     throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: Commas mismatch or incorrect position.');
                                 }
+                                validateDepth(frame.argumentDepth);
+                                frame.argumentDepth = depth;
                                 frame.owner.hasComma = true;
                                 advance();
                             } else if (token === ')' || current.done) {
                                 if (!!frame.root !== current.done) {
                                     throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The parentheses do not match.');
                                 }
+                                validateDepth(frame.argumentDepth);
                                 if (token === ')') {
                                     advance();
                                 }
@@ -5878,7 +5899,7 @@
                             }
                             if (token === '(') {
                                 frame.state = 'atom';
-                                frames.push({kind: 'group', owner: frame.owner});
+                                frames.push({kind: 'group', owner: frame.owner, argumentDepth: depth});
                                 advance();
                                 continue;
                             }
@@ -5893,7 +5914,7 @@
                         }
 
                         if (info?.funcPlace === 'front' || info?.class === 'number' || token === '(') {
-                            // 空括号后的相邻操作数沿用既有全局栈语义，由最终栈深度统一校验。
+                            invalidLocalDepth = true;
                             frame.state = 'atom';
                             expression(frame.minBinding);
                             continue;
@@ -5913,10 +5934,11 @@
                                 continue;
                             }
                         }
+                        validateDepth(frame.baseDepth, frame.owner ? 2 : 1);
                         frames.pop();
                     }
 
-                    if (depth !== 1) {
+                    if (depth !== 1 || invalidLocalDepth) {
                         throw new MathPlus._ExpressionSyntaxError('[MathPlus] syntax error: The final stack should have exactly one value.');
                     }
                     const expr = output.join('').replaceAll('A(', '|').replaceAll('|)', '|')
@@ -5972,7 +5994,7 @@
                             stack.push(MathPlus[method](b));
                         }
                     }
-                    return MathPlus._complexInput(stack[0]);
+                    return MathPlus._complexInput(stack[0], acc);
                 }
             }
 
