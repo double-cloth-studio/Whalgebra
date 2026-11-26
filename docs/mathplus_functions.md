@@ -38,7 +38,7 @@ const [, syntax] = MathPlus.calc("2(3+4", { mode: 'syntaxCheck' });
 console.log(syntax); // "2[cdot](3+4)"
 ```
 
-`calc(expr, { unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy })` 先分词，再补全隐式乘法、正负号、绝对值和缺失括号，最后用调度场算法按优先级操作数值栈与运算符栈，调用下文的数学方法完成求值。
+`calc(expr, { unknown, f, g, mode = 'calc', acc = CalcConfig.globalCalcAccuracy })` 先规范化隐式乘法、正负号、绝对值和缺失括号，再由 Pratt 解析器按绑定优先级生成逆波兰指令（RPN），交给 `evalRPN` 调用下文的数学方法完成求值。函数和幂的显示括号由词元流按需补齐，保留既有规范化文本与报错规则；解析器使用显式调用帧，支持深层嵌套。
 
 - 返回 `[ComplexNumber, canonicalExpr]`，第二项是规范化表达式。
 - `unknown` 为 `[x]` 的代入值；`f`、`g` 为单参数函数体，调用写作 `f(3)`、`g(2)`。可引用另一函数，递归环会报错。
